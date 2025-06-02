@@ -8,6 +8,7 @@ const fs = require('fs');
 const { printDriverStats } = require('./controllers/driverController');
 const http = require('http');
 const { initializeSocket } = require('./socket');
+const config = require('./config/config');
 const Admin = require('./models/Admin');
 
 console.log('Current working directory:', process.cwd());
