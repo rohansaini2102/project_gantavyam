@@ -23,14 +23,33 @@ const io = initializeSocket(server);
 
 // Middleware
 app.use(cors({
-  origin: [
-    'http://localhost:3000', // Frontend development server
-    'https://gt2-seven.vercel.app',
-    'https://gantavyam.site',
-    'https://www.gantavyam.site',
-    'https://gt2-evx6vat1j-rohan-sainis-projects.vercel.app',
-    'https://gt2-2.onrender.com'
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:3000', // Frontend development server
+      'https://gt2-seven.vercel.app',
+      'https://gantavyam.site',
+      'https://www.gantavyam.site',
+      'https://gt2-evx6vat1j-rohan-sainis-projects.vercel.app',
+      'https://gt2-2.onrender.com',
+      'https://gt3-nkqc.onrender.com',
+      'https://gt3-nine.vercel.app' // Your new frontend URL
+    ];
+    
+    // Check if the origin is in the allowed list
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // For now, allow all Vercel deployments for testing
+      if (origin.includes('.vercel.app') || origin.includes('localhost')) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
   credentials: true
 }));
 app.use(express.json());

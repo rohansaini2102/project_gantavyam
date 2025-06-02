@@ -16,7 +16,9 @@ const Admin = require('../models/Admin');
 
 // Configure multer for multiple files
 const driverDocumentUpload = uploadDriverDocuments.fields([
-  { name: 'aadhaarPhoto', maxCount: 1 },
+  { name: 'aadhaarPhotoFront', maxCount: 1 },
+  { name: 'aadhaarPhotoBack', maxCount: 1 },
+  { name: 'driverSelfie', maxCount: 1 },
   { name: 'drivingLicensePhoto', maxCount: 1 },
   { name: 'registrationCertificatePhoto', maxCount: 1 },
   { name: 'permitPhoto', maxCount: 1 },

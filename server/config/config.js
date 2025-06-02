@@ -24,7 +24,8 @@ module.exports = {
     'https://www.gantavyam.site',
     'https://gt2-evx6vat1j-rohan-sainis-projects.vercel.app',
     'https://gt2-2.onrender.com',
-    'https://gt3-nkqc.onrender.com' // New backend URL
+    'https://gt3-nkqc.onrender.com',
+    'https://gt3-nine.vercel.app' // Your frontend on Vercel
   ],
   
   // File upload paths
