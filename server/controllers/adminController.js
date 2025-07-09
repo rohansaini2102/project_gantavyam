@@ -1,21 +1,30 @@
 // controllers/adminController.js
 const Driver = require('../models/Driver');
 const User = require('../models/User');
+const { createContextLogger } = require('../config/logger');
+
+const logger = createContextLogger('AdminController');
 
 // @desc    Get all drivers
 // @route   GET /api/admin/drivers
 // @access  Private (Admin only)
 exports.getAllDrivers = async (req, res) => {
   try {
+    logger.info('Admin fetching all drivers', { adminId: req.admin?.id });
     const drivers = await Driver.find().select('-password');
     
+    logger.info('Successfully fetched drivers', { count: drivers.length });
     res.status(200).json({
       success: true,
       count: drivers.length,
       data: drivers
     });
   } catch (error) {
-    console.error('Error fetching drivers:', error);
+    logger.error('Error fetching drivers', { 
+      error: error.message, 
+      stack: error.stack,
+      adminId: req.admin?.id 
+    });
     res.status(500).json({
       success: false,
       error: 'Server error while fetching drivers'
@@ -64,15 +73,21 @@ exports.getDriverById = async (req, res) => {
 // @access  Private (Admin only)
 exports.getAllUsers = async (req, res) => {
   try {
+    logger.info('Admin fetching all users', { adminId: req.admin?.id });
     const users = await User.find().select('-password');
     
+    logger.info('Successfully fetched users', { count: users.length });
     res.status(200).json({
       success: true,
       count: users.length,
       data: users
     });
   } catch (error) {
-    console.error('Error fetching users:', error);
+    logger.error('Error fetching users', { 
+      error: error.message, 
+      stack: error.stack,
+      adminId: req.admin?.id 
+    });
     res.status(500).json({
       success: false,
       error: 'Server error while fetching users'

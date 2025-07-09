@@ -3,10 +3,20 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const config = require('../config/config');
+const { createContextLogger } = require('../config/logger');
+
+const logger = createContextLogger('UserController');
 
 exports.registerUser = async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
+
+    logger.info('User registration attempt', { 
+      email, 
+      phone, 
+      name,
+      timestamp: new Date().toISOString()
+    });
 
     // Check if user already exists
     const existingUser = await User.findOne({ 
@@ -14,6 +24,11 @@ exports.registerUser = async (req, res) => {
     });
 
     if (existingUser) {
+      logger.warn('Registration failed - duplicate user', { 
+        email, 
+        phone, 
+        existingUserId: existingUser._id 
+      });
       return res.status(400).json({
         success: false,
         message: 'User with this email or phone already exists'
@@ -28,12 +43,23 @@ exports.registerUser = async (req, res) => {
       password // Password will be hashed by the pre-save hook in User model
     });
 
+    logger.info('User registered successfully', { 
+      userId: user._id, 
+      email, 
+      phone, 
+      name 
+    });
+
     res.status(201).json({
       success: true,
       message: 'User registered successfully'
     });
   } catch (err) {
-    console.error('Registration error:', err);
+    logger.error('Registration error', { 
+      error: err.message, 
+      stack: err.stack,
+      body: req.body 
+    });
     res.status(500).json({
       success: false,
       message: 'Failed to register user'
@@ -45,20 +71,20 @@ exports.userLogin = async (req, res) => {
   try {
     const { phone, password } = req.body;
     
-    console.log(`[LOGIN ATTEMPT] Phone: ${phone}`);
+    logger.info('User login attempt', { phone });
     
     // Find the user by phone - explicitly select password field
     const user = await User.findOne({ phone }).select('+password');
 
     if (!user) {
-      console.log(`[LOGIN FAILED] User with phone ${phone} not found`);
+      logger.warn('Login failed - user not found', { phone });
       return res.status(401).json({ 
         success: false, 
         message: 'Invalid phone number or password. Please try again.' 
       });
     }
 
-    console.log(`[USER FOUND] ID: ${user._id}, Name: ${user.name}`);
+    logger.debug('User found for login', { userId: user._id, name: user.name });
 
     // Check password
     let isMatch = false;
@@ -66,16 +92,16 @@ exports.userLogin = async (req, res) => {
     // First try bcrypt comparison
     try {
       isMatch = await bcrypt.compare(password, user.password);
-      console.log(`[BCRYPT COMPARISON] Result: ${isMatch}`);
+      logger.debug('Password comparison result', { isMatch, method: 'bcrypt' });
     } catch (bcryptError) {
       // If bcrypt fails, try plain text comparison (for development only)
-      console.log(`[BCRYPT FAILED] Trying plain text comparison`);
+      logger.warn('Bcrypt comparison failed, trying plain text', { error: bcryptError.message });
       isMatch = (password === user.password);
-      console.log(`[PLAIN TEXT COMPARISON] Result: ${isMatch}`);
+      logger.debug('Password comparison result', { isMatch, method: 'plaintext' });
     }
     
     if (!isMatch) {
-      console.log(`[LOGIN FAILED] Password mismatch for phone ${phone}`);
+      logger.warn('Login failed - password mismatch', { phone, userId: user._id });
       return res.status(401).json({ 
         success: false, 
         message: 'Invalid phone number or password. Please try again.' 
@@ -96,7 +122,11 @@ exports.userLogin = async (req, res) => {
     user.lastLogin = Date.now();
     await user.save();
     
-    console.log(`[LOGIN SUCCESS] User ${user._id} (${user.name}) logged in successfully`);
+    logger.info('User login successful', { 
+      userId: user._id, 
+      name: user.name, 
+      phone 
+    });
 
     // Prepare user data to return (excluding password)
     const userData = {
@@ -114,7 +144,11 @@ exports.userLogin = async (req, res) => {
       user: userData
     });
   } catch (err) {
-    console.error('[LOGIN ERROR]', err);
+    logger.error('Login error', { 
+      error: err.message, 
+      stack: err.stack,
+      body: req.body 
+    });
     res.status(500).json({ 
       success: false, 
       message: 'Login failed due to server error' 

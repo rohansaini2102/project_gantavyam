@@ -107,6 +107,22 @@ export const auth = {
     } catch (error) {
       throw error;
     }
+  },
+  
+  // Admin authentication
+  adminLogin: async (credentials) => {
+    try {
+      const response = await apiClient.post('/admin/login', credentials);
+      // Store token in localStorage
+      if (response.data.token) {
+        localStorage.setItem('adminToken', response.data.token);
+        localStorage.setItem('adminRole', 'admin');
+        localStorage.setItem('admin', JSON.stringify(response.data.admin));
+      }
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 
@@ -177,6 +193,24 @@ export const admin = {
       throw error;
     }
   },
+
+  getAllUsers: async () => {
+    try {
+      const response = await apiClient.get('/admin/users');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getUserById: async (id) => {
+    try {
+      const response = await apiClient.get(`/admin/users/${id}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
   
   getDriverById: async (id) => {
     try {
@@ -211,10 +245,13 @@ export const admin = {
 // Export individual functions for backward compatibility
 export const driverSignup = drivers.driverSignup;
 export const driverLogin = auth.driverLogin;
+export const adminLogin = auth.adminLogin;
 export const getDriverProfile = drivers.getDriverProfile;
 export const updateDriverLocation = drivers.updateDriverLocation;
 export const getAllDrivers = admin.getAllDrivers;
+export const getAllUsers = admin.getAllUsers;
 export const getDriverById = admin.getDriverById;
+export const getUserById = admin.getUserById;
 export const registerDriver = admin.registerDriver;
 
 // Fixed default export

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { driverSignup } from '../../services/api';
 import ModernUpload from '../../components/common/ModernUpload';
 import CameraCapture from '../../components/common/CameraCapture';
+import ModernCard from '../../components/admin/ModernCard';
 import { FiUser, FiCreditCard, FiClipboard, FiLock } from 'react-icons/fi';
 
 const steps = [
@@ -129,28 +130,65 @@ const AddDriver = () => {
   };
 
   return (
-    <div className="flex flex-col flex-1 w-full h-full bg-gray-100 p-0">
-      <div className="w-full h-full px-12 py-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-blue-700 mb-2 text-left">Admin: Register New Driver</h1>
-          <h2 className="text-xl font-semibold text-orange-500 text-left">Driver Registration</h2>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Register New Driver</h1>
+          <p className="text-gray-600 mt-1">Add a new driver to the system</p>
         </div>
+        <button
+          onClick={() => navigate('/admin/drivers')}
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          View All Drivers
+        </button>
+      </div>
+
+      {/* Error/Success Messages */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-red-800">{error}</span>
+          </div>
+        </div>
+      )}
+      {success && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-green-800">{success}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Form Card */}
+      <ModernCard>
         {/* Stepper */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-8 px-6 pt-6">
           {steps.map((step, idx) => (
             <div key={step.key} className="flex-1 flex flex-col items-center">
-              <div className={`flex items-center justify-center w-10 h-10 rounded-full text-2xl mb-1 border-2 ${activeSection === step.key ? 'bg-sky-400 text-white border-sky-400' : 'bg-gray-200 text-gray-400 border-gray-300'}`}>{step.icon}</div>
-              <span className={`text-xs font-semibold ${activeSection === step.key ? 'text-sky-600' : 'text-gray-400'}`}>{step.label}</span>
-              {idx < steps.length - 1 && <div className="w-full h-1 bg-gray-200 mt-2" />}
+              <div className={`flex items-center justify-center w-12 h-12 rounded-full text-xl mb-2 border-2 transition-all ${
+                activeSection === step.key 
+                  ? 'bg-blue-600 text-white border-blue-600' 
+                  : 'bg-gray-100 text-gray-400 border-gray-300'
+              }`}>
+                {step.icon}
+              </div>
+              <span className={`text-sm font-medium ${
+                activeSection === step.key ? 'text-blue-600' : 'text-gray-400'
+              }`}>
+                {step.label}
+              </span>
+              {idx < steps.length - 1 && (
+                <div className="absolute top-6 left-1/2 w-full h-0.5 bg-gray-200" style={{ width: 'calc(100% - 3rem)' }} />
+              )}
             </div>
           ))}
         </div>
-        {error && <div className="bg-red-100 text-red-700 px-4 py-2 rounded mb-4 border-l-4 border-red-500 text-sm">{error}</div>}
-        {success && <div className="bg-green-100 text-green-700 px-4 py-2 rounded mb-4 border-l-4 border-green-500 text-sm">{success}</div>}
-        <form onSubmit={handleSubmit} className="mt-4">
+        <form onSubmit={handleSubmit} className="p-6">
           {/* Personal Information Section */}
           <div className={activeSection === 'personal' ? '' : 'hidden'}>
-            <h3 className="text-lg font-semibold text-blue-700 mb-4">Personal Information</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               <div>
                 <label className="block text-gray-700 font-medium mb-1">Full Name</label>
@@ -207,12 +245,12 @@ const AddDriver = () => {
               />
             </div>
             <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('bank')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Next</button>
+              <button type="button" onClick={() => changeSection('bank')} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition">Next</button>
             </div>
           </div>
           {/* Bank Details Section */}
           <div className={activeSection === 'bank' ? '' : 'hidden'}>
-            <h3 className="text-lg font-semibold text-blue-700 mb-4">Bank Details</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Bank Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               <div>
                 <label className="block text-gray-700 font-medium mb-1">Bank Name</label>
@@ -232,13 +270,13 @@ const AddDriver = () => {
               </div>
             </div>
             <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('personal')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
-              <button type="button" onClick={() => changeSection('license')} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition">Next</button>
+              <button type="button" onClick={() => changeSection('personal')} className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium transition">Back</button>
+              <button type="button" onClick={() => changeSection('license')} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition">Next</button>
             </div>
           </div>
           {/* License and Certificates Section */}
           <div className={activeSection === 'license' ? '' : 'hidden'}>
-            <h3 className="text-lg font-semibold text-blue-700 mb-4">License and Certificates</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">License and Certificates</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Driving License */}
               <div>
@@ -290,13 +328,13 @@ const AddDriver = () => {
               />
             </div>
             <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('bank')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
-              <button type="button" onClick={() => changeSection('security')} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition">Next</button>
+              <button type="button" onClick={() => changeSection('bank')} className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium transition">Back</button>
+              <button type="button" onClick={() => changeSection('security')} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition">Next</button>
             </div>
           </div>
           {/* Security Section */}
           <div className={activeSection === 'security' ? '' : 'hidden'}>
-            <h3 className="text-lg font-semibold text-blue-700 mb-4">Security</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Security</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="relative">
                 <label className="block text-gray-700 font-medium mb-1">Password</label>
@@ -308,15 +346,14 @@ const AddDriver = () => {
               </div>
             </div>
             <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('license')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
-              <button type="submit" disabled={loading} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition disabled:bg-gray-400">
+              <button type="button" onClick={() => changeSection('license')} className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium transition">Back</button>
+              <button type="submit" disabled={loading} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition disabled:bg-gray-400">
                 {loading ? 'Registering...' : 'Register Driver'}
               </button>
             </div>
           </div>
         </form>
-      </div>
-      <div className="text-left text-gray-500 text-xs mt-2">&copy; 2025 GANTAVYAM. All rights reserved.</div>
+      </ModernCard>
     </div>
   );
 };

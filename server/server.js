@@ -10,6 +10,10 @@ const http = require('http');
 const { initializeSocket } = require('./socket');
 const config = require('./config/config');
 const Admin = require('./models/Admin');
+const { createContextLogger } = require('./config/logger');
+const requestLogger = require('./middleware/requestLogger');
+
+const logger = createContextLogger('Server');
 
 console.log('Current working directory:', process.cwd());
 console.log('server.js directory:', __dirname);
@@ -39,6 +43,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Add request logging middleware
+app.use(requestLogger);
+
 // Set static folder for serving uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -49,9 +56,16 @@ app.use('/uploads', (req, res, next) => {
 });
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URL)
+const mongoOptions = {
+  serverSelectionTimeoutMS: 10000, // 10 seconds
+  socketTimeoutMS: 45000,
+};
+
+mongoose.connect(process.env.MONGO_URL, mongoOptions)
 .then(async () => {
-  console.log('MongoDB Connected');
+  logger.info('MongoDB Connected successfully', { 
+    mongoUrl: process.env.MONGO_URL?.replace(/:([^:@]{1,})@/, ':***@') // Hide password in logs
+  });
   // Print database statistics on startup
   printDriverStats();
   // Ensure default admin exists
@@ -63,8 +77,26 @@ mongoose.connect(process.env.MONGO_URL)
   }, 30 * 60 * 1000); // Every 30 minutes
 })
 .catch(err => {
-  console.error('MongoDB connection error:', err);
-  process.exit(1);
+  logger.error('MongoDB connection error', { 
+    error: err.message, 
+    stack: err.stack 
+  });
+  logger.error('MongoDB Connection Failed - Possible solutions:');
+  logger.error('1. Check your internet connection');
+  logger.error('2. Verify MongoDB Atlas is accessible (not blocked by firewall)');
+  logger.error('3. Check if your IP is whitelisted in MongoDB Atlas');
+  logger.error('4. Try using a local MongoDB instance for development');
+  
+  // Don't exit immediately, allow for retry
+  setTimeout(() => {
+    logger.info('Retrying MongoDB connection...');
+    mongoose.connect(process.env.MONGO_URL, mongoOptions)
+      .then(() => logger.info('MongoDB Connected on retry'))
+      .catch(() => {
+        logger.error('MongoDB retry failed. Exiting...');
+        process.exit(1);
+      });
+  }, 5000);
 });
 
 // Define Routes
@@ -123,18 +155,20 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 initializeSocket(server);
 server.listen(PORT, () => {
-  console.log(`\n=========================================================
- GANTAVYAM SERVER STARTED
- Server running on port ${PORT}
- Uploads directory: ${uploadsDir}
- Database: ${process.env.MONGO_URL}
-=========================================================
-  `);
+  logger.info('GANTAVYAM SERVER STARTED', {
+    port: PORT,
+    uploadsDirectory: uploadsDir,
+    database: process.env.MONGO_URL?.replace(/:([^:@]{1,})@/, ':***@'), // Hide password in logs
+    nodeEnv: process.env.NODE_ENV || 'development'
+  });
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {
-  console.log('Unhandled Rejection:', err.message);
+  logger.error('Unhandled Promise Rejection', { 
+    error: err.message, 
+    stack: err.stack 
+  });
   // Close server & exit process
   // server.close(() => process.exit(1));
 });
