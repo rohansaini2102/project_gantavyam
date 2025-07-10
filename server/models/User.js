@@ -35,10 +35,50 @@ const UserSchema = new mongoose.Schema({
     type: String,
     default: 'user'
   },
+  // Enhanced ride statistics and tracking
   rideHistory: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Ride'
+    ref: 'RideHistory'
   }],
+  rideStatistics: {
+    totalRides: {
+      type: Number,
+      default: 0
+    },
+    completedRides: {
+      type: Number,
+      default: 0
+    },
+    cancelledRides: {
+      type: Number,
+      default: 0
+    },
+    totalSpent: {
+      type: Number,
+      default: 0
+    },
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5
+    },
+    favoriteVehicleType: {
+      type: String,
+      enum: ['bike', 'auto', 'car'],
+      default: 'auto'
+    },
+    lastRideDate: Date,
+    longestRide: {
+      distance: Number,
+      fare: Number,
+      date: Date
+    },
+    preferredMetroStations: [{
+      stationName: String,
+      usageCount: Number
+    }]
+  },
   favorites: [{
     name: String,
     location: {
@@ -67,6 +107,38 @@ const UserSchema = new mongoose.Schema({
       default: false
     }
   }],
+  // User preferences and settings
+  preferences: {
+    defaultVehicleType: {
+      type: String,
+      enum: ['bike', 'auto', 'car'],
+      default: 'auto'
+    },
+    notificationSettings: {
+      rideUpdates: {
+        type: Boolean,
+        default: true
+      },
+      promotions: {
+        type: Boolean,
+        default: true
+      },
+      driverLocation: {
+        type: Boolean,
+        default: true
+      }
+    },
+    privacySettings: {
+      shareLocationWithDriver: {
+        type: Boolean,
+        default: true
+      },
+      allowRatingFeedback: {
+        type: Boolean,
+        default: true
+      }
+    }
+  },
   lastLogin: {
     type: Date,
     default: Date.now

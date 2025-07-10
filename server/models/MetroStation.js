@@ -50,6 +50,16 @@ const MetroStationSchema = new mongoose.Schema({
   avgWaitTime: {
     type: Number,
     default: 0
+  },
+  dailyRideCounter: {
+    date: {
+      type: String,
+      default: () => new Date().toISOString().split('T')[0]
+    },
+    count: {
+      type: Number,
+      default: 0
+    }
   }
 }, {
   timestamps: true

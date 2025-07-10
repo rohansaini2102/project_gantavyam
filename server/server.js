@@ -125,6 +125,7 @@ app.use('/api/ride-requests', require('./routes/rideRequests'));
 app.use('/api/ride-history', require('./routes/rideHistory'));
 app.use('/api/fare', require('./routes/fareEstimation'));
 app.use('/api/otp', require('./routes/otpVerification'));
+app.use('/api/analytics', require('./routes/analytics'));
 
 // Basic route for API status
 app.get('/', (req, res) => {

@@ -89,7 +89,35 @@ const rideRequestSchema = new mongoose.Schema({
     default: 0,
     min: 0,
     max: 5
-  }
+  },
+  boothRideNumber: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'collected', 'online'],
+    default: 'pending'
+  },
+  paymentCollectedAt: Date,
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'online', 'upi'],
+    default: 'cash'
+  },
+  cancelledBy: {
+    type: String,
+    enum: ['user', 'driver', 'system']
+  },
+  driversNotified: Number,
+  broadcastAt: Date,
+  broadcastMethod: String
 });
+
+// Index for efficient booth ride number queries
+rideRequestSchema.index({ boothRideNumber: 1 });
+rideRequestSchema.index({ paymentStatus: 1 });
+rideRequestSchema.index({ 'pickupLocation.boothName': 1, timestamp: -1 });
 
 module.exports = mongoose.model('RideRequest', rideRequestSchema); 

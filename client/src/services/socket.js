@@ -140,6 +140,10 @@ class SocketService {
       this.socket.on('rideEnded', callbacks.onRideEnded);
     }
     
+    if (callbacks.onRideCompleted) {
+      this.socket.on('rideCompleted', callbacks.onRideCompleted);
+    }
+    
     if (callbacks.onRideCancelled) {
       this.socket.on('rideCancelled', callbacks.onRideCancelled);
     }
@@ -154,6 +158,10 @@ class SocketService {
     
     if (callbacks.onOTPVerificationError) {
       this.socket.on('otpVerificationError', callbacks.onOTPVerificationError);
+    }
+    
+    if (callbacks.onPaymentCollected) {
+      this.socket.on('paymentCollected', callbacks.onPaymentCollected);
     }
   }
 
@@ -199,6 +207,10 @@ class SocketService {
       this.socket.on('rideEnded', callbacks.onRideEnded);
     }
     
+    if (callbacks.onRideCompleted) {
+      this.socket.on('rideCompleted', callbacks.onRideCompleted);
+    }
+    
     if (callbacks.onRideCancelled) {
       this.socket.on('rideCancelled', callbacks.onRideCancelled);
     }
@@ -224,6 +236,7 @@ class SocketService {
     this.socket.off('driverLocationUpdated');
     this.socket.off('otpVerificationSuccess');
     this.socket.off('otpVerificationError');
+    this.socket.off('paymentCollected');
   }
 
   // Unsubscribe from driver updates

@@ -1,11 +1,27 @@
 const mongoose = require('mongoose');
 
 const rideHistorySchema = new mongoose.Schema({
+  // Basic ride information
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
+  driverId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Driver'
+  },
+  rideId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  boothRideNumber: {
+    type: String,
+    required: true
+  },
+  
+  // Location information
   pickupLocation: {
     boothName: String,
     latitude: Number,
@@ -16,28 +32,109 @@ const rideHistorySchema = new mongoose.Schema({
     latitude: Number,
     longitude: Number
   },
-  fare: {
-    type: Number,
+  
+  // Ride details
+  vehicleType: {
+    type: String,
+    enum: ['bike', 'auto', 'car'],
     required: true
   },
   distance: {
     type: Number,
     required: true
   },
+  estimatedFare: {
+    type: Number,
+    required: true
+  },
+  actualFare: {
+    type: Number,
+    required: true
+  },
+  
+  // Status and completion
   status: {
     type: String,
     enum: ['completed', 'cancelled'],
     required: true
   },
-  driverName: {
+  cancellationReason: String,
+  cancelledBy: {
     type: String,
-    required: true
+    enum: ['user', 'driver', 'system']
   },
-  driverPhone: {
+  
+  // Driver information
+  driverName: String,
+  driverPhone: String,
+  driverVehicleNo: String,
+  driverRating: {
+    type: Number,
+    min: 0,
+    max: 5
+  },
+  
+  // Journey timeline
+  timestamps: {
+    requested: {
+      type: Date,
+      required: true
+    },
+    driverAssigned: Date,
+    rideStarted: Date,
+    rideEnded: Date,
+    completed: Date,
+    cancelled: Date
+  },
+  
+  // Payment information
+  paymentStatus: {
     type: String,
-    required: true
+    enum: ['pending', 'collected', 'online'],
+    default: 'collected'
   },
-  timestamp: {
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'online', 'upi'],
+    default: 'cash'
+  },
+  paymentCollectedAt: Date,
+  
+  // Ratings and feedback
+  userRating: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5
+    },
+    feedback: String,
+    ratedAt: Date
+  },
+  driverRatingForUser: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5
+    },
+    feedback: String,
+    ratedAt: Date
+  },
+  
+  // Journey statistics
+  journeyStats: {
+    totalDuration: Number, // in minutes
+    waitingTime: Number, // time from request to ride start
+    rideDuration: Number, // actual ride time
+    averageSpeed: Number,
+    routeEfficiency: Number // percentage compared to optimal route
+  },
+  
+  // System metadata
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
     type: Date,
     default: Date.now
   }

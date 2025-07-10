@@ -8,7 +8,7 @@ const User = require('../models/User');
 const MetroStation = require('../models/MetroStation');
 const RideRequest = require('../models/RideRequest');
 const { calculateFareEstimates } = require('../utils/fareCalculator');
-const { generateRideId, generateRideOTPs } = require('../utils/otpUtils');
+const { generateRideId, generateRideOTPs, generateBoothRideNumber } = require('../utils/otpUtils');
 const { logRideEvent, logUserAction } = require('../utils/rideLogger');
 const { getIO } = require('../socket');
 
@@ -130,6 +130,24 @@ router.put('/profile', protectUser, async (req, res) => {
 router.get('/metro-stations', async (req, res) => {
   try {
     console.log('\n=== GET METRO STATIONS FOR USER ===');
+    console.log('Request headers:', req.headers);
+    console.log('Database connection state:', require('mongoose').connection.readyState);
+    
+    // Check database connection
+    if (require('mongoose').connection.readyState !== 1) {
+      console.error('❌ Database not connected');
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection unavailable',
+        error: 'Database not connected'
+      });
+    }
+    
+    // Test basic MetroStation model access
+    const totalStations = await MetroStation.countDocuments();
+    const activeStations = await MetroStation.countDocuments({ isActive: true });
+    
+    console.log(`📊 Database stats: ${totalStations} total stations, ${activeStations} active`);
     
     const stations = await MetroStation.find({ isActive: true })
       .select('id name line lat lng')
@@ -150,6 +168,7 @@ router.get('/metro-stations', async (req, res) => {
     });
     
     console.log(`✅ Returning ${stations.length} metro stations grouped by line`);
+    console.log(`📋 Lines available: ${Object.keys(stationsByLine).join(', ')}`);
     
     res.json({
       success: true,
@@ -163,15 +182,24 @@ router.get('/metro-stations', async (req, res) => {
         })),
         stationsByLine,
         totalStations: stations.length
+      },
+      meta: {
+        totalInDb: totalStations,
+        activeInDb: activeStations,
+        returned: stations.length,
+        timestamp: new Date().toISOString()
       }
     });
     
   } catch (error) {
     console.error('❌ Error getting metro stations:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Error getting metro stations',
-      error: error.message
+      error: error.message,
+      errorType: error.name,
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -303,6 +331,9 @@ router.post('/book-ride', protectUser, async (req, res) => {
     const rideId = generateRideId();
     const { startOTP, endOTP } = generateRideOTPs();
     
+    // Generate booth-specific ride number
+    const boothRideNumber = await generateBoothRideNumber(pickupStation);
+    
     // Calculate distance for database storage
     const { calculateDistance } = require('../utils/fareCalculator');
     const distance = calculateDistance(
@@ -330,6 +361,7 @@ router.post('/book-ride', protectUser, async (req, res) => {
       fare: estimatedFare,
       estimatedFare: estimatedFare,
       rideId: rideId,
+      boothRideNumber: boothRideNumber,
       startOTP: startOTP,
       endOTP: endOTP,
       status: 'pending'
@@ -391,6 +423,7 @@ router.post('/book-ride', protectUser, async (req, res) => {
       data: {
         rideId: rideRequest._id,
         uniqueRideId: rideId,
+        boothRideNumber: boothRideNumber,
         status: 'pending',
         pickupStation: pickupStation,
         dropLocation: dropLocation,

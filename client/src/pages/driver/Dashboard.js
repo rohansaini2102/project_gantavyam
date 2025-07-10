@@ -46,6 +46,18 @@ const DriverDashboard = () => {
   // Error handling
   const [statusError, setStatusError] = useState('');
   const [rideError, setRideError] = useState('');
+  const [metroStationsLoading, setMetroStationsLoading] = useState(false);
+  const [metroStationsError, setMetroStationsError] = useState('');
+
+  // Tab and history state
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' or 'history'
+  const [rideHistory, setRideHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyHasMore, setHistoryHasMore] = useState(true);
+  const [historyFilter, setHistoryFilter] = useState('all'); // 'all', 'completed', 'cancelled'
+  const [driverStats, setDriverStats] = useState(null);
 
   console.log('[DriverDashboard] Component mounted');
 
@@ -68,8 +80,26 @@ const DriverDashboard = () => {
       
       // Initialize socket connection
       console.log('[DriverDashboard] Initializing socket connection...');
-      const socketInstance = initializeSocket(token);
-      setSocket(socketInstance);
+      const initSocket = async () => {
+        try {
+          const socketInstance = initializeSocket(token);
+          
+          // Check if it's a Promise
+          if (socketInstance && typeof socketInstance.then === 'function') {
+            console.log('[DriverDashboard] Waiting for socket initialization...');
+            const actualSocket = await socketInstance;
+            setSocket(actualSocket);
+          } else {
+            // It's already a socket object or null
+            setSocket(socketInstance);
+          }
+        } catch (error) {
+          console.error('[DriverDashboard] Socket initialization failed:', error);
+          setSocket(null);
+        }
+      };
+      
+      initSocket();
       
       // Check socket connection status
       const checkConnection = () => {
@@ -89,20 +119,67 @@ const DriverDashboard = () => {
     }
   }, [navigate]);
 
+  // Function to load metro stations with retry logic
+  const loadMetroStations = async (retryCount = 0) => {
+    const maxRetries = 3;
+    
+    try {
+      console.log(`[DriverDashboard] Loading metro stations... (attempt ${retryCount + 1})`);
+      
+      setMetroStationsLoading(true);
+      setMetroStationsError('');
+      
+      const response = await drivers.getMetroStations();
+      console.log('[DriverDashboard] Metro stations loaded:', response.data);
+      
+      if (response.data && response.data.stations) {
+        setMetroStations(response.data.stations);
+        setMetroStationsLoading(false);
+        console.log(`✅ [DriverDashboard] Successfully loaded ${response.data.stations.length} metro stations`);
+      } else {
+        throw new Error('Invalid response structure: no stations data');
+      }
+      
+    } catch (error) {
+      console.error(`❌ [DriverDashboard] Error loading metro stations (attempt ${retryCount + 1}):`, error);
+      
+      if (retryCount < maxRetries) {
+        // Retry with exponential backoff
+        const retryDelay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        console.log(`🔄 [DriverDashboard] Retrying in ${retryDelay}ms...`);
+        
+        setMetroStationsError(`Loading... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        
+        setTimeout(() => {
+          loadMetroStations(retryCount + 1);
+        }, retryDelay);
+      } else {
+        // All retries failed, use fallback
+        console.warn('⚠️ [DriverDashboard] All retries failed, using fallback metro stations');
+        
+        // Try to use fallback data
+        try {
+          const fallbackModule = await import('../../data/delhiMetroStations.js');
+          const fallbackStations = fallbackModule.DELHI_METRO_STATIONS;
+          if (fallbackStations && fallbackStations.length > 0) {
+            setMetroStations(fallbackStations);
+            setMetroStationsLoading(false);
+            setMetroStationsError('Using offline data (limited functionality)');
+            console.log(`✅ [DriverDashboard] Loaded ${fallbackStations.length} fallback stations`);
+          } else {
+            throw new Error('Fallback data not available');
+          }
+        } catch (fallbackError) {
+          console.error('❌ [DriverDashboard] Fallback also failed:', fallbackError);
+          setMetroStationsLoading(false);
+          setMetroStationsError(`Failed to load metro stations: ${error.message}`);
+        }
+      }
+    }
+  };
+
   // Load metro stations for booth selection
   useEffect(() => {
-    const loadMetroStations = async () => {
-      try {
-        console.log('[DriverDashboard] Loading metro stations...');
-        const response = await drivers.getMetroStations();
-        console.log('[DriverDashboard] Metro stations loaded:', response.data);
-        setMetroStations(response.data.stations || []);
-      } catch (error) {
-        console.error('[DriverDashboard] Error loading metro stations:', error);
-        setStatusError('Failed to load metro stations');
-      }
-    };
-
     if (driver) {
       loadMetroStations();
     }
@@ -146,7 +223,7 @@ const DriverDashboard = () => {
           if (isOnline && socketConnected && activeRide) {
             updateDriverLocation({
               location,
-              rideId: activeRide.rideId,
+              rideId: activeRide._id,
               bearing: position.coords.heading,
               speed: position.coords.speed,
               timestamp: new Date().toISOString()
@@ -172,12 +249,25 @@ const DriverDashboard = () => {
       
       subscribeToDriverUpdates({
         onNewRideRequest: (data) => {
-          console.log('[DriverDashboard] New ride request:', data);
+          console.log('🚨 [DriverDashboard] NEW RIDE REQUEST RECEIVED:', {
+            rideId: data._id,
+            uniqueRideId: data.rideId,
+            boothRideNumber: data.boothRideNumber,
+            pickupStation: data.pickupLocation?.boothName,
+            vehicleType: data.vehicleType,
+            estimatedFare: data.estimatedFare,
+            userName: data.userName,
+            timestamp: new Date().toISOString()
+          });
+          
           setRideRequests(prev => {
             // Check if request already exists
-            if (prev.find(r => r._id === data._id)) {
+            const existingRequest = prev.find(r => r._id === data._id);
+            if (existingRequest) {
+              console.log('⚠️ [DriverDashboard] Duplicate ride request, ignoring');
               return prev;
             }
+            console.log('✅ [DriverDashboard] Adding new ride request to list');
             return [...prev, data];
           });
         },
@@ -226,8 +316,23 @@ const DriverDashboard = () => {
         
         onRideEnded: (data) => {
           console.log('[DriverDashboard] Ride ended:', data);
-          setActiveRide(null);
+          // Keep ride active to show completion status
+          setActiveRide(prev => ({ ...prev, ...data, status: 'ride_ended' }));
           setShowOTPInput(null);
+        },
+        
+        onRideCompleted: (data) => {
+          console.log('[DriverDashboard] Ride completed automatically:', data);
+          // Update ride status to completed
+          setActiveRide(prev => ({ ...prev, ...data, status: 'completed' }));
+          setShowOTPInput(null);
+          setRideError('');
+          
+          // Clear active ride after showing completion message
+          setTimeout(() => {
+            setActiveRide(null);
+            console.log('[DriverDashboard] ✅ Ride cleared from dashboard - moved to history');
+          }, 4000);
         },
         
         onRideCancelled: (data) => {
@@ -250,8 +355,28 @@ const DriverDashboard = () => {
         }
       });
 
+      // Add room info listener for debugging
+      if (socket && typeof socket.on === 'function') {
+        socket.on('roomInfo', (data) => {
+          console.log('🔍 [DriverDashboard] Room Info Response:', data);
+          console.log('📊 Socket room details:', {
+            socketId: data.socketId,
+            userId: data.userId,
+            role: data.role,
+            rooms: data.rooms,
+            driversOnline: data.driversOnline,
+            inDriversRoom: data.inDriversRoom
+          });
+        });
+      } else {
+        console.warn('⚠️ [DriverDashboard] Socket not available for roomInfo listener');
+      }
+
       return () => {
         unsubscribeFromDriverUpdates();
+        if (socket && typeof socket.off === 'function') {
+          socket.off('roomInfo');
+        }
       };
     }
   }, [socket, socketConnected, selectedRequest]);
@@ -282,6 +407,44 @@ const DriverDashboard = () => {
       // Going offline
       console.log('[DriverDashboard] Going offline...');
       driverGoOffline();
+    }
+  };
+
+  // Debug function to check driver status
+  const handleDebugStatus = async () => {
+    try {
+      console.log('🔍 [DriverDashboard] Requesting debug status...');
+      
+      // Check socket connection
+      if (socket && typeof socket.emit === 'function') {
+        socket.emit('getRoomInfo');
+        console.log('📡 [DriverDashboard] Requested room info from socket');
+      } else {
+        console.warn('⚠️ [DriverDashboard] Socket not available for getRoomInfo');
+      }
+      
+      // Get server-side status
+      const response = await drivers.get('/debug/status');
+      console.log('📊 [DriverDashboard] Server debug status:', response.data);
+      
+      // Show status in alert for quick viewing
+      const debugInfo = response.data.data;
+      alert(`Debug Status:
+Total Drivers: ${debugInfo.summary.totalDrivers}
+Online Drivers: ${debugInfo.summary.onlineDrivers}
+Drivers in Socket Room: ${debugInfo.summary.driversInSocketRoom}
+
+Current Driver Status:
+Socket Connected: ${socketConnected}
+Is Online: ${isOnline}
+Metro Booth: ${selectedMetroBooth}
+Vehicle Type: ${vehicleType}
+
+Check console for detailed information.`);
+      
+    } catch (error) {
+      console.error('❌ [DriverDashboard] Error getting debug status:', error);
+      alert('Error getting debug status. Check console for details.');
     }
   };
 
@@ -330,14 +493,153 @@ const DriverDashboard = () => {
     }
 
     const otpData = {
-      rideId: activeRide.rideId || activeRide._id,
+      rideId: activeRide._id || activeRide.rideId,
       otp: otpInput.trim()
     };
 
+    console.log('[DriverDashboard] Verifying OTP:', {
+      type: showOTPInput.type,
+      rideId: otpData.rideId,
+      otp: otpData.otp
+    });
+
+    // Add callback handling for OTP verification
+    const handleOTPResponse = (response) => {
+      console.log('[DriverDashboard] OTP verification response:', response);
+      
+      if (response && response.success) {
+        console.log('[DriverDashboard] OTP verified successfully');
+        setOtpInput('');
+        setShowOTPInput(null);
+        setRideError('');
+        
+        // Update ride status based on OTP type
+        if (showOTPInput.type === 'start') {
+          setActiveRide(prev => ({ ...prev, status: 'ride_started' }));
+        } else if (showOTPInput.type === 'end') {
+          setActiveRide(prev => ({ ...prev, status: 'ride_ended' }));
+        }
+      } else {
+        console.error('[DriverDashboard] OTP verification failed:', response);
+        setRideError(response?.message || 'Invalid OTP. Please try again.');
+      }
+    };
+
     if (showOTPInput.type === 'start') {
-      verifyStartOTP(otpData);
+      verifyStartOTP(otpData, handleOTPResponse);
     } else if (showOTPInput.type === 'end') {
-      verifyEndOTP(otpData);
+      verifyEndOTP(otpData, handleOTPResponse);
+    }
+  };
+
+  // Collect Payment
+  const collectPayment = async () => {
+    if (!activeRide) {
+      setRideError('No active ride found');
+      return;
+    }
+
+    try {
+      console.log('[DriverDashboard] Collecting payment for ride:', activeRide._id);
+      const response = await drivers.collectPayment({
+        rideId: activeRide._id || activeRide.rideId,
+        paymentMethod: 'cash'
+      });
+
+      console.log('[DriverDashboard] Payment collected successfully:', response);
+      
+      // Update local state
+      setActiveRide(prev => ({
+        ...prev,
+        paymentStatus: 'collected',
+        status: 'completed'
+      }));
+
+      // Clear active ride after a delay
+      setTimeout(() => {
+        setActiveRide(null);
+        setRideError('');
+      }, 3000);
+
+    } catch (error) {
+      console.error('[DriverDashboard] Error collecting payment:', error);
+      setRideError(error.error || 'Failed to collect payment');
+    }
+  };
+
+  // Load driver ride history
+  const loadRideHistory = async (page = 1, filter = 'all', resetHistory = false) => {
+    try {
+      setHistoryLoading(true);
+      setHistoryError('');
+      
+      console.log(`[DriverDashboard] Loading ride history: page=${page}, filter=${filter}`);
+      
+      const response = await drivers.getRideHistory(page, 10, filter);
+      console.log('[DriverDashboard] History response:', response);
+      
+      if (response.success) {
+        const newHistory = response.data.rideHistory || [];
+        
+        if (resetHistory || page === 1) {
+          setRideHistory(newHistory);
+        } else {
+          setRideHistory(prev => [...prev, ...newHistory]);
+        }
+        
+        setHistoryHasMore(newHistory.length === 10); // Has more if we got full page
+        setHistoryPage(page);
+      } else {
+        throw new Error(response.message || 'Failed to load history');
+      }
+      
+    } catch (error) {
+      console.error('[DriverDashboard] Error loading ride history:', error);
+      setHistoryError(error.message || 'Failed to load ride history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Load driver statistics
+  const loadDriverStats = async () => {
+    try {
+      console.log('[DriverDashboard] Loading driver statistics...');
+      
+      const response = await drivers.getStatistics();
+      console.log('[DriverDashboard] Stats response:', response);
+      
+      if (response.success) {
+        setDriverStats(response.data.analytics);
+      }
+      
+    } catch (error) {
+      console.error('[DriverDashboard] Error loading driver stats:', error);
+      // Don't show error for stats - it's not critical
+    }
+  };
+
+  // Handle tab change
+  const handleTabChange = (tabName) => {
+    setActiveTab(tabName);
+    
+    if (tabName === 'history' && rideHistory.length === 0) {
+      // Load history when first accessing the tab
+      loadRideHistory(1, historyFilter, true);
+      loadDriverStats();
+    }
+  };
+
+  // Handle filter change
+  const handleFilterChange = (newFilter) => {
+    setHistoryFilter(newFilter);
+    loadRideHistory(1, newFilter, true);
+  };
+
+  // Load more history (pagination)
+  const loadMoreHistory = () => {
+    if (!historyLoading && historyHasMore) {
+      loadRideHistory(historyPage + 1, historyFilter, false);
     }
   };
 
@@ -403,6 +705,20 @@ const DriverDashboard = () => {
             {isOnline ? 'ONLINE' : 'OFFLINE'}
           </button>
           <button 
+            onClick={handleDebugStatus}
+            style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: '#17a2b8',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginRight: '0.5rem'
+            }}
+          >
+            Debug
+          </button>
+          <button 
             onClick={handleLogout}
             style={{
               padding: '0.5rem 1rem',
@@ -448,8 +764,53 @@ const DriverDashboard = () => {
           </div>
         )}
 
-        {/* Status Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '2rem' }}>
+        {/* Tab Navigation */}
+        <div style={{ 
+          display: 'flex', 
+          borderBottom: '2px solid #dee2e6', 
+          marginBottom: '2rem',
+          backgroundColor: '#f8f9fa',
+          borderRadius: '8px 8px 0 0'
+        }}>
+          <button
+            onClick={() => handleTabChange('dashboard')}
+            style={{
+              padding: '1rem 2rem',
+              backgroundColor: activeTab === 'dashboard' ? '#007bff' : 'transparent',
+              color: activeTab === 'dashboard' ? '#fff' : '#007bff',
+              border: 'none',
+              borderRadius: '8px 0 0 0',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '1rem',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            🚗 Active Dashboard
+          </button>
+          <button
+            onClick={() => handleTabChange('history')}
+            style={{
+              padding: '1rem 2rem',
+              backgroundColor: activeTab === 'history' ? '#007bff' : 'transparent',
+              color: activeTab === 'history' ? '#fff' : '#007bff',
+              border: 'none',
+              borderRadius: '0 8px 0 0',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '1rem',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            📊 Ride History
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'dashboard' && (
+          <>
+            {/* Status Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '2rem' }}>
           
           {/* Driver Status & Configuration */}
           <div style={{
@@ -498,26 +859,80 @@ const DriverDashboard = () => {
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
                 Metro Booth:
               </label>
+              
+              {metroStationsLoading && (
+                <div style={{
+                  padding: '0.75rem',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  backgroundColor: '#f8f9fa',
+                  color: '#666',
+                  textAlign: 'center'
+                }}>
+                  🔄 Loading metro stations...
+                </div>
+              )}
+              
+              {metroStationsError && (
+                <div style={{
+                  padding: '0.75rem',
+                  border: '1px solid #f5c6cb',
+                  borderRadius: '4px',
+                  backgroundColor: '#f8d7da',
+                  color: '#721c24',
+                  marginBottom: '0.5rem'
+                }}>
+                  ⚠️ {metroStationsError}
+                  {metroStationsError.includes('Failed') && (
+                    <button
+                      onClick={() => loadMetroStations()}
+                      style={{
+                        marginLeft: '1rem',
+                        padding: '0.25rem 0.5rem',
+                        backgroundColor: '#007bff',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+              
               <select 
                 value={selectedMetroBooth} 
                 onChange={(e) => setSelectedMetroBooth(e.target.value)}
-                disabled={isOnline}
+                disabled={isOnline || metroStationsLoading || metroStations.length === 0}
                 style={{
                   width: '100%',
                   padding: '0.75rem',
                   border: '1px solid #ddd',
                   borderRadius: '4px',
                   fontSize: '1rem',
-                  backgroundColor: isOnline ? '#f8f9fa' : '#fff'
+                  backgroundColor: (isOnline || metroStationsLoading || metroStations.length === 0) ? '#f8f9fa' : '#fff'
                 }}
               >
-                <option value="">Select metro booth</option>
+                <option value="">
+                  {metroStationsLoading ? 'Loading stations...' : 
+                   metroStations.length === 0 ? 'No stations available' : 
+                   'Select metro booth'}
+                </option>
                 {metroStations.map(station => (
                   <option key={station.id} value={station.name}>
                     {station.name} ({station.line} Line)
                   </option>
                 ))}
               </select>
+              
+              {metroStations.length > 0 && !metroStationsLoading && (
+                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
+                  {metroStations.length} stations available
+                </div>
+              )}
             </div>
 
             {/* Vehicle Type Selection */}
@@ -553,26 +968,123 @@ const DriverDashboard = () => {
               boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
               borderLeft: '4px solid #28a745'
             }}>
-              <h3 style={{ marginTop: 0, color: '#333' }}>Active Ride</h3>
-              <div style={{ marginBottom: '1rem' }}>
-                <p style={{ margin: '0.5rem 0' }}><strong>Passenger:</strong> {activeRide.userName}</p>
-                <p style={{ margin: '0.5rem 0' }}><strong>Phone:</strong> {activeRide.userPhone}</p>
-                <p style={{ margin: '0.5rem 0' }}><strong>Pickup:</strong> {activeRide.pickupLocation?.boothName || activeRide.pickupLocation?.stationName}</p>
-                <p style={{ margin: '0.5rem 0' }}><strong>Drop:</strong> {activeRide.dropLocation?.address}</p>
-                <p style={{ margin: '0.5rem 0' }}><strong>Fare:</strong> ₹{activeRide.fare || activeRide.estimatedFare}</p>
-                <p style={{ margin: '0.5rem 0' }}>
-                  <strong>Status:</strong> 
-                  <span style={{ 
-                    marginLeft: '0.5rem',
-                    padding: '0.25rem 0.5rem', 
-                    borderRadius: '4px', 
-                    backgroundColor: activeRide.status === 'driver_assigned' ? '#17a2b8' : 
-                                    activeRide.status === 'ride_started' ? '#28a745' : '#6c757d',
-                    color: '#fff'
-                  }}>
-                    {activeRide.status?.replace('_', ' ').toUpperCase()}
-                  </span>
-                </p>
+              {/* Booth Ride Number - Prominent Display */}
+              {activeRide.boothRideNumber && (
+                <div style={{
+                  backgroundColor: '#ffc107',
+                  color: '#000',
+                  padding: '1rem',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  marginBottom: '1.5rem',
+                  fontSize: '1.2rem',
+                  fontWeight: 'bold'
+                }}>
+                  Ride #{activeRide.boothRideNumber}
+                </div>
+              )}
+              
+              <h3 style={{ marginTop: 0, color: '#333', marginBottom: '1.5rem' }}>Active Ride Details</h3>
+              
+              {/* Rider Information Card */}
+              <div style={{
+                backgroundColor: '#fff',
+                padding: '1.5rem',
+                borderRadius: '8px',
+                marginBottom: '1.5rem',
+                border: '1px solid #dee2e6'
+              }}>
+                <h4 style={{ marginTop: 0, marginBottom: '1rem', color: '#333' }}>
+                  🚶 Rider Information
+                </h4>
+                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  {activeRide.userName || 'Unknown Rider'}
+                </div>
+                {activeRide.userPhone && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    <span style={{ fontSize: '1.1rem' }}>📞 {activeRide.userPhone}</span>
+                    <a 
+                      href={`tel:${activeRide.userPhone}`}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: '#007bff',
+                        color: '#fff',
+                        textDecoration: 'none',
+                        borderRadius: '4px',
+                        fontSize: '0.9rem'
+                      }}
+                    >
+                      Call Rider
+                    </a>
+                  </div>
+                )}
+              </div>
+              
+              {/* Trip Details */}
+              <div style={{
+                backgroundColor: '#fff',
+                padding: '1.5rem',
+                borderRadius: '8px',
+                marginBottom: '1.5rem',
+                border: '1px solid #dee2e6'
+              }}>
+                <h4 style={{ marginTop: 0, marginBottom: '1rem', color: '#333' }}>
+                  📍 Trip Details
+                </h4>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <strong style={{ color: '#28a745' }}>Pickup:</strong>
+                  <div style={{ marginLeft: '1rem', marginTop: '0.25rem' }}>
+                    {activeRide.pickupLocation?.boothName || 
+                     activeRide.pickupLocation?.stationName || 
+                     activeRide.pickupStation || 
+                     'Location not specified'}
+                  </div>
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <strong style={{ color: '#dc3545' }}>Drop:</strong>
+                  <div style={{ marginLeft: '1rem', marginTop: '0.25rem' }}>
+                    {activeRide.dropLocation?.address || 'Destination not specified'}
+                  </div>
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <strong>Vehicle Type:</strong> {activeRide.vehicleType?.toUpperCase() || 'Not specified'}
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <strong>Distance:</strong> {activeRide.distance ? `${activeRide.distance}km` : 'Calculating...'}
+                </div>
+              </div>
+              
+              {/* Fare Display */}
+              <div style={{
+                backgroundColor: '#fff3cd',
+                padding: '1.5rem',
+                borderRadius: '8px',
+                marginBottom: '1.5rem',
+                border: '1px solid #ffeaa7',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '0.9rem', color: '#856404', marginBottom: '0.5rem' }}>
+                  Total Fare
+                </div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#856404' }}>
+                  ₹{activeRide.fare || activeRide.estimatedFare}
+                </div>
+              </div>
+              
+              {/* Status Display */}
+              <div style={{ marginBottom: '1rem', textAlign: 'center' }}>
+                <span style={{ 
+                  padding: '0.5rem 1.5rem', 
+                  borderRadius: '4px', 
+                  backgroundColor: activeRide.status === 'driver_assigned' ? '#17a2b8' : 
+                                  activeRide.status === 'ride_started' ? '#28a745' : 
+                                  activeRide.status === 'ride_ended' ? '#ffc107' : '#6c757d',
+                  color: '#fff',
+                  fontSize: '1.1rem',
+                  fontWeight: 'bold'
+                }}>
+                  {activeRide.status?.replace('_', ' ').toUpperCase()}
+                </span>
               </div>
 
               {/* OTP Section */}
@@ -616,43 +1128,134 @@ const DriverDashboard = () => {
                 </div>
               )}
 
-              {/* OTP Input */}
+              {/* Ride Completion Status */}
+              {activeRide.status === 'ride_ended' && (
+                <div style={{
+                  backgroundColor: '#fff3cd',
+                  padding: '1rem',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  marginBottom: '1rem'
+                }}>
+                  <div style={{ fontSize: '1.2rem', color: '#856404' }}>
+                    🏁 Ride Ended - Processing...
+                  </div>
+                  <div style={{ marginTop: '0.5rem' }}>
+                    Payment collection and ride completion in progress
+                  </div>
+                </div>
+              )}
+
+              {/* Ride Completed Status */}
+              {activeRide.status === 'completed' && (
+                <div style={{
+                  backgroundColor: '#d4edda',
+                  padding: '1rem',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  marginBottom: '1rem'
+                }}>
+                  <div style={{ fontSize: '1.2rem', color: '#155724' }}>
+                    ✅ Ride Completed Successfully!
+                  </div>
+                  <div style={{ marginTop: '0.5rem' }}>
+                    Payment: ₹{activeRide.actualFare || activeRide.fare || activeRide.estimatedFare} (Cash)
+                  </div>
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
+                    Ride data saved to history. Dashboard will clear automatically.
+                  </div>
+                </div>
+              )}
+
+              {/* Enhanced OTP Input Interface */}
               {showOTPInput && (
                 <div style={{ 
-                  padding: '1rem', 
-                  backgroundColor: '#fff3cd', 
-                  borderRadius: '4px',
-                  border: '1px solid #ffeaa7'
+                  padding: '1.5rem', 
+                  backgroundColor: showOTPInput.type === 'start' ? '#d4edda' : '#fff3cd', 
+                  borderRadius: '8px',
+                  border: showOTPInput.type === 'start' ? '2px solid #28a745' : '2px solid #ffc107',
+                  marginTop: '1rem'
                 }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                    {showOTPInput.label}:
-                  </label>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <div style={{ 
+                    textAlign: 'center',
+                    marginBottom: '1rem'
+                  }}>
+                    <div style={{ 
+                      fontSize: '1.2rem', 
+                      fontWeight: 'bold', 
+                      color: '#333',
+                      marginBottom: '0.5rem'
+                    }}>
+                      {showOTPInput.type === 'start' ? '🚀 Start Ride Verification' : '🏁 End Ride Verification'}
+                    </div>
+                    <div style={{ 
+                      fontSize: '0.9rem', 
+                      color: '#666' 
+                    }}>
+                      {showOTPInput.type === 'start' ? 
+                        'Ask the rider for their Start OTP to begin the ride' : 
+                        'Ask the rider for their End OTP to complete the ride'
+                      }
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                     <input
                       type="text"
                       value={otpInput}
-                      onChange={(e) => setOtpInput(e.target.value)}
-                      placeholder="Enter OTP"
-                      maxLength="6"
+                      onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="Enter 4-digit OTP"
+                      maxLength="4"
                       style={{
                         flex: 1,
-                        padding: '0.5rem',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px'
+                        padding: '1rem',
+                        border: '2px solid #ddd',
+                        borderRadius: '8px',
+                        fontSize: '1.2rem',
+                        textAlign: 'center',
+                        fontWeight: 'bold',
+                        letterSpacing: '0.2rem'
                       }}
+                      autoFocus
                     />
                     <button
                       onClick={handleOTPVerification}
+                      disabled={otpInput.length !== 4}
                       style={{
-                        padding: '0.5rem 1rem',
-                        backgroundColor: '#007bff',
+                        padding: '1rem 1.5rem',
+                        backgroundColor: otpInput.length === 4 ? '#007bff' : '#6c757d',
                         color: '#fff',
                         border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer'
+                        borderRadius: '8px',
+                        cursor: otpInput.length === 4 ? 'pointer' : 'not-allowed',
+                        fontWeight: 'bold',
+                        fontSize: '1rem'
                       }}
                     >
-                      Verify
+                      Verify OTP
+                    </button>
+                  </div>
+                  
+                  <div style={{ 
+                    textAlign: 'center',
+                    marginTop: '1rem'
+                  }}>
+                    <button
+                      onClick={() => {
+                        setShowOTPInput(null);
+                        setOtpInput('');
+                      }}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: 'transparent',
+                        color: '#666',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '0.9rem'
+                      }}
+                    >
+                      Cancel
                     </button>
                   </div>
                 </div>
@@ -696,6 +1299,22 @@ const DriverDashboard = () => {
                     }}
                     onClick={() => setSelectedRequest(request)}
                   >
+                    {/* Booth Ride Number - Prominent Display */}
+                    {request.boothRideNumber && (
+                      <div style={{
+                        backgroundColor: '#007bff',
+                        color: '#fff',
+                        padding: '0.75rem',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                        marginBottom: '1rem',
+                        fontSize: '1.1rem',
+                        fontWeight: 'bold'
+                      }}>
+                        Ride #{request.boothRideNumber}
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                       <div>
                         <h4 style={{ margin: '0 0 0.5rem 0', color: '#333' }}>{request.userName}</h4>
@@ -861,6 +1480,249 @@ const DriverDashboard = () => {
             </GoogleMap>
           </div>
         </div>
+        </>
+        )}
+
+        {/* History Tab Content */}
+        {activeTab === 'history' && (
+          <div>
+            {/* Driver Statistics Cards */}
+            {driverStats && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{
+                  backgroundColor: '#fff',
+                  padding: '1.5rem',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#28a745' }}>
+                    {driverStats.totalRides || 0}
+                  </div>
+                  <div style={{ color: '#666', marginTop: '0.5rem' }}>Total Rides</div>
+                </div>
+
+                <div style={{
+                  backgroundColor: '#fff',
+                  padding: '1.5rem',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#ffc107' }}>
+                    ₹{driverStats.totalEarnings || 0}
+                  </div>
+                  <div style={{ color: '#666', marginTop: '0.5rem' }}>Total Earnings</div>
+                </div>
+
+                <div style={{
+                  backgroundColor: '#fff',
+                  padding: '1.5rem',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#17a2b8' }}>
+                    {driverStats.averageRating || 0}/5
+                  </div>
+                  <div style={{ color: '#666', marginTop: '0.5rem' }}>Average Rating</div>
+                </div>
+
+                <div style={{
+                  backgroundColor: '#fff',
+                  padding: '1.5rem',
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#6f42c1' }}>
+                    {Math.round(driverStats.averageDistance || 0)} km
+                  </div>
+                  <div style={{ color: '#666', marginTop: '0.5rem' }}>Avg Distance</div>
+                </div>
+              </div>
+            )}
+
+            {/* Filter Controls */}
+            <div style={{
+              backgroundColor: '#fff',
+              padding: '1rem',
+              borderRadius: '8px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              marginBottom: '2rem'
+            }}>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 'bold', color: '#333' }}>Filter:</span>
+                {['all', 'completed', 'cancelled'].map(filter => (
+                  <button
+                    key={filter}
+                    onClick={() => handleFilterChange(filter)}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      backgroundColor: historyFilter === filter ? '#007bff' : '#f8f9fa',
+                      color: historyFilter === filter ? '#fff' : '#333',
+                      border: '1px solid #dee2e6',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: historyFilter === filter ? 'bold' : 'normal',
+                      textTransform: 'capitalize'
+                    }}
+                  >
+                    {filter === 'all' ? 'All Rides' : filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* History Error */}
+            {historyError && (
+              <div style={{
+                backgroundColor: '#f8d7da',
+                color: '#721c24',
+                padding: '1rem',
+                borderRadius: '4px',
+                marginBottom: '2rem',
+                border: '1px solid #f5c6cb'
+              }}>
+                History Error: {historyError}
+              </div>
+            )}
+
+            {/* Ride History Table */}
+            <div style={{
+              backgroundColor: '#fff',
+              borderRadius: '8px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              overflow: 'hidden'
+            }}>
+              <div style={{
+                backgroundColor: '#f8f9fa',
+                padding: '1rem',
+                borderBottom: '1px solid #dee2e6',
+                fontWeight: 'bold',
+                fontSize: '1.1rem'
+              }}>
+                📋 Ride History ({rideHistory.length} rides)
+              </div>
+
+              {historyLoading && rideHistory.length === 0 ? (
+                <div style={{ padding: '3rem', textAlign: 'center', color: '#666' }}>
+                  Loading ride history...
+                </div>
+              ) : rideHistory.length === 0 ? (
+                <div style={{ padding: '3rem', textAlign: 'center', color: '#666' }}>
+                  No rides found. Start accepting rides to build your history!
+                </div>
+              ) : (
+                <>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#f8f9fa' }}>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Date</th>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Ride ID</th>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Passenger</th>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Route</th>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Vehicle</th>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Fare</th>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Status</th>
+                          <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rideHistory.map((ride, index) => (
+                          <tr key={ride._id || index} style={{ 
+                            backgroundColor: index % 2 === 0 ? '#fff' : '#f8f9fa',
+                            borderBottom: '1px solid #dee2e6'
+                          }}>
+                            <td style={{ padding: '1rem' }}>
+                              {new Date(ride.timestamps?.requested || ride.createdAt).toLocaleDateString()}
+                              <br />
+                              <small style={{ color: '#666' }}>
+                                {new Date(ride.timestamps?.requested || ride.createdAt).toLocaleTimeString()}
+                              </small>
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <strong>{ride.boothRideNumber}</strong>
+                              <br />
+                              <small style={{ color: '#666' }}>{ride.rideId}</small>
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              {ride.user?.name || ride.userName || 'Unknown'}
+                              <br />
+                              <small style={{ color: '#666' }}>
+                                {ride.user?.mobileNo || ride.userPhone || ''}
+                              </small>
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <strong>{ride.pickupLocation?.boothName}</strong>
+                              <br />
+                              <small style={{ color: '#666' }}>
+                                to {ride.dropLocation?.address?.substring(0, 30)}...
+                              </small>
+                            </td>
+                            <td style={{ padding: '1rem', textTransform: 'uppercase' }}>
+                              {ride.vehicleType}
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <strong style={{ color: '#28a745' }}>₹{ride.actualFare}</strong>
+                              {ride.estimatedFare !== ride.actualFare && (
+                                <>
+                                  <br />
+                                  <small style={{ color: '#666' }}>Est: ₹{ride.estimatedFare}</small>
+                                </>
+                              )}
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              <span style={{
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '4px',
+                                backgroundColor: ride.status === 'completed' ? '#d4edda' : '#f8d7da',
+                                color: ride.status === 'completed' ? '#155724' : '#721c24',
+                                fontSize: '0.8rem',
+                                fontWeight: 'bold',
+                                textTransform: 'uppercase'
+                              }}>
+                                {ride.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: '1rem' }}>
+                              {ride.journeyStats?.rideDuration ? 
+                                `${ride.journeyStats.rideDuration} min` : 
+                                '-'
+                              }
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Load More Button */}
+                  {historyHasMore && (
+                    <div style={{ padding: '1rem', textAlign: 'center', borderTop: '1px solid #dee2e6' }}>
+                      <button
+                        onClick={loadMoreHistory}
+                        disabled={historyLoading}
+                        style={{
+                          padding: '0.75rem 2rem',
+                          backgroundColor: historyLoading ? '#6c757d' : '#007bff',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: historyLoading ? 'not-allowed' : 'pointer',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {historyLoading ? 'Loading...' : 'Load More Rides'}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
       </main>
     </div>

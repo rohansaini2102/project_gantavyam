@@ -270,11 +270,20 @@ const UserDashboard = () => {
         
         onRideEnded: (data) => {
           console.log('[UserDashboard] Ride ended:', data);
+          // Keep ride active to show completion processing
+          setActiveRide(prev => ({ ...prev, ...data, status: 'ride_ended' }));
+          setShowOTP(null);
+        },
+        
+        onRideCompleted: (data) => {
+          console.log('[UserDashboard] Ride completed automatically:', data);
           setActiveRide(null);
           setShowOTP(null);
-          // Reload ride history
+          // Reload ride history to show the completed ride
           users.getRideHistory(1, 5).then(response => {
             setRideHistory(response.data?.rideHistory || []);
+          }).catch(error => {
+            console.error('[UserDashboard] Error reloading ride history:', error);
           });
         },
         
@@ -294,6 +303,17 @@ const UserDashboard = () => {
               driverLocation: data.location
             }));
           }
+        },
+        
+        onPaymentCollected: (data) => {
+          console.log('[UserDashboard] Payment collected:', data);
+          setActiveRide(null);
+          setShowOTP(null);
+          setBookingError(`✅ Payment collected! Ride completed. Amount: ₹${data.amount}`);
+          // Reload ride history
+          users.getRideHistory(1, 5).then(response => {
+            setRideHistory(response.data?.rideHistory || []);
+          });
         }
       });
 
@@ -718,6 +738,24 @@ const UserDashboard = () => {
             borderLeft: '4px solid #28a745'
           }}>
             <h2 style={{ marginTop: 0, color: '#333' }}>Active Ride</h2>
+            
+            {/* Booth Ride Number - Prominent Display */}
+            {activeRide.boothRideNumber && (
+              <div style={{
+                backgroundColor: '#ffc107',
+                color: '#000',
+                padding: '1rem',
+                borderRadius: '4px',
+                textAlign: 'center',
+                marginBottom: '1.5rem',
+                fontSize: '1.3rem',
+                fontWeight: 'bold',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+              }}>
+                🎫 Your Ride Number: {activeRide.boothRideNumber}
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
               <div>
                 <strong>Ride ID:</strong><br />
@@ -730,10 +768,13 @@ const UserDashboard = () => {
                   borderRadius: '4px', 
                   backgroundColor: activeRide.status === 'pending' ? '#ffc107' : 
                                   activeRide.status === 'driver_assigned' ? '#17a2b8' : 
-                                  activeRide.status === 'ride_started' ? '#28a745' : '#6c757d',
+                                  activeRide.status === 'ride_started' ? '#28a745' : 
+                                  activeRide.status === 'ride_ended' ? '#fd7e14' :
+                                  activeRide.status === 'completed' ? '#28a745' : '#6c757d',
                   color: '#fff'
                 }}>
-                  {activeRide.status?.replace('_', ' ').toUpperCase()}
+                  {activeRide.status === 'ride_ended' ? 'COMPLETING...' : 
+                   activeRide.status?.replace('_', ' ').toUpperCase()}
                 </span>
               </div>
               <div>
@@ -750,25 +791,46 @@ const UserDashboard = () => {
               </div>
             </div>
             
-            {/* OTP Display */}
+            {/* Enhanced OTP Display */}
             {showOTP && (
               <div style={{ 
-                marginTop: '1rem', 
-                padding: '1rem', 
-                backgroundColor: '#fff3cd', 
-                borderRadius: '4px',
-                border: '1px solid #ffeaa7'
+                marginTop: '1.5rem', 
+                padding: '1.5rem', 
+                backgroundColor: showOTP.type === 'start' ? '#d4edda' : '#fff3cd', 
+                borderRadius: '8px',
+                border: showOTP.type === 'start' ? '2px solid #28a745' : '2px solid #ffc107',
+                textAlign: 'center'
               }}>
-                <strong>
-                  {showOTP.type === 'start' ? 'Start OTP (Give to Driver):' : 'End OTP (For Ride Completion):'}
-                </strong>
                 <div style={{ 
-                  fontSize: '1.5rem', 
+                  fontSize: '1.1rem',
+                  fontWeight: 'bold',
+                  color: '#333',
+                  marginBottom: '1rem'
+                }}>
+                  {showOTP.type === 'start' ? '🚀 Start OTP (Give to Driver)' : '🏁 End OTP (For Ride Completion)'}
+                </div>
+                <div style={{ 
+                  fontSize: '2.5rem', 
                   fontWeight: 'bold', 
-                  color: '#e17055',
-                  marginTop: '0.5rem' 
+                  color: showOTP.type === 'start' ? '#28a745' : '#ffc107',
+                  letterSpacing: '0.2rem',
+                  fontFamily: 'monospace',
+                  backgroundColor: '#fff',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  border: '2px dashed #ccc'
                 }}>
                   {showOTP.otp}
+                </div>
+                <div style={{ 
+                  fontSize: '0.9rem',
+                  color: '#666',
+                  marginTop: '0.5rem'
+                }}>
+                  {showOTP.type === 'start' ? 
+                    'Share this OTP with your driver to start the ride' : 
+                    'Driver will ask for this OTP to complete your ride'
+                  }
                 </div>
               </div>
             )}

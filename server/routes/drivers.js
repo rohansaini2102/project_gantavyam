@@ -14,6 +14,7 @@ const MetroStation = require('../models/MetroStation');
 const { logDriverAction } = require('../utils/rideLogger');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const { getIO } = require('../socket');
 
 // Configure multer for multiple files
 const driverDocumentUpload = uploadDriverDocuments.fields([
@@ -362,6 +363,24 @@ router.get('/check-token', protect, (req, res) => {
 router.get('/metro-stations', async (req, res) => {
   try {
     console.log('\n=== GET METRO STATIONS FOR DRIVER ===');
+    console.log('Request headers:', req.headers);
+    console.log('Database connection state:', require('mongoose').connection.readyState);
+    
+    // Check database connection
+    if (require('mongoose').connection.readyState !== 1) {
+      console.error('❌ Database not connected');
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection unavailable',
+        error: 'Database not connected'
+      });
+    }
+    
+    // Test basic MetroStation model access
+    const totalStations = await MetroStation.countDocuments();
+    const activeStations = await MetroStation.countDocuments({ isActive: true });
+    
+    console.log(`📊 Database stats: ${totalStations} total stations, ${activeStations} active`);
     
     const stations = await MetroStation.find({ isActive: true })
       .select('id name line lat lng')
@@ -382,6 +401,7 @@ router.get('/metro-stations', async (req, res) => {
     });
     
     console.log(`✅ Returning ${stations.length} metro stations for driver`);
+    console.log(`📋 Lines available: ${Object.keys(stationsByLine).join(', ')}`);
     
     res.json({
       success: true,
@@ -395,14 +415,206 @@ router.get('/metro-stations', async (req, res) => {
         })),
         stationsByLine,
         totalStations: stations.length
+      },
+      meta: {
+        totalInDb: totalStations,
+        activeInDb: activeStations,
+        returned: stations.length,
+        timestamp: new Date().toISOString()
       }
     });
     
   } catch (error) {
     console.error('❌ Error getting metro stations for driver:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Error getting metro stations',
+      error: error.message,
+      errorType: error.name,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Debug endpoint to test metro station loading
+router.get('/debug/metro-stations', async (req, res) => {
+  try {
+    console.log('\n=== DEBUG METRO STATIONS ===');
+    
+    const mongoose = require('mongoose');
+    const dbState = mongoose.connection.readyState;
+    const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    
+    // Database connection info
+    const dbInfo = {
+      state: dbStates[dbState] || 'unknown',
+      stateCode: dbState,
+      name: mongoose.connection.name,
+      host: mongoose.connection.host,
+      port: mongoose.connection.port
+    };
+    
+    console.log('Database info:', dbInfo);
+    
+    // Try to get metro stations
+    let stationsResult = null;
+    let stationsError = null;
+    
+    try {
+      const totalStations = await MetroStation.countDocuments();
+      const activeStations = await MetroStation.countDocuments({ isActive: true });
+      const sampleStations = await MetroStation.find({ isActive: true }).limit(3);
+      
+      stationsResult = {
+        totalStations,
+        activeStations,
+        sampleStations: sampleStations.map(s => ({
+          id: s.id,
+          name: s.name,
+          line: s.line,
+          isActive: s.isActive
+        }))
+      };
+      
+    } catch (error) {
+      stationsError = {
+        message: error.message,
+        name: error.name,
+        stack: error.stack
+      };
+    }
+    
+    // Test MetroStation model directly
+    let modelTest = null;
+    try {
+      const MetroStationModel = require('../models/MetroStation');
+      modelTest = {
+        modelExists: !!MetroStationModel,
+        modelName: MetroStationModel.modelName || 'unknown',
+        collection: MetroStationModel.collection?.name || 'unknown'
+      };
+    } catch (error) {
+      modelTest = { error: error.message };
+    }
+    
+    res.json({
+      success: true,
+      debug: {
+        database: dbInfo,
+        stations: stationsResult,
+        stationsError: stationsError,
+        model: modelTest,
+        timestamp: new Date().toISOString(),
+        nodeEnv: process.env.NODE_ENV,
+        mongoUrl: process.env.MONGO_URL ? 'Set' : 'Not set'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Debug metro stations error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// @desc    Collect payment for a completed ride
+// @route   POST /api/drivers/collect-payment
+// @access  Private (Driver only)
+router.post('/collect-payment', protect, async (req, res) => {
+  try {
+    const { rideId, paymentMethod = 'cash' } = req.body;
+    const driverId = req.user.id;
+    
+    console.log('\n=== PAYMENT COLLECTION ===');
+    console.log('Driver ID:', driverId);
+    console.log('Ride ID:', rideId);
+    console.log('Payment Method:', paymentMethod);
+    
+    // Find the ride request
+    const RideRequest = require('../models/RideRequest');
+    const rideRequest = await RideRequest.findById(rideId);
+    
+    if (!rideRequest) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ride request not found'
+      });
+    }
+    
+    // Verify the driver owns this ride
+    if (rideRequest.driverId.toString() !== driverId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to collect payment for this ride'
+      });
+    }
+    
+    // Check if ride is in the correct status
+    if (rideRequest.status !== 'ride_ended') {
+      return res.status(400).json({
+        success: false,
+        message: 'Ride must be ended before collecting payment'
+      });
+    }
+    
+    // Check if payment already collected
+    if (rideRequest.paymentStatus === 'collected') {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment already collected for this ride'
+      });
+    }
+    
+    // Update payment status
+    rideRequest.paymentStatus = 'collected';
+    rideRequest.paymentCollectedAt = new Date();
+    rideRequest.paymentMethod = paymentMethod;
+    rideRequest.status = 'completed';
+    rideRequest.completedAt = new Date();
+    await rideRequest.save();
+    
+    // Log the payment collection
+    logDriverAction(driverId, 'payment_collected', {
+      rideId: rideRequest.rideId,
+      boothRideNumber: rideRequest.boothRideNumber,
+      amount: rideRequest.actualFare || rideRequest.estimatedFare,
+      paymentMethod: paymentMethod
+    });
+    
+    // Notify user via socket
+    const io = require('../socket').getIO();
+    io.to(`user_${rideRequest.userId}`).emit('paymentCollected', {
+      rideId: rideRequest._id,
+      uniqueRideId: rideRequest.rideId,
+      boothRideNumber: rideRequest.boothRideNumber,
+      amount: rideRequest.actualFare || rideRequest.estimatedFare,
+      paymentMethod: paymentMethod,
+      collectedAt: new Date().toISOString()
+    });
+    
+    console.log(`✅ Payment collected for ride ${rideRequest.rideId}`);
+    
+    res.json({
+      success: true,
+      message: 'Payment collected successfully',
+      data: {
+        rideId: rideRequest._id,
+        boothRideNumber: rideRequest.boothRideNumber,
+        amount: rideRequest.actualFare || rideRequest.estimatedFare,
+        paymentMethod: paymentMethod,
+        status: 'completed'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error collecting payment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error collecting payment',
       error: error.message
     });
   }
@@ -510,6 +722,374 @@ router.post('/create-test-driver', async (req, res) => {
       success: false,
       error: 'Failed to create test driver',
       message: error.message
+    });
+  }
+});
+
+// Debug endpoint to check driver online status and socket connections
+router.get('/debug/status', async (req, res) => {
+  try {
+    console.log('\n=== DRIVER DEBUG STATUS CHECK ===');
+    
+    const io = getIO();
+    if (!io) {
+      return res.status(500).json({
+        success: false,
+        error: 'Socket.IO not initialized'
+      });
+    }
+    
+    // Get all drivers
+    const allDrivers = await Driver.find({}).select('fullName mobileNo isOnline currentMetroBooth vehicleType lastActiveTime');
+    const onlineDrivers = await Driver.find({ isOnline: true });
+    
+    // Get socket room information
+    const driversRoom = io.sockets.adapter.rooms.get('drivers');
+    const driversInRoom = driversRoom ? driversRoom.size : 0;
+    
+    // Get individual driver rooms
+    const driverRooms = [];
+    onlineDrivers.forEach(driver => {
+      const roomName = `driver_${driver._id}`;
+      const room = io.sockets.adapter.rooms.get(roomName);
+      driverRooms.push({
+        driverId: driver._id.toString(),
+        driverName: driver.fullName,
+        roomName: roomName,
+        socketsInRoom: room ? room.size : 0,
+        isOnline: driver.isOnline,
+        currentMetroBooth: driver.currentMetroBooth,
+        vehicleType: driver.vehicleType
+      });
+    });
+    
+    // Get all socket rooms for debugging
+    const allRooms = {};
+    io.sockets.adapter.rooms.forEach((sockets, roomName) => {
+      if (!roomName.startsWith('/')) { // Skip internal socket.io rooms
+        allRooms[roomName] = sockets.size;
+      }
+    });
+    
+    const debugInfo = {
+      summary: {
+        totalDrivers: allDrivers.length,
+        onlineDrivers: onlineDrivers.length,
+        driversInSocketRoom: driversInRoom,
+        timestamp: new Date().toISOString()
+      },
+      onlineDriversDetail: onlineDrivers.map(driver => ({
+        id: driver._id.toString(),
+        name: driver.fullName,
+        phone: driver.mobileNo,
+        isOnline: driver.isOnline,
+        currentMetroBooth: driver.currentMetroBooth,
+        vehicleType: driver.vehicleType,
+        lastActiveTime: driver.lastActiveTime
+      })),
+      socketRooms: {
+        driversRoom: driversInRoom,
+        individualDriverRooms: driverRooms,
+        allRooms: allRooms
+      },
+      allDriversStatus: allDrivers.map(driver => ({
+        id: driver._id.toString(),
+        name: driver.fullName,
+        phone: driver.mobileNo,
+        isOnline: driver.isOnline,
+        currentMetroBooth: driver.currentMetroBooth || 'Not set',
+        vehicleType: driver.vehicleType,
+        lastActiveTime: driver.lastActiveTime
+      }))
+    };
+    
+    console.log('Debug info generated:', {
+      totalDrivers: debugInfo.summary.totalDrivers,
+      onlineDrivers: debugInfo.summary.onlineDrivers,
+      driversInRoom: debugInfo.summary.driversInSocketRoom
+    });
+    
+    res.json({
+      success: true,
+      data: debugInfo
+    });
+    
+  } catch (error) {
+    console.error('❌ Error getting driver debug status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get driver debug status',
+      message: error.message
+    });
+  }
+});
+
+// Debug endpoint to test ride request broadcast
+router.post('/debug/test-broadcast', protect, async (req, res) => {
+  try {
+    console.log('\n=== TESTING RIDE REQUEST BROADCAST ===');
+    console.log('Requester:', req.driver.fullName);
+    
+    const { pickupStation, vehicleType } = req.body;
+    
+    if (!pickupStation || !vehicleType) {
+      return res.status(400).json({
+        success: false,
+        error: 'pickupStation and vehicleType are required'
+      });
+    }
+    
+    const io = getIO();
+    if (!io) {
+      return res.status(500).json({
+        success: false,
+        error: 'Socket.IO not initialized'
+      });
+    }
+    
+    // Create test ride request data
+    const testRideData = {
+      _id: 'test_' + Date.now(),
+      rideId: 'TEST-' + Date.now(),
+      userId: 'test_user_id',
+      userName: 'Test User',
+      userPhone: '9999999999',
+      pickupLocation: {
+        boothName: pickupStation,
+        latitude: 28.6139,
+        longitude: 77.2090
+      },
+      dropLocation: {
+        address: 'Test Drop Location',
+        latitude: 28.6239,
+        longitude: 77.2190
+      },
+      vehicleType: vehicleType,
+      fare: 50,
+      estimatedFare: 50,
+      distance: 5,
+      status: 'pending',
+      timestamp: new Date().toISOString(),
+      requestNumber: 'TEST-' + Date.now(),
+      boothRideNumber: 'TEST-BOOTH-001'
+    };
+    
+    console.log('Broadcasting test ride request:', testRideData);
+    
+    // Broadcast to all drivers (test broadcast)
+    io.to('drivers').emit('newRideRequest', testRideData);
+    console.log('✅ Test broadcast sent to drivers room');
+    
+    // Also send to specific online drivers
+    const onlineDrivers = await Driver.find({ isOnline: true });
+    let specificBroadcasts = 0;
+    
+    onlineDrivers.forEach(driver => {
+      const driverRoom = `driver_${driver._id}`;
+      io.to(driverRoom).emit('newRideRequest', testRideData);
+      console.log(`📤 Test broadcast sent to ${driverRoom} (${driver.fullName})`);
+      specificBroadcasts++;
+    });
+    
+    res.json({
+      success: true,
+      message: 'Test broadcast sent successfully',
+      data: {
+        testRideData: testRideData,
+        onlineDriversTargeted: specificBroadcasts,
+        broadcastTimestamp: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error testing broadcast:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to test broadcast',
+      message: error.message
+    });
+  }
+});
+
+// @desc    Get driver ride history
+// @route   GET /api/drivers/ride-history
+// @access  Private (Driver only)
+router.get('/ride-history', protect, async (req, res) => {
+  try {
+    const driverId = req.user.id;
+    const { page = 1, limit = 10, status = 'all', startDate, endDate } = req.query;
+    
+    console.log('\\n=== DRIVER RIDE HISTORY REQUEST ===');
+    console.log('Driver ID:', driverId);
+    console.log('Query params:', { page, limit, status, startDate, endDate });
+    
+    // Import RideHistory model
+    const RideHistory = require('../models/RideHistory');
+    
+    // Build query filter
+    const filter = { driverId: driverId };
+    
+    // Add status filter
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+    
+    // Add date range filter
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) {
+        filter.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        filter.createdAt.$lte = new Date(endDate);
+      }
+    }
+    
+    // Calculate pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    
+    // Get total count for pagination
+    const totalRides = await RideHistory.countDocuments(filter);
+    
+    // Get ride history with user details
+    const rideHistory = await RideHistory.find(filter)
+      .populate('userId', 'name mobileNo email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+    
+    // Calculate summary statistics
+    const completedRides = await RideHistory.countDocuments({ ...filter, status: 'completed' });
+    const cancelledRides = await RideHistory.countDocuments({ ...filter, status: 'cancelled' });
+    const totalEarnings = await RideHistory.aggregate([
+      { $match: { ...filter, status: 'completed' } },
+      { $group: { _id: null, total: { $sum: '$actualFare' } } }
+    ]);
+    
+    const analytics = {
+      totalRides,
+      completedRides,
+      cancelledRides,
+      totalEarnings: totalEarnings.length > 0 ? totalEarnings[0].total : 0,
+      averageEarnings: completedRides > 0 ? (totalEarnings.length > 0 ? totalEarnings[0].total / completedRides : 0) : 0
+    };
+    
+    console.log(`✅ Retrieved ${rideHistory.length} rides for driver ${driverId}`);
+    
+    res.json({
+      success: true,
+      data: {
+        rideHistory,
+        analytics,
+        pagination: {
+          currentPage: pageNum,
+          totalPages: Math.ceil(totalRides / limitNum),
+          totalRides,
+          hasNextPage: pageNum * limitNum < totalRides,
+          hasPrevPage: pageNum > 1
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error getting driver ride history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting ride history',
+      error: error.message
+    });
+  }
+});
+
+// @desc    Get driver earnings summary
+// @route   GET /api/drivers/earnings
+// @access  Private (Driver only)
+router.get('/earnings', protect, async (req, res) => {
+  try {
+    const driverId = req.user.id;
+    const { period = 'week' } = req.query; // 'day', 'week', 'month', 'year'
+    
+    console.log('\\n=== DRIVER EARNINGS SUMMARY ===');
+    console.log('Driver ID:', driverId);
+    console.log('Period:', period);
+    
+    const RideHistory = require('../models/RideHistory');
+    
+    // Calculate date range based on period
+    const now = new Date();
+    let startDate = new Date();
+    
+    switch (period) {
+      case 'day':
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'week':
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(now.getMonth() - 1);
+        break;
+      case 'year':
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+      default:
+        startDate.setDate(now.getDate() - 7); // Default to week
+    }
+    
+    // Get earnings data
+    const earningsData = await RideHistory.aggregate([
+      {
+        $match: {
+          driverId: require('mongoose').Types.ObjectId(driverId),
+          status: 'completed',
+          createdAt: { $gte: startDate, $lte: now }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+            day: { $dayOfMonth: '$createdAt' }
+          },
+          totalEarnings: { $sum: '$actualFare' },
+          totalRides: { $sum: 1 },
+          averageFare: { $avg: '$actualFare' }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+    ]);
+    
+    // Calculate totals
+    const summary = earningsData.reduce((acc, day) => {
+      acc.totalEarnings += day.totalEarnings;
+      acc.totalRides += day.totalRides;
+      return acc;
+    }, { totalEarnings: 0, totalRides: 0 });
+    
+    summary.averageEarningsPerRide = summary.totalRides > 0 ? summary.totalEarnings / summary.totalRides : 0;
+    summary.averageRidesPerDay = earningsData.length > 0 ? summary.totalRides / earningsData.length : 0;
+    
+    console.log(`✅ Earnings summary calculated for driver ${driverId}`);
+    
+    res.json({
+      success: true,
+      data: {
+        period,
+        dateRange: { startDate, endDate: now },
+        summary,
+        dailyData: earningsData
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error getting driver earnings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting earnings data',
+      error: error.message
     });
   }
 });

@@ -28,6 +28,12 @@ const addAuthToken = (config) => {
   // Determine which token to use based on the request URL
   const url = config.url || '';
   
+  // Skip token for metro stations endpoints (they're public)
+  if (url.includes('/metro-stations')) {
+    // Don't add any token for metro stations
+    return config;
+  }
+  
   if (url.includes('/admin/')) {
     token = localStorage.getItem('adminToken');
     tokenType = 'admin';
@@ -277,6 +283,16 @@ export const drivers = {
     } catch (error) {
       throw error;
     }
+  },
+
+  // Collect payment for a completed ride
+  collectPayment: async (paymentData) => {
+    try {
+      const response = await apiClient.post('/drivers/collect-payment', paymentData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 
@@ -460,6 +476,43 @@ const driverEnhancements = {
   getDashboard: async () => {
     try {
       const response = await apiClient.get('/drivers/dashboard');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get driver ride history
+  getRideHistory: async (page = 1, limit = 10, status = 'all') => {
+    try {
+      // Try new driver-specific endpoint first, fallback to analytics
+      try {
+        const response = await apiClient.get(`/drivers/ride-history?page=${page}&limit=${limit}&status=${status}`);
+        return response.data;
+      } catch (driverError) {
+        console.log('[API] Falling back to analytics endpoint for ride history');
+        const response = await apiClient.get(`/analytics/driver/detailed-history?page=${page}&limit=${limit}&status=${status}`);
+        return response.data;
+      }
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get driver statistics
+  getStatistics: async () => {
+    try {
+      const response = await apiClient.get('/analytics/driver/stats');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get driver earnings for a specific date range
+  getEarningsHistory: async (startDate, endDate) => {
+    try {
+      const response = await apiClient.get(`/analytics/driver/detailed-history?startDate=${startDate}&endDate=${endDate}&status=completed`);
       return response.data;
     } catch (error) {
       throw error;

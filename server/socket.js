@@ -9,6 +9,7 @@ const MetroStation = require('./models/MetroStation');
 const { generateRideId, generateRideOTPs, verifyOTP } = require('./utils/otpUtils');
 const { logRideEvent, logUserAction, logDriverAction, logError } = require('./utils/rideLogger');
 const { calculateFareEstimates, getDynamicPricingFactor } = require('./utils/fareCalculator');
+const RideLifecycleService = require('./services/rideLifecycle');
 
 let io;
 
@@ -142,18 +143,36 @@ const initializeSocket = (server) => {
           await metroStation.incrementOnlineDrivers();
         }
         
+        // Verify driver is actually in the drivers room
+        const rooms = Array.from(socket.rooms);
+        const inDriversRoom = rooms.includes('drivers');
+        const driverSpecificRoom = `driver_${socket.user._id}`;
+        const inDriverSpecificRoom = rooms.includes(driverSpecificRoom);
+        
         console.log(`✅ Driver ${socket.user._id} is now online at ${metroBooth} with ${vehicleType}`);
+        console.log(`🔍 Driver socket room status:`);
+        console.log(`  - Driver ID: ${socket.user._id}`);
+        console.log(`  - Socket rooms: ${rooms.join(', ')}`);
+        console.log(`  - In 'drivers' room: ${inDriversRoom}`);
+        console.log(`  - In '${driverSpecificRoom}' room: ${inDriverSpecificRoom}`);
+        
         logRideEvent(`DRIVER-${socket.user._id}`, 'driver_online', {
           metroBooth,
           vehicleType,
-          location
+          location,
+          roomStatus: { inDriversRoom, inDriverSpecificRoom, allRooms: rooms }
         });
         
         socket.emit('driverOnlineConfirmed', { 
           success: true,
           metroBooth,
           vehicleType,
-          message: 'You are now online and ready to accept rides'
+          message: 'You are now online and ready to accept rides',
+          roomStatus: {
+            inDriversRoom: inDriversRoom,
+            inDriverSpecificRoom: inDriverSpecificRoom,
+            allRooms: rooms
+          }
         });
         
       } catch (error) {
@@ -363,6 +382,7 @@ const initializeSocket = (server) => {
         const acceptanceData = {
           rideId: rideRequest._id.toString(),
           uniqueRideId: rideRequest.rideId,
+          boothRideNumber: rideRequest.boothRideNumber,
           driverId: driverId,
           driverName: driverName,
           driverPhone: driverPhone,
@@ -374,7 +394,9 @@ const initializeSocket = (server) => {
           endOTP: rideRequest.endOTP,
           timestamp: new Date().toISOString(),
           driverLocation: data.currentLocation,
-          status: 'driver_assigned'
+          status: 'driver_assigned',
+          pickupStation: rideRequest.pickupLocation?.boothName,
+          dropLocation: rideRequest.dropLocation
         };
         
         console.log('📤 Notifying user:', rideRequest.userId);
@@ -388,20 +410,27 @@ const initializeSocket = (server) => {
         
         console.log('✅ All notifications sent');
 
-        // Confirm to the accepting driver
+        // Confirm to the accepting driver with complete ride information
         socket.emit('rideAcceptConfirmed', {
           success: true,
-          rideId: rideRequest._id.toString(),
+          _id: rideRequest._id.toString(),
+          rideId: rideRequest.rideId,
           uniqueRideId: rideRequest.rideId,
+          boothRideNumber: rideRequest.boothRideNumber,
           message: 'Ride accepted successfully',
-          userDetails: {
-            name: rideRequest.userName,
-            phone: rideRequest.userPhone,
-            pickupLocation: rideRequest.pickupLocation,
-            dropLocation: rideRequest.dropLocation
-          },
+          userName: rideRequest.userName,
+          userPhone: rideRequest.userPhone,
+          pickupLocation: rideRequest.pickupLocation,
+          dropLocation: rideRequest.dropLocation,
+          vehicleType: rideRequest.vehicleType,
+          distance: rideRequest.distance,
+          fare: rideRequest.estimatedFare,
+          estimatedFare: rideRequest.estimatedFare,
           startOTP: rideRequest.startOTP,
-          endOTP: rideRequest.endOTP
+          endOTP: rideRequest.endOTP,
+          status: 'driver_assigned',
+          timestamp: rideRequest.timestamp.toISOString(),
+          paymentStatus: rideRequest.paymentStatus || 'pending'
         });
 
       } catch (error) {
@@ -414,7 +443,7 @@ const initializeSocket = (server) => {
     });
 
     // Handle OTP verification for ride start
-    socket.on('verifyStartOTP', async (data) => {
+    socket.on('verifyStartOTP', async (data, callback) => {
       console.log('\n=== VERIFYING START OTP ===');
       console.log('Requester:', socket.user.role, socket.user._id);
       console.log('Ride ID:', data.rideId);
@@ -423,17 +452,30 @@ const initializeSocket = (server) => {
       try {
         const { rideId, otp } = data;
         
-        const rideRequest = await RideRequest.findById(rideId);
+        // Try to find ride by MongoDB ObjectId first, then by rideId field
+        let rideRequest = null;
+        try {
+          rideRequest = await RideRequest.findById(rideId);
+        } catch (error) {
+          // If it's not a valid ObjectId, try finding by rideId field
+          console.log('Not a valid ObjectId, searching by rideId field...');
+          rideRequest = await RideRequest.findOne({ rideId: rideId });
+        }
+        
         if (!rideRequest) {
           console.error('❌ Ride not found');
-          socket.emit('otpVerificationError', { message: 'Ride not found' });
+          const errorResponse = { success: false, message: 'Ride not found' };
+          socket.emit('otpVerificationError', errorResponse);
+          if (callback) callback(errorResponse);
           return;
         }
         
         // Verify OTP
         if (!verifyOTP(otp, rideRequest.startOTP)) {
           console.error('❌ Invalid start OTP');
-          socket.emit('otpVerificationError', { message: 'Invalid OTP' });
+          const errorResponse = { success: false, message: 'Invalid OTP' };
+          socket.emit('otpVerificationError', errorResponse);
+          if (callback) callback(errorResponse);
           return;
         }
         
@@ -454,6 +496,7 @@ const initializeSocket = (server) => {
         const startData = {
           rideId: rideRequest._id.toString(),
           uniqueRideId: rideRequest.rideId,
+          boothRideNumber: rideRequest.boothRideNumber,
           status: 'ride_started',
           startedAt: new Date().toISOString(),
           endOTP: rideRequest.endOTP
@@ -464,23 +507,29 @@ const initializeSocket = (server) => {
         
         console.log('📤 Both parties notified of ride start');
         
-        socket.emit('otpVerificationSuccess', {
+        const successResponse = {
           success: true,
           message: 'Ride started successfully',
           status: 'ride_started'
-        });
+        };
+        
+        socket.emit('otpVerificationSuccess', successResponse);
+        if (callback) callback(successResponse);
         
       } catch (error) {
         console.error('❌ Error verifying start OTP:', error);
-        socket.emit('otpVerificationError', {
+        const errorResponse = {
+          success: false,
           message: 'Failed to verify OTP',
           error: error.message
-        });
+        };
+        socket.emit('otpVerificationError', errorResponse);
+        if (callback) callback(errorResponse);
       }
     });
 
     // Handle OTP verification for ride end
-    socket.on('verifyEndOTP', async (data) => {
+    socket.on('verifyEndOTP', async (data, callback) => {
       console.log('\n=== VERIFYING END OTP ===');
       console.log('Requester:', socket.user.role, socket.user._id);
       console.log('Ride ID:', data.rideId);
@@ -489,27 +538,43 @@ const initializeSocket = (server) => {
       try {
         const { rideId, otp } = data;
         
-        const rideRequest = await RideRequest.findById(rideId);
+        // Try to find ride by MongoDB ObjectId first, then by rideId field
+        let rideRequest = null;
+        try {
+          rideRequest = await RideRequest.findById(rideId);
+        } catch (error) {
+          // If it's not a valid ObjectId, try finding by rideId field
+          console.log('Not a valid ObjectId, searching by rideId field...');
+          rideRequest = await RideRequest.findOne({ rideId: rideId });
+        }
+        
         if (!rideRequest) {
           console.error('❌ Ride not found');
-          socket.emit('otpVerificationError', { message: 'Ride not found' });
+          const errorResponse = { success: false, message: 'Ride not found' };
+          socket.emit('otpVerificationError', errorResponse);
+          if (callback) callback(errorResponse);
           return;
         }
         
         // Verify OTP
         if (!verifyOTP(otp, rideRequest.endOTP)) {
           console.error('❌ Invalid end OTP');
-          socket.emit('otpVerificationError', { message: 'Invalid OTP' });
+          const errorResponse = { success: false, message: 'Invalid OTP' };
+          socket.emit('otpVerificationError', errorResponse);
+          if (callback) callback(errorResponse);
           return;
         }
         
-        // Update ride status
+        // Update ride status to ride_ended first
         rideRequest.status = 'ride_ended';
         rideRequest.rideEndedAt = new Date();
         rideRequest.actualFare = rideRequest.estimatedFare; // For now, use estimated fare
+        rideRequest.paymentStatus = 'collected'; // Auto-assume cash payment collected
+        rideRequest.paymentMethod = 'cash';
+        rideRequest.paymentCollectedAt = new Date();
         await rideRequest.save();
         
-        console.log('✅ Ride ended successfully');
+        console.log('✅ Ride ended, now completing automatically...');
         
         // Log ride event
         logRideEvent(rideRequest.rideId, 'ride_ended', {
@@ -518,39 +583,74 @@ const initializeSocket = (server) => {
           actualFare: rideRequest.actualFare
         });
         
-        // Update driver stats
-        await Driver.findByIdAndUpdate(rideRequest.driverId, {
-          $inc: { totalRides: 1, totalEarnings: rideRequest.actualFare }
+        // Automatically complete ride using RideLifecycleService
+        const completionResult = await RideLifecycleService.completeRide(rideRequest._id, {
+          status: 'completed',
+          paymentMethod: 'cash'
         });
         
-        // Notify both parties
-        const endData = {
-          rideId: rideRequest._id.toString(),
-          uniqueRideId: rideRequest.rideId,
-          status: 'ride_ended',
-          endedAt: new Date().toISOString(),
-          actualFare: rideRequest.actualFare,
-          rideDuration: Math.floor((rideRequest.rideEndedAt - rideRequest.rideStartedAt) / 60000) // in minutes
-        };
+        if (completionResult.success) {
+          console.log('✅ Ride automatically completed and moved to history');
+          
+          // Prepare completion notification data
+          const completionData = {
+            rideId: rideRequest._id.toString(),
+            uniqueRideId: rideRequest.rideId,
+            boothRideNumber: rideRequest.boothRideNumber,
+            status: 'completed',
+            endedAt: rideRequest.rideEndedAt.toISOString(),
+            completedAt: new Date().toISOString(),
+            actualFare: rideRequest.actualFare,
+            paymentStatus: 'collected',
+            paymentMethod: 'cash',
+            rideDuration: Math.floor((rideRequest.rideEndedAt - rideRequest.rideStartedAt) / 60000), // in minutes
+            message: 'Ride completed successfully and moved to history'
+          };
+          
+          // Notify both parties of completion
+          io.to(`user_${rideRequest.userId}`).emit('rideCompleted', completionData);
+          io.to(`driver_${rideRequest.driverId}`).emit('rideCompleted', completionData);
+          
+          console.log('📤 Both parties notified of ride completion');
+        } else {
+          console.error('❌ Failed to complete ride automatically:', completionResult.error);
+          
+          // Fallback to old behavior - just notify of ride end
+          const endData = {
+            rideId: rideRequest._id.toString(),
+            uniqueRideId: rideRequest.rideId,
+            boothRideNumber: rideRequest.boothRideNumber,
+            status: 'ride_ended',
+            endedAt: rideRequest.rideEndedAt.toISOString(),
+            actualFare: rideRequest.actualFare,
+            rideDuration: Math.floor((rideRequest.rideEndedAt - rideRequest.rideStartedAt) / 60000) // in minutes
+          };
+          
+          io.to(`user_${rideRequest.userId}`).emit('rideEnded', endData);
+          io.to(`driver_${rideRequest.driverId}`).emit('rideEnded', endData);
+          
+          console.log('📤 Fallback: Both parties notified of ride end only');
+        }
         
-        io.to(`user_${rideRequest.userId}`).emit('rideEnded', endData);
-        io.to(`driver_${rideRequest.driverId}`).emit('rideEnded', endData);
-        
-        console.log('📤 Both parties notified of ride end');
-        
-        socket.emit('otpVerificationSuccess', {
+        const successResponse = {
           success: true,
           message: 'Ride completed successfully',
           status: 'ride_ended',
           fare: rideRequest.actualFare
-        });
+        };
+        
+        socket.emit('otpVerificationSuccess', successResponse);
+        if (callback) callback(successResponse);
         
       } catch (error) {
         console.error('❌ Error verifying end OTP:', error);
-        socket.emit('otpVerificationError', {
+        const errorResponse = {
+          success: false,
           message: 'Failed to verify OTP',
           error: error.message
-        });
+        };
+        socket.emit('otpVerificationError', errorResponse);
+        if (callback) callback(errorResponse);
       }
     });
 
@@ -629,6 +729,184 @@ const initializeSocket = (server) => {
       }
     });
 
+    // Handle payment collection and ride completion
+    socket.on('collectPayment', async (data, callback) => {
+      console.log('\n=== PAYMENT COLLECTION ===');
+      console.log('Requester:', socket.user.role, socket.user._id);
+      console.log('Data:', data);
+      
+      try {
+        const { rideId, paymentMethod, actualFare, userRating, driverRating } = data;
+        
+        // Try to find ride by MongoDB ObjectId first, then by rideId field
+        let rideRequest = null;
+        try {
+          rideRequest = await RideRequest.findById(rideId);
+        } catch (error) {
+          console.log('Not a valid ObjectId, searching by rideId field...');
+          rideRequest = await RideRequest.findOne({ rideId: rideId });
+        }
+        
+        if (!rideRequest) {
+          console.error('❌ Ride not found');
+          const errorResponse = { success: false, message: 'Ride not found' };
+          if (callback) callback(errorResponse);
+          return;
+        }
+        
+        // Verify ride is in ended state
+        if (rideRequest.status !== 'ride_ended') {
+          console.error('❌ Ride is not in ended state');
+          const errorResponse = { success: false, message: 'Ride must be ended before payment collection' };
+          if (callback) callback(errorResponse);
+          return;
+        }
+        
+        // Update payment information
+        rideRequest.paymentStatus = 'collected';
+        rideRequest.paymentMethod = paymentMethod || 'cash';
+        rideRequest.paymentCollectedAt = new Date();
+        rideRequest.actualFare = actualFare || rideRequest.estimatedFare;
+        rideRequest.status = 'completed';
+        await rideRequest.save();
+        
+        console.log('✅ Payment collected and ride marked as completed');
+        
+        // Prepare completion data for lifecycle service
+        const completionData = {
+          status: 'completed',
+          userRating: userRating ? {
+            rating: userRating.rating,
+            feedback: userRating.feedback,
+            ratedAt: new Date()
+          } : null,
+          driverRatingForUser: driverRating ? {
+            rating: driverRating.rating,
+            feedback: driverRating.feedback,
+            ratedAt: new Date()
+          } : null
+        };
+        
+        // Move ride to history using lifecycle service
+        const lifecycleResult = await RideLifecycleService.completeRide(
+          rideRequest._id.toString(), 
+          completionData
+        );
+        
+        if (lifecycleResult.success) {
+          console.log('✅ Ride successfully moved to history');
+          
+          // Notify both parties of completion
+          const completionNotification = {
+            rideId: rideRequest._id.toString(),
+            uniqueRideId: rideRequest.rideId,
+            boothRideNumber: rideRequest.boothRideNumber,
+            status: 'completed',
+            actualFare: rideRequest.actualFare,
+            paymentMethod: rideRequest.paymentMethod,
+            completedAt: new Date().toISOString()
+          };
+          
+          io.to(`user_${rideRequest.userId}`).emit('rideCompleted', completionNotification);
+          io.to(`driver_${rideRequest.driverId}`).emit('rideCompleted', completionNotification);
+          
+          console.log('📤 Both parties notified of ride completion');
+          
+          const successResponse = {
+            success: true,
+            message: 'Payment collected and ride completed successfully',
+            rideId: rideRequest._id.toString(),
+            actualFare: rideRequest.actualFare,
+            status: 'completed'
+          };
+          
+          if (callback) callback(successResponse);
+          
+        } else {
+          console.error('❌ Failed to move ride to history:', lifecycleResult.error);
+          const errorResponse = {
+            success: false,
+            message: 'Payment collected but failed to finalize ride completion',
+            error: lifecycleResult.error
+          };
+          if (callback) callback(errorResponse);
+        }
+        
+      } catch (error) {
+        console.error('❌ Error collecting payment:', error);
+        const errorResponse = {
+          success: false,
+          message: 'Failed to collect payment',
+          error: error.message
+        };
+        if (callback) callback(errorResponse);
+      }
+    });
+    
+    // Handle ride completion with cancellation (using lifecycle service)
+    socket.on('completeRideWithCancellation', async (data, callback) => {
+      console.log('\n=== COMPLETING RIDE WITH CANCELLATION ===');
+      console.log('Requester:', socket.user.role, socket.user._id);
+      console.log('Data:', data);
+      
+      try {
+        const { rideId, reason } = data;
+        
+        // Use lifecycle service to cancel ride
+        const lifecycleResult = await RideLifecycleService.cancelRide(rideId, {
+          reason: reason || 'No reason provided',
+          cancelledBy: socket.user.role
+        });
+        
+        if (lifecycleResult.success) {
+          console.log('✅ Ride cancelled and moved to history');
+          
+          // Notify both parties
+          const cancellationNotification = {
+            rideId: rideId,
+            status: 'cancelled',
+            reason: reason,
+            cancelledBy: socket.user.role,
+            cancelledAt: new Date().toISOString()
+          };
+          
+          // Find the ride to get user and driver IDs for notification
+          const rideHistory = lifecycleResult.rideHistory;
+          if (rideHistory) {
+            io.to(`user_${rideHistory.userId}`).emit('rideCancelled', cancellationNotification);
+            if (rideHistory.driverId) {
+              io.to(`driver_${rideHistory.driverId}`).emit('rideCancelled', cancellationNotification);
+            }
+          }
+          
+          const successResponse = {
+            success: true,
+            message: 'Ride cancelled and moved to history successfully'
+          };
+          
+          if (callback) callback(successResponse);
+          
+        } else {
+          console.error('❌ Failed to cancel ride:', lifecycleResult.error);
+          const errorResponse = {
+            success: false,
+            message: 'Failed to cancel ride',
+            error: lifecycleResult.error
+          };
+          if (callback) callback(errorResponse);
+        }
+        
+      } catch (error) {
+        console.error('❌ Error cancelling ride:', error);
+        const errorResponse = {
+          success: false,
+          message: 'Failed to cancel ride',
+          error: error.message
+        };
+        if (callback) callback(errorResponse);
+      }
+    });
+
     // Enhanced driver location updates with logging
     socket.on('updateDriverLocation', async (data) => {
       console.log('\n=== DRIVER LOCATION UPDATE ===');
@@ -650,7 +928,16 @@ const initializeSocket = (server) => {
 
         // If there's an active ride, notify the user with enhanced data
         if (rideId) {
-          const rideRequest = await RideRequest.findById(rideId);
+          // Try to find ride by MongoDB ObjectId first, then by rideId field
+          let rideRequest = null;
+          try {
+            rideRequest = await RideRequest.findById(rideId);
+          } catch (error) {
+            // If it's not a valid ObjectId, try finding by rideId field
+            console.log('Not a valid ObjectId, searching by rideId field...');
+            rideRequest = await RideRequest.findOne({ rideId: rideId });
+          }
+          
           if (rideRequest && rideRequest.userId) {
             const locationUpdate = {
               rideId,
@@ -778,8 +1065,8 @@ const broadcastRideRequest = async (data) => {
     });
     
     // Step 3: Check for drivers in the 'drivers' socket room
-    const driversRoom = io.sockets.adapter.rooms.get('drivers');
-    console.log(`🔌 Drivers in socket room: ${driversRoom ? driversRoom.size : 0}`);
+    const socketDriversRoom = io.sockets.adapter.rooms.get('drivers');
+    console.log(`🔌 Drivers in socket room: ${socketDriversRoom ? socketDriversRoom.size : 0}`);
     
     let targetDrivers = [];
     let broadcastMethod = '';
@@ -823,7 +1110,8 @@ const broadcastRideRequest = async (data) => {
       distance: rideRequest.distance,
       status: 'pending',
       timestamp: rideRequest.timestamp.toISOString(),
-      requestNumber: rideRequest.rideId
+      requestNumber: rideRequest.rideId,
+      boothRideNumber: rideRequest.boothRideNumber
     };
     
     console.log('📤 Broadcasting to drivers:', rideRequestData);
@@ -832,14 +1120,31 @@ const broadcastRideRequest = async (data) => {
     let successCount = 0;
     targetDrivers.forEach(driver => {
       const driverSocketId = `driver_${driver._id}`;
+      
+      // Check if this driver room actually has sockets
+      const driverRoom = io.sockets.adapter.rooms.get(driverSocketId);
+      const socketsInRoom = driverRoom ? driverRoom.size : 0;
+      
       io.to(driverSocketId).emit('newRideRequest', rideRequestData);
-      console.log(`📤 Sent ride request to driver ${driver._id} (${driver.fullName}) via ${driverSocketId}`);
+      console.log(`📤 Sent ride request to driver ${driver._id} (${driver.fullName}) via ${driverSocketId} [${socketsInRoom} sockets in room]`);
       successCount++;
     });
     
+    // Check drivers room before broadcasting
+    const broadcastDriversRoom = io.sockets.adapter.rooms.get('drivers');
+    const driversInRoom = broadcastDriversRoom ? broadcastDriversRoom.size : 0;
+    
     // Also broadcast to the 'drivers' room as additional fallback
     io.to('drivers').emit('newRideRequest', rideRequestData);
-    console.log('📤 Also broadcasted to entire drivers room');
+    console.log(`📤 Also broadcasted to entire drivers room [${driversInRoom} sockets in room]`);
+    
+    // Additional debug: Log all current rooms
+    console.log('🔍 Current socket rooms:');
+    io.sockets.adapter.rooms.forEach((sockets, roomName) => {
+      if (!roomName.startsWith('/') && (roomName.includes('driver') || roomName === 'drivers')) {
+        console.log(`  - ${roomName}: ${sockets.size} sockets`);
+      }
+    });
     
     // Update ride request with broadcast info
     await RideRequest.findByIdAndUpdate(rideRequest._id, {
