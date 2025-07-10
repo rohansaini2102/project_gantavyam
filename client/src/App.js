@@ -23,8 +23,11 @@ import UserDashboard from './pages/user/Dashboard';
 import UserLogin from './pages/user/Login';
 import UserSignup from './pages/user/Signup';
 import ForgotPassword from './pages/user/ForgotPassword';
+// Test Pages
+import UserBooking from './pages/test/UserBooking';
+import DriverView from './pages/test/DriverView';
 
-const GOOGLE_MAPS_API_KEY = "AIzaSyDFbjmVJoi2wDzwJNR2rrowpSEtSes1jw4";
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
 const libraries = ["places", "geometry"];
 
 function App() {
@@ -51,6 +54,9 @@ function App() {
         <Route path="/driver/profile/:id" element={<DriverProfile />} />
         <Route path="/user/forgot-password" element={<ForgotPassword />} />
         <Route path="/driver/pending" element={<PendingApproval />} />
+        {/* Test Routes */}
+        <Route path="/test/user" element={<UserBooking />} />
+        <Route path="/test/driver" element={<DriverView />} />
       </Routes>
     </LoadScript>
   );
