@@ -118,39 +118,112 @@ class SocketService {
     return this.connected && this.socket && this.socket.connected;
   }
 
-  // Subscribe to driver updates for a specific ride
-  subscribeToDriverUpdates(rideId, callbacks = {}) {
+  // Subscribe to user ride updates  
+  subscribeToUserRideUpdates(callbacks = {}) {
     if (!this.socket) {
       console.error('Cannot subscribe: Socket not initialized');
       return;
     }
     
-    console.log(`Subscribing to driver updates for ride ${rideId}`);
+    console.log('Subscribing to user ride updates');
     
-    // Set up callbacks for each event type
-    if (callbacks.onLocationUpdate) {
-      this.socket.on('driverLocationUpdated', callbacks.onLocationUpdate);
-    }
-    
+    // User-specific ride events
     if (callbacks.onRideAccepted) {
       this.socket.on('rideAccepted', callbacks.onRideAccepted);
     }
     
-    if (callbacks.onRideCompleted) {
-      this.socket.on('rideCompleted', callbacks.onRideCompleted);
+    if (callbacks.onRideStarted) {
+      this.socket.on('rideStarted', callbacks.onRideStarted);
+    }
+    
+    if (callbacks.onRideEnded) {
+      this.socket.on('rideEnded', callbacks.onRideEnded);
     }
     
     if (callbacks.onRideCancelled) {
       this.socket.on('rideCancelled', callbacks.onRideCancelled);
     }
     
-    if (callbacks.onDriverArrival) {
-      this.socket.on('driverArrived', callbacks.onDriverArrival);
+    if (callbacks.onDriverLocationUpdate) {
+      this.socket.on('driverLocationUpdated', callbacks.onDriverLocationUpdate);
     }
     
-    if (callbacks.onMessage) {
-      this.socket.on('newMessage', callbacks.onMessage);
+    if (callbacks.onOTPVerificationSuccess) {
+      this.socket.on('otpVerificationSuccess', callbacks.onOTPVerificationSuccess);
     }
+    
+    if (callbacks.onOTPVerificationError) {
+      this.socket.on('otpVerificationError', callbacks.onOTPVerificationError);
+    }
+  }
+
+  // Subscribe to driver ride requests and updates
+  subscribeToDriverUpdates(callbacks = {}) {
+    if (!this.socket) {
+      console.error('Cannot subscribe: Socket not initialized');
+      return;
+    }
+    
+    console.log('Subscribing to driver updates');
+    
+    // Driver-specific events
+    if (callbacks.onNewRideRequest) {
+      this.socket.on('newRideRequest', callbacks.onNewRideRequest);
+    }
+    
+    if (callbacks.onRideRequestClosed) {
+      this.socket.on('rideRequestClosed', callbacks.onRideRequestClosed);
+    }
+    
+    if (callbacks.onRideAcceptConfirmed) {
+      this.socket.on('rideAcceptConfirmed', callbacks.onRideAcceptConfirmed);
+    }
+    
+    if (callbacks.onRideAcceptError) {
+      this.socket.on('rideAcceptError', callbacks.onRideAcceptError);
+    }
+    
+    if (callbacks.onDriverOnlineConfirmed) {
+      this.socket.on('driverOnlineConfirmed', callbacks.onDriverOnlineConfirmed);
+    }
+    
+    if (callbacks.onDriverOfflineConfirmed) {
+      this.socket.on('driverOfflineConfirmed', callbacks.onDriverOfflineConfirmed);
+    }
+    
+    if (callbacks.onRideStarted) {
+      this.socket.on('rideStarted', callbacks.onRideStarted);
+    }
+    
+    if (callbacks.onRideEnded) {
+      this.socket.on('rideEnded', callbacks.onRideEnded);
+    }
+    
+    if (callbacks.onRideCancelled) {
+      this.socket.on('rideCancelled', callbacks.onRideCancelled);
+    }
+    
+    if (callbacks.onOTPVerificationSuccess) {
+      this.socket.on('otpVerificationSuccess', callbacks.onOTPVerificationSuccess);
+    }
+    
+    if (callbacks.onOTPVerificationError) {
+      this.socket.on('otpVerificationError', callbacks.onOTPVerificationError);
+    }
+  }
+
+  // Unsubscribe from user ride updates
+  unsubscribeFromUserRideUpdates() {
+    if (!this.socket) return;
+    
+    console.log('Unsubscribing from user ride updates');
+    this.socket.off('rideAccepted');
+    this.socket.off('rideStarted');
+    this.socket.off('rideEnded');
+    this.socket.off('rideCancelled');
+    this.socket.off('driverLocationUpdated');
+    this.socket.off('otpVerificationSuccess');
+    this.socket.off('otpVerificationError');
   }
 
   // Unsubscribe from driver updates
@@ -158,27 +231,128 @@ class SocketService {
     if (!this.socket) return;
     
     console.log('Unsubscribing from driver updates');
-    this.socket.off('driverLocationUpdated');
-    this.socket.off('rideAccepted');
-    this.socket.off('rideCompleted');
+    this.socket.off('newRideRequest');
+    this.socket.off('rideRequestClosed');
+    this.socket.off('rideAcceptConfirmed');
+    this.socket.off('rideAcceptError');
+    this.socket.off('driverOnlineConfirmed');
+    this.socket.off('driverOfflineConfirmed');
+    this.socket.off('rideStarted');
+    this.socket.off('rideEnded');
     this.socket.off('rideCancelled');
-    this.socket.off('driverArrived');
-    this.socket.off('newMessage');
+    this.socket.off('otpVerificationSuccess');
+    this.socket.off('otpVerificationError');
   }
 
-  // Send a ride request to available drivers
-  sendRideRequest(rideRequest, callback) {
+  // Driver goes online with metro booth selection
+  driverGoOnline(onlineData, callback) {
     if (!this.socket) {
-      console.error('Cannot send ride request: Socket not initialized');
+      console.error('Cannot go online: Socket not initialized');
       if (callback) callback({ success: false, error: 'Socket not connected' });
       return;
     }
     
-    console.log('Sending ride request:', rideRequest);
+    console.log('Driver going online:', onlineData);
     if (callback) {
-      this.socket.emit('userRideRequest', rideRequest, callback);
+      this.socket.emit('driverGoOnline', onlineData, callback);
     } else {
-      this.socket.emit('userRideRequest', rideRequest);
+      this.socket.emit('driverGoOnline', onlineData);
+    }
+  }
+
+  // Driver goes offline
+  driverGoOffline(callback) {
+    if (!this.socket) {
+      console.error('Cannot go offline: Socket not initialized');
+      if (callback) callback({ success: false, error: 'Socket not connected' });
+      return;
+    }
+    
+    console.log('Driver going offline');
+    if (callback) {
+      this.socket.emit('driverGoOffline', {}, callback);
+    } else {
+      this.socket.emit('driverGoOffline', {});
+    }
+  }
+
+  // Driver accepts a ride
+  driverAcceptRide(rideData, callback) {
+    if (!this.socket) {
+      console.error('Cannot accept ride: Socket not initialized');
+      if (callback) callback({ success: false, error: 'Socket not connected' });
+      return;
+    }
+    
+    console.log('Driver accepting ride:', rideData);
+    if (callback) {
+      this.socket.emit('driverAcceptRide', rideData, callback);
+    } else {
+      this.socket.emit('driverAcceptRide', rideData);
+    }
+  }
+
+  // Verify start OTP
+  verifyStartOTP(otpData, callback) {
+    if (!this.socket) {
+      console.error('Cannot verify start OTP: Socket not initialized');
+      if (callback) callback({ success: false, error: 'Socket not connected' });
+      return;
+    }
+    
+    console.log('Verifying start OTP:', otpData);
+    if (callback) {
+      this.socket.emit('verifyStartOTP', otpData, callback);
+    } else {
+      this.socket.emit('verifyStartOTP', otpData);
+    }
+  }
+
+  // Verify end OTP
+  verifyEndOTP(otpData, callback) {
+    if (!this.socket) {
+      console.error('Cannot verify end OTP: Socket not initialized');
+      if (callback) callback({ success: false, error: 'Socket not connected' });
+      return;
+    }
+    
+    console.log('Verifying end OTP:', otpData);
+    if (callback) {
+      this.socket.emit('verifyEndOTP', otpData, callback);
+    } else {
+      this.socket.emit('verifyEndOTP', otpData);
+    }
+  }
+
+  // Cancel ride
+  cancelRide(cancelData, callback) {
+    if (!this.socket) {
+      console.error('Cannot cancel ride: Socket not initialized');
+      if (callback) callback({ success: false, error: 'Socket not connected' });
+      return;
+    }
+    
+    console.log('Cancelling ride:', cancelData);
+    if (callback) {
+      this.socket.emit('cancelRide', cancelData, callback);
+    } else {
+      this.socket.emit('cancelRide', cancelData);
+    }
+  }
+
+  // Update driver location
+  updateDriverLocation(locationData, callback) {
+    if (!this.socket) {
+      console.error('Cannot update location: Socket not initialized');
+      if (callback) callback({ success: false, error: 'Socket not connected' });
+      return;
+    }
+    
+    // Don't log location updates as frequently to avoid spam
+    if (callback) {
+      this.socket.emit('updateDriverLocation', locationData, callback);
+    } else {
+      this.socket.emit('updateDriverLocation', locationData);
     }
   }
 
@@ -207,9 +381,27 @@ export const initializeSocket = (token) => socketService.initialize(token);
 export const disconnectSocket = () => socketService.disconnect();
 export const getSocket = () => socketService.getSocket();
 export const isSocketConnected = () => socketService.isConnected();
-export const subscribeToDriverUpdates = (rideId, callbacks) => socketService.subscribeToDriverUpdates(rideId, callbacks);
+
+// User methods
+export const subscribeToUserRideUpdates = (callbacks) => socketService.subscribeToUserRideUpdates(callbacks);
+export const unsubscribeFromUserRideUpdates = () => socketService.unsubscribeFromUserRideUpdates();
+
+// Driver methods
+export const subscribeToDriverUpdates = (callbacks) => socketService.subscribeToDriverUpdates(callbacks);
 export const unsubscribeFromDriverUpdates = () => socketService.unsubscribeFromDriverUpdates();
-export const sendRideRequest = (rideRequest, callback) => socketService.sendRideRequest(rideRequest, callback);
+export const driverGoOnline = (onlineData, callback) => socketService.driverGoOnline(onlineData, callback);
+export const driverGoOffline = (callback) => socketService.driverGoOffline(callback);
+export const driverAcceptRide = (rideData, callback) => socketService.driverAcceptRide(rideData, callback);
+export const updateDriverLocation = (locationData, callback) => socketService.updateDriverLocation(locationData, callback);
+
+// OTP methods
+export const verifyStartOTP = (otpData, callback) => socketService.verifyStartOTP(otpData, callback);
+export const verifyEndOTP = (otpData, callback) => socketService.verifyEndOTP(otpData, callback);
+
+// Ride management
+export const cancelRide = (cancelData, callback) => socketService.cancelRide(cancelData, callback);
+
+// Generic method
 export const emitEvent = (eventName, data, callback) => socketService.emitEvent(eventName, data, callback);
 
 export default socketService;

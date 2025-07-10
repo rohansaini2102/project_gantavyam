@@ -19,14 +19,48 @@ const UserLogin = () => {
     setError('');
     
     try {
+      // Clear any existing tokens before login to prevent contamination
+      console.log('[UserLogin] Clearing ALL existing tokens before login');
+      const tokensToRemove = [
+        'userToken', 'driverToken', 'adminToken',
+        'user', 'driver', 'admin',
+        'userRole', 'driverRole', 'adminRole'
+      ];
+      
+      tokensToRemove.forEach(key => {
+        const existingValue = localStorage.getItem(key);
+        if (existingValue) {
+          console.log(`[UserLogin] Removing existing ${key}`);
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Also clear session storage
+      sessionStorage.clear();
+      
+      console.log('[UserLogin] All tokens cleared, proceeding with fresh login');
+      
       const response = await auth.userLogin(formData);
       
       if (response.success) {
-        // Save token
+        console.log('[UserLogin] Login successful, storing new token:', {
+          hasToken: !!response.token,
+          tokenLength: response.token?.length,
+          tokenStart: response.token?.substring(0, 20) + '...'
+        });
+        
+        // Save new token
         localStorage.setItem('userToken', response.token);
         
         // Save user data - corrected line
         localStorage.setItem('user', JSON.stringify(response.user));
+        
+        // Verify token was saved correctly
+        const savedToken = localStorage.getItem('userToken');
+        console.log('[UserLogin] Token verification after save:', {
+          saved: !!savedToken,
+          matches: savedToken === response.token
+        });
         
         // Redirect to dashboard
         navigate('/user/dashboard');

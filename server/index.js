@@ -7,6 +7,7 @@ const { initializeSocket } = require('./socket');
 const config = require('./config/config');
 const fs = require('fs');
 const multer = require('multer');
+const { seedMetroStations } = require('./utils/seedMetroStations');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -14,6 +15,8 @@ const userRoutes = require('./routes/users');
 const driverRoutes = require('./routes/drivers');
 const rideRequestRoutes = require('./routes/rideRequests');
 const rideHistoryRoutes = require('./routes/rideHistory');
+const fareEstimationRoutes = require('./routes/fareEstimation');
+const otpVerificationRoutes = require('./routes/otpVerification');
 
 const app = express();
 const server = http.createServer(app);
@@ -73,7 +76,24 @@ mongoose.connect(config.mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-.then(() => console.log('Connected to MongoDB'))
+.then(async () => {
+  console.log('Connected to MongoDB');
+  
+  // Seed metro stations data on first run
+  try {
+    const MetroStation = require('./models/MetroStation');
+    const stationCount = await MetroStation.countDocuments();
+    
+    if (stationCount === 0) {
+      console.log('No metro stations found, seeding data...');
+      await seedMetroStations();
+    } else {
+      console.log(`✅ Metro stations already exist (${stationCount} stations)`);
+    }
+  } catch (error) {
+    console.error('Error checking/seeding metro stations:', error);
+  }
+})
 .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
@@ -82,6 +102,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/drivers', driverRoutes);
 app.use('/api/ride-requests', rideRequestRoutes);
 app.use('/api/ride-history', rideHistoryRoutes);
+app.use('/api/fare', fareEstimationRoutes);
+app.use('/api/otp', otpVerificationRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

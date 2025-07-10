@@ -12,6 +12,7 @@ const config = require('./config/config');
 const Admin = require('./models/Admin');
 const { createContextLogger } = require('./config/logger');
 const requestLogger = require('./middleware/requestLogger');
+const { seedMetroStations } = require('./utils/seedMetroStations');
 
 const logger = createContextLogger('Server');
 
@@ -71,6 +72,22 @@ mongoose.connect(process.env.MONGO_URL, mongoOptions)
   // Ensure default admin exists
   await Admin.createDefaultAdmin();
   
+  // Seed metro stations if not present
+  try {
+    const MetroStation = require('./models/MetroStation');
+    const stationCount = await MetroStation.countDocuments();
+    
+    if (stationCount === 0) {
+      logger.info('No metro stations found, seeding data...');
+      await seedMetroStations();
+      logger.info('Metro stations seeded successfully');
+    } else {
+      logger.info(`Metro stations already exist (${stationCount} stations)`);
+    }
+  } catch (error) {
+    logger.error('Error checking/seeding metro stations:', error);
+  }
+  
   // Setup periodic database monitoring
   setInterval(async () => {
     await printDriverStats();
@@ -103,6 +120,11 @@ mongoose.connect(process.env.MONGO_URL, mongoOptions)
 app.use('/api/drivers', require('./routes/drivers'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/ride-requests', require('./routes/rideRequests'));
+app.use('/api/ride-history', require('./routes/rideHistory'));
+app.use('/api/fare', require('./routes/fareEstimation'));
+app.use('/api/otp', require('./routes/otpVerification'));
 
 // Basic route for API status
 app.get('/', (req, res) => {

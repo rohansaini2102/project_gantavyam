@@ -20,11 +20,77 @@ const fileClient = axios.create({
   }
 });
 
-// Add authentication token to requests
+// Add authentication token to requests with context-aware selection
 const addAuthToken = (config) => {
-  const token = localStorage.getItem('adminToken') || localStorage.getItem('userToken') || localStorage.getItem('driverToken');
+  let token = null;
+  let tokenType = 'none';
+  
+  // Determine which token to use based on the request URL
+  const url = config.url || '';
+  
+  if (url.includes('/admin/')) {
+    token = localStorage.getItem('adminToken');
+    tokenType = 'admin';
+  } else if (url.includes('/drivers/')) {
+    token = localStorage.getItem('driverToken');
+    tokenType = 'driver';
+  } else if (url.includes('/users/')) {
+    token = localStorage.getItem('userToken');
+    tokenType = 'user';
+  } else {
+    // For generic routes, try to determine from current context
+    const currentPath = window.location.pathname;
+    if (currentPath.includes('/admin')) {
+      token = localStorage.getItem('adminToken');
+      tokenType = 'admin';
+    } else if (currentPath.includes('/driver')) {
+      token = localStorage.getItem('driverToken');
+      tokenType = 'driver';
+    } else {
+      token = localStorage.getItem('userToken');
+      tokenType = 'user';
+    }
+  }
+  
+  // Validate token before using it
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const isExpired = payload.exp * 1000 <= Date.now();
+      
+      if (isExpired) {
+        console.log(`[API] ${tokenType} token is expired, removing from localStorage`);
+        localStorage.removeItem(`${tokenType}Token`);
+        token = null;
+      }
+    } catch (error) {
+      console.error(`[API] Invalid ${tokenType} token format, removing from localStorage:`, error);
+      localStorage.removeItem(`${tokenType}Token`);
+      token = null;
+    }
+  }
+  
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
+    console.log('[API] Adding auth token to request:', {
+      url: config.url,
+      method: config.method,
+      tokenType: tokenType,
+      hasToken: !!token,
+      tokenLength: token.length,
+      tokenStart: token.substring(0, 20) + '...'
+    });
+  } else {
+    console.log('[API] No valid token found for request:', {
+      url: config.url,
+      method: config.method,
+      expectedTokenType: tokenType,
+      availableTokens: {
+        admin: !!localStorage.getItem('adminToken'),
+        user: !!localStorage.getItem('userToken'),
+        driver: !!localStorage.getItem('driverToken')
+      }
+    });
   }
   return config;
 };
@@ -48,10 +114,29 @@ const addAuthToken = (config) => {
         error.message || 
         'Unknown error occurred';
       
+      console.log('[API] Response error details:', {
+        status: error.response?.status,
+        url: error.config?.url,
+        method: error.config?.method,
+        message: errorMessage,
+        hasAuthHeader: !!error.config?.headers?.Authorization,
+        authHeaderStart: error.config?.headers?.Authorization?.substring(0, 20) + '...'
+      });
+      
       // Handle authentication errors
       if (error.response && error.response.status === 401) {
-        console.error('Authentication error:', errorMessage);
-        // You could redirect to login page or show auth error
+        console.error('[API] 401 Authentication error:', {
+          message: errorMessage,
+          url: error.config?.url,
+          hasToken: !!error.config?.headers?.Authorization
+        });
+        
+        // Don't automatically logout on 401 errors
+        // Let individual components handle authentication failures
+        // This prevents unexpected logouts during normal operations
+        
+        // Only log the error, don't clear tokens or redirect
+        console.warn('[API] 401 error detected, but not automatically logging out. Let component handle it.');
       }
       
       // Return error in normalized format
@@ -71,9 +156,13 @@ export const auth = {
       const response = await apiClient.post('/users/login', credentials);
       // Store token in localStorage
       if (response.data.token) {
+        console.log('[API] Storing new user token after login');
         localStorage.setItem('userToken', response.data.token);
         localStorage.setItem('userRole', 'user');
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        
+        // Force refresh of axios interceptors to use new token
+        console.log('[API] Token stored, next requests will use new token');
       }
       return response.data;
     } catch (error) {
@@ -161,6 +250,26 @@ export const drivers = {
     }
   },
 
+  // Get all metro stations for driver metro booth selection
+  getMetroStations: async () => {
+    try {
+      const response = await apiClient.get('/drivers/metro-stations');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get driver dashboard data
+  getDashboard: async () => {
+    try {
+      const response = await apiClient.get('/drivers/dashboard');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   updateDriverLocation: async (locationData) => {
     try {
       const response = await apiClient.put('/drivers/location', locationData);
@@ -242,6 +351,168 @@ export const admin = {
   }
 };
 
+// User APIs
+export const users = {
+  // Get all metro stations for pickup selection
+  getMetroStations: async () => {
+    try {
+      const response = await apiClient.get('/users/metro-stations');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get fare estimates for a trip
+  getFareEstimate: async (fareData) => {
+    try {
+      const response = await apiClient.post('/users/fare-estimate', fareData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Book a ride
+  bookRide: async (bookingData) => {
+    try {
+      const response = await apiClient.post('/users/book-ride', bookingData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get user's active rides
+  getActiveRides: async () => {
+    try {
+      const response = await apiClient.get('/users/active-rides');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get user's ride history
+  getRideHistory: async (page = 1, limit = 10) => {
+    try {
+      const response = await apiClient.get(`/users/ride-history?page=${page}&limit=${limit}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get user profile
+  getProfile: async () => {
+    try {
+      const response = await apiClient.get('/users/profile');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Update user profile
+  updateProfile: async (profileData) => {
+    try {
+      const response = await apiClient.put('/users/profile', profileData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+};
+
+// Driver APIs enhancement
+const driverEnhancements = {
+  // Go online at a specific metro booth
+  goOnline: async (onlineData) => {
+    try {
+      const response = await apiClient.post('/drivers/go-online', onlineData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Go offline
+  goOffline: async () => {
+    try {
+      const response = await apiClient.post('/drivers/go-offline');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Update vehicle type
+  updateVehicleType: async (vehicleTypeData) => {
+    try {
+      const response = await apiClient.put('/drivers/vehicle-type', vehicleTypeData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get driver dashboard data
+  getDashboard: async () => {
+    try {
+      const response = await apiClient.get('/drivers/dashboard');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+};
+
+// Merge enhancements into drivers object
+Object.assign(drivers, driverEnhancements);
+
+// OTP Verification APIs
+export const otp = {
+  // Verify start OTP
+  verifyStartOTP: async (otpData) => {
+    try {
+      const response = await apiClient.post('/otp/verify-start', otpData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Verify end OTP
+  verifyEndOTP: async (otpData) => {
+    try {
+      const response = await apiClient.post('/otp/verify-end', otpData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get ride details with OTP status
+  getRideDetails: async (rideId) => {
+    try {
+      const response = await apiClient.get(`/otp/ride/${rideId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get active rides with OTPs
+  getActiveRides: async () => {
+    try {
+      const response = await apiClient.get('/otp/active-rides');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+};
+
 // Export individual functions for backward compatibility
 export const driverSignup = drivers.driverSignup;
 export const driverLogin = auth.driverLogin;
@@ -258,7 +529,9 @@ export const registerDriver = admin.registerDriver;
 const api = {
   auth,
   drivers,
-  admin
+  admin,
+  users,
+  otp
 };
 
 export default api;

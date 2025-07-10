@@ -39,6 +39,12 @@ const DriverSchema = new mongoose.Schema({
     required: [true, 'Please add a vehicle number'],
     unique: true
   },
+  vehicleType: {
+    type: String,
+    required: [true, 'Please select a vehicle type'],
+    enum: ['bike', 'auto', 'car'],
+    default: 'auto'
+  },
   registrationCertificatePhoto: {
     type: String,
     required: [true, 'Please upload registration certificate photo']
@@ -131,6 +137,32 @@ const DriverSchema = new mongoose.Schema({
       type: Boolean,
       default: false
     }
+  },
+  isOnline: {
+    type: Boolean,
+    default: false
+  },
+  currentMetroBooth: {
+    type: String,
+    default: null
+  },
+  rating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
+  },
+  totalRides: {
+    type: Number,
+    default: 0
+  },
+  totalEarnings: {
+    type: Number,
+    default: 0
+  },
+  lastActiveTime: {
+    type: Date,
+    default: Date.now
   }
 }, {
   timestamps: true
