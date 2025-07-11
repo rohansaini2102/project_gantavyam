@@ -38,10 +38,10 @@ router.get('/profile', protect, getDriverProfile);
 router.put('/location', protect, updateDriverLocation);
 
 // Get all pickup locations for driver booth selection
-router.get('/pickup-locations', protect, async (req, res) => {
+router.get('/pickup-locations', async (req, res) => {
   try {
     console.log('\n=== GET PICKUP LOCATIONS FOR DRIVER ===');
-    console.log('Driver ID:', req.user.id);
+    console.log('Public endpoint - no authentication required');
     
     // Check database connection
     if (require('mongoose').connection.readyState !== 1) {

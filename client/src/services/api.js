@@ -28,9 +28,9 @@ const addAuthToken = (config) => {
   // Determine which token to use based on the request URL
   const url = config.url || '';
   
-  // Skip token for metro stations endpoints (they're public)
-  if (url.includes('/metro-stations')) {
-    // Don't add any token for metro stations
+  // Skip token for metro stations and pickup locations endpoints (they're public)
+  if (url.includes('/metro-stations') || url.includes('/pickup-locations')) {
+    // Don't add any token for metro stations and pickup locations
     return config;
   }
   
@@ -379,10 +379,20 @@ export const admin = {
 
 // User APIs
 export const users = {
-  // Get all metro stations for pickup selection
+  // Get all metro stations for pickup selection (legacy)
   getMetroStations: async () => {
     try {
       const response = await apiClient.get('/users/metro-stations');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get all pickup locations for pickup selection 
+  getPickupLocations: async () => {
+    try {
+      const response = await apiClient.get('/users/pickup-locations');
       return response.data;
     } catch (error) {
       throw error;

@@ -58,8 +58,6 @@ const DriverDashboard = () => {
   const [rideError, setRideError] = useState('');
   const [pickupLocationsLoading, setPickupLocationsLoading] = useState(false);
   const [pickupLocationsError, setPickupLocationsError] = useState('');
-  const [metroStationsLoading, setMetroStationsLoading] = useState(false);
-  const [metroStationsError, setMetroStationsError] = useState('');
 
   // Tab and history state
   const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' or 'history'
@@ -131,89 +129,54 @@ const DriverDashboard = () => {
     }
   }, [navigate]);
 
-  // Function to load metro stations with retry logic
-  const loadMetroStations = async (retryCount = 0) => {
-    const maxRetries = 3;
-    
-    try {
-      console.log(`[DriverDashboard] Loading metro stations... (attempt ${retryCount + 1})`);
-      
-      setMetroStationsLoading(true);
-      setMetroStationsError('');
-      
-      const response = await drivers.getMetroStations();
-      console.log('[DriverDashboard] Metro stations loaded:', response.data);
-      
-      if (response.data && response.data.stations) {
-        setMetroStations(response.data.stations);
-        setMetroStationsLoading(false);
-        console.log(`✅ [DriverDashboard] Successfully loaded ${response.data.stations.length} metro stations`);
-      } else {
-        throw new Error('Invalid response structure: no stations data');
-      }
-      
-    } catch (error) {
-      console.error(`❌ [DriverDashboard] Error loading metro stations (attempt ${retryCount + 1}):`, error);
-      
-      if (retryCount < maxRetries) {
-        // Retry with exponential backoff
-        const retryDelay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-        console.log(`🔄 [DriverDashboard] Retrying in ${retryDelay}ms...`);
-        
-        setMetroStationsError(`Loading... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-        
-        setTimeout(() => {
-          loadMetroStations(retryCount + 1);
-        }, retryDelay);
-      } else {
-        // All retries failed, use fallback
-        console.warn('⚠️ [DriverDashboard] All retries failed, using fallback metro stations');
-        
-        // Try to use fallback data
-        try {
-          const fallbackModule = await import('../../data/delhiMetroStations.js');
-          const fallbackStations = fallbackModule.DELHI_METRO_STATIONS;
-          if (fallbackStations && fallbackStations.length > 0) {
-            setMetroStations(fallbackStations);
-            setMetroStationsLoading(false);
-            setMetroStationsError('Using offline data (limited functionality)');
-            console.log(`✅ [DriverDashboard] Loaded ${fallbackStations.length} fallback stations`);
-          } else {
-            throw new Error('Fallback data not available');
-          }
-        } catch (fallbackError) {
-          console.error('❌ [DriverDashboard] Fallback also failed:', fallbackError);
-          setMetroStationsLoading(false);
-          setMetroStationsError(`Failed to load metro stations: ${error.message}`);
-        }
-      }
-    }
-  };
 
   // Load pickup locations for booth selection
   const loadPickupLocations = async (retryCount = 0) => {
     const maxRetries = 3;
     
     try {
-      console.log(`[DriverDashboard] Loading pickup locations... (attempt ${retryCount + 1})`);
+      console.log(`[DriverDashboard] 📍 Loading pickup locations... (attempt ${retryCount + 1})`);
+      
+      // Debug authentication
+      const driverToken = localStorage.getItem('driverToken');
+      console.log('[DriverDashboard] 📍 Driver token status:', {
+        hasToken: !!driverToken,
+        tokenLength: driverToken?.length,
+        tokenStart: driverToken?.substring(0, 50) + '...'
+      });
       
       setPickupLocationsLoading(true);
       setPickupLocationsError('');
       
       const response = await drivers.getPickupLocations();
-      console.log('[DriverDashboard] Pickup locations loaded:', response.data);
+      console.log('[DriverDashboard] 📍 Pickup locations response:', response);
+      console.log('[DriverDashboard] 📍 Pickup locations data:', response.data);
       
-      if (response.data && response.data.locations) {
-        setPickupLocations(response.data.locations);
-        setLocationsByType(response.data.locationsByType);
+      if (response.data && (response.data.locations || response.data.stations)) {
+        const locations = response.data.locations || response.data.stations || [];
+        const byType = response.data.locationsByType || {};
+        
+        setPickupLocations(locations);
+        setLocationsByType(byType);
+        
+        // For backward compatibility, also set metroStations
+        const metroOnly = locations.filter(loc => loc.type === 'metro');
+        setMetroStations(metroOnly);
         setPickupLocationsLoading(false);
-        console.log(`✅ [DriverDashboard] Successfully loaded ${response.data.locations.length} pickup locations`);
+        
+        console.log(`✅ [DriverDashboard] Successfully loaded ${locations.length} pickup locations (${metroOnly.length} metro stations)`);
       } else {
-        throw new Error('Invalid response structure: no locations data');
+        throw new Error('Invalid response structure: no locations data found in API response');
       }
       
     } catch (error) {
       console.error(`❌ [DriverDashboard] Error loading pickup locations (attempt ${retryCount + 1}):`, error);
+      console.error(`❌ [DriverDashboard] Error details:`, {
+        message: error.message,
+        status: error.status,
+        error: error.error,
+        stack: error.stack
+      });
       
       if (retryCount < maxRetries) {
         const retryDelay = Math.pow(2, retryCount) * 1000;
@@ -232,10 +195,9 @@ const DriverDashboard = () => {
     }
   };
 
-  // Load metro stations for booth selection (legacy)
+  // Load pickup locations for booth selection
   useEffect(() => {
     if (driver) {
-      loadMetroStations();
       loadPickupLocations();
     }
   }, [driver]);
@@ -342,6 +304,21 @@ const DriverDashboard = () => {
           setRideRequests([]);
           setSelectedRequest(null);
           setRideError('');
+        },
+        
+        onQueueNumberAssigned: (data) => {
+          console.log('[DriverDashboard] Queue number assigned:', data);
+          setActiveRide(prev => ({ 
+            ...prev, 
+            queueNumber: data.queueNumber,
+            queuePosition: data.queuePosition,
+            queueStatus: 'queued',
+            estimatedWaitTime: data.estimatedWaitTime,
+            totalInQueue: data.totalInQueue,
+            boothName: data.boothName,
+            boothCode: data.boothCode
+          }));
+          setRideError(`✅ ${data.message}`);
         },
         
         onRideAcceptError: (data) => {
@@ -515,6 +492,9 @@ const DriverDashboard = () => {
 
   // Enhanced search function with fuzzy matching
   const searchPickupLocations = (query) => {
+    console.log('[DriverDashboard SearchPickupLocations] Query:', query);
+    console.log('[DriverDashboard SearchPickupLocations] Total locations:', pickupLocations.length);
+    
     if (!query.trim()) return [];
     
     const searchTerm = query.toLowerCase().trim();
@@ -1207,7 +1187,7 @@ Check console for detailed information.`);
                     borderTop: 'none',
                     borderRadius: '0 0 4px 4px',
                     boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                    zIndex: 1000,
+                    zIndex: 9999,
                     maxHeight: '300px',
                     overflowY: 'auto'
                   }}>
@@ -1345,11 +1325,40 @@ Check console for detailed information.`);
                   padding: '1rem',
                   borderRadius: '4px',
                   textAlign: 'center',
-                  marginBottom: '1.5rem',
+                  marginBottom: '1rem',
                   fontSize: '1.2rem',
                   fontWeight: 'bold'
                 }}>
                   Ride #{activeRide.boothRideNumber}
+                </div>
+              )}
+
+              {/* Queue Information for Driver */}
+              {activeRide.queueNumber && (
+                <div style={{
+                  backgroundColor: '#e8f5e9',
+                  border: '2px solid #4caf50',
+                  color: '#2e7d32',
+                  padding: '1.5rem',
+                  borderRadius: '8px',
+                  textAlign: 'center',
+                  marginBottom: '1.5rem',
+                  boxShadow: '0 3px 10px rgba(76,175,80,0.2)'
+                }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                    📋 Queue: {activeRide.queueNumber}
+                  </div>
+                  <div style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>
+                    Your position: #{activeRide.queuePosition}
+                  </div>
+                  {activeRide.totalInQueue > 0 && (
+                    <div style={{ fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem' }}>
+                      {activeRide.totalInQueue} rides in queue
+                    </div>
+                  )}
+                  <div style={{ fontSize: '0.9rem', color: '#666', fontWeight: 'bold' }}>
+                    📍 {activeRide.boothName || activeRide.pickupStation}
+                  </div>
                 </div>
               )}
               

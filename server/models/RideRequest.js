@@ -95,6 +95,24 @@ const rideRequestSchema = new mongoose.Schema({
     unique: true,
     sparse: true
   },
+  // New queue management fields
+  queueNumber: {
+    type: String,
+    sparse: true,
+    index: true
+  },
+  queuePosition: {
+    type: Number,
+    min: 1
+  },
+  queueAssignedAt: {
+    type: Date
+  },
+  queueStatus: {
+    type: String,
+    enum: ['queued', 'in_progress', 'completed'],
+    default: 'queued'
+  },
   paymentStatus: {
     type: String,
     enum: ['pending', 'collected', 'online'],
@@ -119,5 +137,10 @@ const rideRequestSchema = new mongoose.Schema({
 rideRequestSchema.index({ boothRideNumber: 1 });
 rideRequestSchema.index({ paymentStatus: 1 });
 rideRequestSchema.index({ 'pickupLocation.boothName': 1, timestamp: -1 });
+
+// Indexes for queue management
+rideRequestSchema.index({ queueNumber: 1 });
+rideRequestSchema.index({ 'pickupLocation.boothName': 1, queueStatus: 1, queuePosition: 1 });
+rideRequestSchema.index({ queueAssignedAt: -1 });
 
 module.exports = mongoose.model('RideRequest', rideRequestSchema); 

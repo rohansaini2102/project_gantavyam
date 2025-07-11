@@ -114,12 +114,17 @@ const UserDashboard = () => {
 
   // Search and filter pickup locations
   const searchPickupLocations = (query) => {
+    console.log('[SearchPickupLocations] Query:', query);
+    console.log('[SearchPickupLocations] Total locations:', pickupLocations.length);
+    console.log('[SearchPickupLocations] Filter:', selectedLocationFilter);
+    
     if (!query.trim()) {
       return getFilteredLocations().slice(0, maxPickupResults);
     }
 
     const searchTerm = query.toLowerCase().trim();
     const filtered = getFilteredLocations();
+    console.log('[SearchPickupLocations] Filtered locations:', filtered.length);
     
     // Score-based matching for better relevance
     const scored = filtered.map(location => {
@@ -359,7 +364,10 @@ const UserDashboard = () => {
         const checkConnection = () => {
           const connected = isSocketConnected();
           setSocketConnected(connected);
-          console.log('[UserDashboard] Socket connected:', connected);
+          console.log('[UserDashboard] 🔌 Socket connected:', connected);
+        if (!connected) {
+          console.warn('[UserDashboard] ⚠️ Socket not connected - ride events may not work');
+        }
         };
         
         // Check immediately and then periodically
@@ -381,7 +389,7 @@ const UserDashboard = () => {
     const loadPickupLocations = async () => {
       try {
         console.log('[UserDashboard] Loading pickup locations from backend...');
-        const response = await users.getMetroStations(); // This now returns all pickup locations
+        const response = await users.getPickupLocations(); // Load all pickup locations
         console.log('[UserDashboard] Pickup locations loaded:', response.data);
         
         const locations = response.data.stations || [];
@@ -484,6 +492,28 @@ const UserDashboard = () => {
           setActiveRide(prev => ({ ...prev, ...data, status: 'driver_assigned' }));
           setShowOTP({ type: 'start', otp: data.startOTP });
           setBookingError('');
+        },
+        
+        onQueueNumberAssigned: (data) => {
+          console.log('[UserDashboard] 🎫 Queue number assigned:', data);
+          console.log('[UserDashboard] Queue Number:', data.queueNumber);
+          console.log('[UserDashboard] Queue Position:', data.queuePosition);
+          console.log('[UserDashboard] Active Ride before update:', activeRide);
+          
+          setActiveRide(prev => {
+            const updated = { 
+              ...prev, 
+              queueNumber: data.queueNumber,
+              queuePosition: data.queuePosition,
+              queueStatus: 'queued',
+              estimatedWaitTime: data.estimatedWaitTime,
+              totalInQueue: data.totalInQueue,
+              boothName: data.boothName
+            };
+            console.log('[UserDashboard] Active Ride after update:', updated);
+            return updated;
+          });
+          setBookingError(`✅ ${data.message}`);
         },
         
         onRideStarted: (data) => {
@@ -985,12 +1015,46 @@ const UserDashboard = () => {
                 padding: '1rem',
                 borderRadius: '4px',
                 textAlign: 'center',
-                marginBottom: '1.5rem',
+                marginBottom: '1rem',
                 fontSize: '1.3rem',
                 fontWeight: 'bold',
                 boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
               }}>
                 🎫 Your Ride Number: {activeRide.boothRideNumber}
+              </div>
+            )}
+
+            {/* Queue Information Display */}
+            {activeRide.queueNumber && (
+              <div style={{
+                backgroundColor: '#e3f2fd',
+                border: '2px solid #2196f3',
+                color: '#1976d2',
+                padding: '1.5rem',
+                borderRadius: '8px',
+                textAlign: 'center',
+                marginBottom: '1.5rem',
+                boxShadow: '0 3px 10px rgba(33,150,243,0.2)'
+              }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  📋 Queue Number: {activeRide.queueNumber}
+                </div>
+                <div style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>
+                  Position: #{activeRide.queuePosition} in line
+                </div>
+                {activeRide.totalInQueue > 0 && (
+                  <div style={{ fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem' }}>
+                    {activeRide.totalInQueue} rides ahead of you
+                  </div>
+                )}
+                {activeRide.estimatedWaitTime > 0 && (
+                  <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#f57c00' }}>
+                    ⏱️ Estimated wait: {activeRide.estimatedWaitTime} minutes
+                  </div>
+                )}
+                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>
+                  at {activeRide.boothName || activeRide.pickupStation}
+                </div>
               </div>
             )}
 
@@ -1228,7 +1292,7 @@ const UserDashboard = () => {
                     borderRadius: '0 0 4px 4px',
                     maxHeight: '300px',
                     overflowY: 'auto',
-                    zIndex: 1000,
+                    zIndex: 9999,
                     boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
                   }}>
                     {(() => {

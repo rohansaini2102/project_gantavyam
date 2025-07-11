@@ -35,7 +35,8 @@ class SocketService {
     this.disconnect();
 
     // Create new socket connection
-    console.log('Initializing new socket connection with token');
+    console.log('[SocketService] 🔌 Initializing new socket connection with token');
+    console.log('[SocketService] 🔌 Server URL:', this.serverUrl);
     
     this.initializePromise = new Promise((resolve) => {
       this.socket = io(this.serverUrl, {
@@ -125,11 +126,20 @@ class SocketService {
       return;
     }
     
-    console.log('Subscribing to user ride updates');
+    console.log('[SocketService] 📝 Subscribing to user ride updates');
+    console.log('[SocketService] 📝 Available callbacks:', Object.keys(callbacks));
     
     // User-specific ride events
     if (callbacks.onRideAccepted) {
       this.socket.on('rideAccepted', callbacks.onRideAccepted);
+    }
+    
+    if (callbacks.onQueueNumberAssigned) {
+      console.log('[SocketService] 🎫 Setting up queueNumberAssigned listener');
+      this.socket.on('queueNumberAssigned', (data) => {
+        console.log('[SocketService] 🎫 Received queueNumberAssigned event:', data);
+        callbacks.onQueueNumberAssigned(data);
+      });
     }
     
     if (callbacks.onRideStarted) {
@@ -187,6 +197,14 @@ class SocketService {
       this.socket.on('rideAcceptConfirmed', callbacks.onRideAcceptConfirmed);
     }
     
+    if (callbacks.onQueueNumberAssigned) {
+      console.log('[SocketService] 🎫 Setting up queueNumberAssigned listener');
+      this.socket.on('queueNumberAssigned', (data) => {
+        console.log('[SocketService] 🎫 Received queueNumberAssigned event:', data);
+        callbacks.onQueueNumberAssigned(data);
+      });
+    }
+    
     if (callbacks.onRideAcceptError) {
       this.socket.on('rideAcceptError', callbacks.onRideAcceptError);
     }
@@ -230,6 +248,7 @@ class SocketService {
     
     console.log('Unsubscribing from user ride updates');
     this.socket.off('rideAccepted');
+    this.socket.off('queueNumberAssigned');
     this.socket.off('rideStarted');
     this.socket.off('rideEnded');
     this.socket.off('rideCancelled');
@@ -247,6 +266,7 @@ class SocketService {
     this.socket.off('newRideRequest');
     this.socket.off('rideRequestClosed');
     this.socket.off('rideAcceptConfirmed');
+    this.socket.off('queueNumberAssigned');
     this.socket.off('rideAcceptError');
     this.socket.off('driverOnlineConfirmed');
     this.socket.off('driverOfflineConfirmed');

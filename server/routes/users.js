@@ -128,7 +128,7 @@ router.put('/profile', protectUser, async (req, res) => {
 });
 
 // Get all pickup locations (metro, railway, airport, bus terminals)
-router.get('/metro-stations', async (req, res) => {
+router.get('/pickup-locations', async (req, res) => {
   try {
     console.log('\n=== GET PICKUP LOCATIONS FOR USER ===');
     console.log('Request headers:', req.headers);
@@ -203,7 +203,20 @@ router.get('/metro-stations', async (req, res) => {
     res.json({
       success: true,
       data: {
-        // All locations in a flat array
+        // All locations in a flat array (new standard format)
+        locations: locations.map(l => ({
+          id: l.id,
+          name: l.name,
+          type: l.type,
+          subType: l.subType,
+          line: l.line, // For metro stations
+          lat: l.lat,
+          lng: l.lng,
+          address: l.address,
+          priority: l.priority
+        })),
+        
+        // Backward compatibility - same data as locations
         stations: locations.map(l => ({
           id: l.id,
           name: l.name,
@@ -246,6 +259,92 @@ router.get('/metro-stations', async (req, res) => {
       error: error.message,
       errorType: error.name,
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Backward compatibility route 
+router.get('/metro-stations', async (req, res) => {
+  try {
+    console.log('\n=== GET METRO STATIONS (BACKWARD COMPATIBILITY) ===');
+    
+    // Get all active pickup locations
+    const locations = await PickupLocation.find({ isActive: true })
+      .select('id name type subType line lat lng address priority')
+      .sort({ priority: -1, type: 1, name: 1 });
+    
+    // Group locations by type
+    const locationsByType = {};
+    const stationsByLine = {};
+    
+    locations.forEach(location => {
+      if (!locationsByType[location.type]) {
+        locationsByType[location.type] = [];
+      }
+      locationsByType[location.type].push({
+        id: location.id,
+        name: location.name,
+        type: location.type,
+        subType: location.subType,
+        lat: location.lat,
+        lng: location.lng,
+        address: location.address,
+        line: location.line,
+        priority: location.priority
+      });
+      
+      if (location.type === 'metro' && location.line) {
+        if (!stationsByLine[location.line]) {
+          stationsByLine[location.line] = [];
+        }
+        stationsByLine[location.line].push({
+          id: location.id,
+          name: location.name,
+          lat: location.lat,
+          lng: location.lng
+        });
+      }
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        // Backward compatibility
+        stations: locations.map(l => ({
+          id: l.id,
+          name: l.name,
+          type: l.type,
+          subType: l.subType,
+          line: l.line,
+          lat: l.lat,
+          lng: l.lng,
+          address: l.address,
+          priority: l.priority
+        })),
+        // New standard format
+        locations: locations.map(l => ({
+          id: l.id,
+          name: l.name,
+          type: l.type,
+          subType: l.subType,
+          line: l.line,
+          lat: l.lat,
+          lng: l.lng,
+          address: l.address,
+          priority: l.priority
+        })),
+        locationsByType,
+        stationsByLine,
+        totalLocations: locations.length
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error getting metro stations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting metro stations',
+      error: error.message
     });
   }
 });

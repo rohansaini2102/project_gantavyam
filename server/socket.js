@@ -9,6 +9,7 @@ const MetroStation = require('./models/MetroStation');
 const { generateRideId, generateRideOTPs, verifyOTP } = require('./utils/otpUtils');
 const { logRideEvent, logUserAction, logDriverAction, logError } = require('./utils/rideLogger');
 const { calculateFareEstimates, getDynamicPricingFactor } = require('./utils/fareCalculator');
+const { generateQueueNumber, updateQueuePosition, removeFromQueue } = require('./utils/queueManager');
 const RideLifecycleService = require('./services/rideLifecycle');
 
 let io;
@@ -370,19 +371,65 @@ const initializeSocket = (server) => {
         
         console.log('✅ Ride request updated in database');
         
+        // Generate queue number for this accepted ride
+        let queueInfo = null;
+        const boothName = rideRequest.pickupLocation?.boothName;
+        console.log('🎫 [Queue] Booth name from ride request:', boothName);
+        
+        if (boothName) {
+          try {
+            console.log('🎫 [Queue] Generating queue number for booth:', boothName);
+            queueInfo = await generateQueueNumber(boothName, rideRequest._id);
+            console.log('🎫 [Queue] Queue generation result:', queueInfo);
+            
+            if (queueInfo.success) {
+              // Update ride request with queue information
+              rideRequest.queueNumber = queueInfo.queueNumber;
+              rideRequest.queuePosition = queueInfo.queuePosition;
+              rideRequest.queueAssignedAt = new Date();
+              rideRequest.queueStatus = 'queued';
+              await rideRequest.save();
+              
+              console.log('✅ Queue number assigned:', queueInfo.queueNumber);
+            } else {
+              console.warn('⚠️ Queue number generation failed, using fallback:', queueInfo.fallbackQueueNumber);
+              rideRequest.queueNumber = queueInfo.fallbackQueueNumber;
+              rideRequest.queuePosition = queueInfo.queuePosition;
+              rideRequest.queueAssignedAt = new Date();
+              rideRequest.queueStatus = 'queued';
+              await rideRequest.save();
+            }
+          } catch (queueError) {
+            console.error('❌ Queue number generation error:', queueError);
+            // Continue without queue number - don't fail the ride acceptance
+          }
+        } else {
+          console.warn('⚠️ No booth name found, skipping queue number generation');
+        }
+        
         // Log ride event
         logRideEvent(rideRequest.rideId, 'ride_accepted', {
           driverId,
           driverName,
           vehicleType: rideRequest.vehicleType,
-          acceptedAt: new Date()
+          acceptedAt: new Date(),
+          queueNumber: rideRequest.queueNumber,
+          queuePosition: rideRequest.queuePosition
         });
 
-        // Prepare acceptance data with OTP info
+        // Prepare acceptance data with OTP info and queue information
         const acceptanceData = {
           rideId: rideRequest._id.toString(),
           uniqueRideId: rideRequest.rideId,
           boothRideNumber: rideRequest.boothRideNumber,
+          // Queue information
+          queueNumber: rideRequest.queueNumber,
+          queuePosition: rideRequest.queuePosition,
+          queueStatus: rideRequest.queueStatus,
+          queueAssignedAt: rideRequest.queueAssignedAt,
+          estimatedWaitTime: queueInfo?.estimatedWaitTime || 0,
+          totalInQueue: queueInfo?.totalInQueue || 0,
+          // Driver information
           driverId: driverId,
           driverName: driverName,
           driverPhone: driverPhone,
@@ -401,6 +448,30 @@ const initializeSocket = (server) => {
         
         console.log('📤 Notifying user:', rideRequest.userId);
         io.to(`user_${rideRequest.userId}`).emit('rideAccepted', acceptanceData);
+        
+        // Send queue-specific notification if queue number was generated
+        if (rideRequest.queueNumber) {
+          const queueNotification = {
+            queueNumber: rideRequest.queueNumber,
+            queuePosition: rideRequest.queuePosition,
+            boothName: boothName,
+            boothCode: queueInfo?.boothCode,
+            estimatedWaitTime: queueInfo?.estimatedWaitTime || 0,
+            totalInQueue: queueInfo?.totalInQueue || 0,
+            message: `You are number ${rideRequest.queuePosition} in the queue at ${boothName}`
+          };
+          
+          // Notify user about queue assignment
+          io.to(`user_${rideRequest.userId}`).emit('queueNumberAssigned', queueNotification);
+          
+          // Notify driver about queue assignment
+          socket.emit('queueNumberAssigned', {
+            ...queueNotification,
+            message: `Ride assigned queue number ${rideRequest.queueNumber} at ${boothName}`
+          });
+          
+          console.log('📋 Queue notifications sent:', rideRequest.queueNumber);
+        }
         
         // Notify other drivers that this ride is taken
         socket.broadcast.to('drivers').emit('rideRequestClosed', {
@@ -482,9 +553,20 @@ const initializeSocket = (server) => {
         // Update ride status
         rideRequest.status = 'ride_started';
         rideRequest.rideStartedAt = new Date();
+        rideRequest.queueStatus = 'in_progress'; // Update queue status
         await rideRequest.save();
         
         console.log('✅ Ride started successfully');
+        
+        // Update queue position to in_progress
+        if (rideRequest.queueNumber) {
+          try {
+            await updateQueuePosition(rideRequest._id, 'in_progress');
+            console.log('📋 Queue status updated to in_progress');
+          } catch (queueError) {
+            console.error('❌ Error updating queue status:', queueError);
+          }
+        }
         
         // Log ride event
         logRideEvent(rideRequest.rideId, 'ride_started', {
@@ -572,9 +654,20 @@ const initializeSocket = (server) => {
         rideRequest.paymentStatus = 'collected'; // Auto-assume cash payment collected
         rideRequest.paymentMethod = 'cash';
         rideRequest.paymentCollectedAt = new Date();
+        rideRequest.queueStatus = 'completed'; // Update queue status
         await rideRequest.save();
         
         console.log('✅ Ride ended, now completing automatically...');
+        
+        // Remove from queue and update queue positions
+        if (rideRequest.queueNumber) {
+          try {
+            await removeFromQueue(rideRequest._id);
+            console.log('📋 Ride removed from queue successfully');
+          } catch (queueError) {
+            console.error('❌ Error removing from queue:', queueError);
+          }
+        }
         
         // Log ride event
         logRideEvent(rideRequest.rideId, 'ride_ended', {
@@ -702,9 +795,20 @@ const initializeSocket = (server) => {
         rideRequest.cancelledAt = new Date();
         rideRequest.cancellationReason = reason || 'No reason provided';
         rideRequest.cancelledBy = socket.user.role;
+        rideRequest.queueStatus = 'completed'; // Mark queue as completed when cancelled
         await rideRequest.save();
         
         console.log('✅ Ride cancelled in database');
+        
+        // Remove from queue if it was in queue
+        if (rideRequest.queueNumber) {
+          try {
+            await removeFromQueue(rideRequest._id);
+            console.log('📋 Cancelled ride removed from queue successfully');
+          } catch (queueError) {
+            console.error('❌ Error removing cancelled ride from queue:', queueError);
+          }
+        }
         
         // Log ride event
         logRideEvent(rideRequest.rideId, 'ride_cancelled', {

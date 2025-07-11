@@ -14,6 +14,9 @@ const {
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 
+// Import queue routes
+const queueRoutes = require('./admin/queueRoutes');
+
 // Configure multer for multiple files
 const driverDocumentUpload = uploadDriverDocuments.fields([
   { name: 'aadhaarPhotoFront', maxCount: 1 },
@@ -37,6 +40,9 @@ router.get('/users/:id', adminProtect, getUserById);
 
 // Approve/reject driver
 router.put('/drivers/:id/verify', adminProtect, verifyDriver);
+
+// Queue management routes
+router.use('/queue', queueRoutes);
 
 // Delete driver
 router.delete('/drivers/:id', adminProtect, async (req, res) => {
