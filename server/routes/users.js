@@ -6,6 +6,7 @@ const protectUser = require('../middleware/userAuth'); // Import user-specific a
 const { uploadProfileImage } = require('../config/cloudinary');
 const User = require('../models/User');
 const MetroStation = require('../models/MetroStation');
+const PickupLocation = require('../models/PickupLocation');
 const RideRequest = require('../models/RideRequest');
 const { calculateFareEstimates } = require('../utils/fareCalculator');
 const { generateRideId, generateRideOTPs, generateBoothRideNumber } = require('../utils/otpUtils');
@@ -126,10 +127,10 @@ router.put('/profile', protectUser, async (req, res) => {
   }
 });
 
-// Get all metro stations for pickup selection
+// Get all pickup locations (metro, railway, airport, bus terminals)
 router.get('/metro-stations', async (req, res) => {
   try {
-    console.log('\n=== GET METRO STATIONS FOR USER ===');
+    console.log('\n=== GET PICKUP LOCATIONS FOR USER ===');
     console.log('Request headers:', req.headers);
     console.log('Database connection state:', require('mongoose').connection.readyState);
     
@@ -143,60 +144,105 @@ router.get('/metro-stations', async (req, res) => {
       });
     }
     
-    // Test basic MetroStation model access
-    const totalStations = await MetroStation.countDocuments();
-    const activeStations = await MetroStation.countDocuments({ isActive: true });
+    // Get statistics from PickupLocation model
+    const totalLocations = await PickupLocation.countDocuments();
+    const activeLocations = await PickupLocation.countDocuments({ isActive: true });
     
-    console.log(`📊 Database stats: ${totalStations} total stations, ${activeStations} active`);
+    console.log(`📊 Database stats: ${totalLocations} total locations, ${activeLocations} active`);
     
-    const stations = await MetroStation.find({ isActive: true })
-      .select('id name line lat lng')
-      .sort({ line: 1, name: 1 });
+    // Get all active pickup locations
+    const locations = await PickupLocation.find({ isActive: true })
+      .select('id name type subType line lat lng address priority')
+      .sort({ priority: -1, type: 1, name: 1 });
     
-    // Group stations by line
-    const stationsByLine = {};
-    stations.forEach(station => {
-      if (!stationsByLine[station.line]) {
-        stationsByLine[station.line] = [];
+    // Group locations by type
+    const locationsByType = {};
+    const stationsByLine = {}; // For backward compatibility with metro stations
+    
+    locations.forEach(location => {
+      // Group by type
+      if (!locationsByType[location.type]) {
+        locationsByType[location.type] = [];
       }
-      stationsByLine[station.line].push({
-        id: station.id,
-        name: station.name,
-        lat: station.lat,
-        lng: station.lng
+      locationsByType[location.type].push({
+        id: location.id,
+        name: location.name,
+        type: location.type,
+        subType: location.subType,
+        lat: location.lat,
+        lng: location.lng,
+        address: location.address,
+        line: location.line,
+        priority: location.priority
       });
+      
+      // Group metro stations by line for backward compatibility
+      if (location.type === 'metro' && location.line) {
+        if (!stationsByLine[location.line]) {
+          stationsByLine[location.line] = [];
+        }
+        stationsByLine[location.line].push({
+          id: location.id,
+          name: location.name,
+          lat: location.lat,
+          lng: location.lng
+        });
+      }
     });
     
-    console.log(`✅ Returning ${stations.length} metro stations grouped by line`);
-    console.log(`📋 Lines available: ${Object.keys(stationsByLine).join(', ')}`);
+    // Get type statistics
+    const typeStats = await PickupLocation.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: '$type', count: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
+    ]);
+    
+    console.log(`✅ Returning ${locations.length} pickup locations across ${Object.keys(locationsByType).length} types`);
+    console.log(`📋 Types available: ${Object.keys(locationsByType).join(', ')}`);
     
     res.json({
       success: true,
       data: {
-        stations: stations.map(s => ({
-          id: s.id,
-          name: s.name,
-          line: s.line,
-          lat: s.lat,
-          lng: s.lng
+        // All locations in a flat array
+        stations: locations.map(l => ({
+          id: l.id,
+          name: l.name,
+          type: l.type,
+          subType: l.subType,
+          line: l.line, // For metro stations
+          lat: l.lat,
+          lng: l.lng,
+          address: l.address,
+          priority: l.priority
         })),
+        
+        // Grouped by type (metro, railway, airport, bus_terminal)
+        locationsByType,
+        
+        // Metro stations grouped by line (for backward compatibility)
         stationsByLine,
-        totalStations: stations.length
+        
+        // Summary counts
+        totalLocations: locations.length,
+        typeStats: typeStats.reduce((acc, stat) => {
+          acc[stat._id] = stat.count;
+          return acc;
+        }, {})
       },
       meta: {
-        totalInDb: totalStations,
-        activeInDb: activeStations,
-        returned: stations.length,
+        totalInDb: totalLocations,
+        activeInDb: activeLocations,
+        returned: locations.length,
         timestamp: new Date().toISOString()
       }
     });
     
   } catch (error) {
-    console.error('❌ Error getting metro stations:', error);
+    console.error('❌ Error getting pickup locations:', error);
     console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'Error getting metro stations',
+      message: 'Error getting pickup locations',
       error: error.message,
       errorType: error.name,
       timestamp: new Date().toISOString()
@@ -223,12 +269,27 @@ router.post('/fare-estimate', protectUser, async (req, res) => {
       });
     }
     
-    // Find pickup station details
-    const station = await MetroStation.findOne({ name: pickupStation });
+    // Find pickup location details (try new model first, fallback to old model)
+    let station = await PickupLocation.findOne({ name: pickupStation, isActive: true });
+    
+    if (!station) {
+      // Fallback to MetroStation model for backward compatibility
+      const oldStation = await MetroStation.findOne({ name: pickupStation });
+      if (oldStation) {
+        station = {
+          name: oldStation.name,
+          lat: oldStation.lat,
+          lng: oldStation.lng,
+          line: oldStation.line,
+          type: 'metro'
+        };
+      }
+    }
+    
     if (!station) {
       return res.status(404).json({
         success: false,
-        message: 'Pickup station not found'
+        message: 'Pickup location not found'
       });
     }
     
@@ -302,12 +363,27 @@ router.post('/book-ride', protectUser, async (req, res) => {
       });
     }
     
-    // Find pickup station
-    const station = await MetroStation.findOne({ name: pickupStation });
+    // Find pickup location (try new model first, fallback to old model)
+    let station = await PickupLocation.findOne({ name: pickupStation, isActive: true });
+    
+    if (!station) {
+      // Fallback to MetroStation model for backward compatibility
+      const oldStation = await MetroStation.findOne({ name: pickupStation });
+      if (oldStation) {
+        station = {
+          name: oldStation.name,
+          lat: oldStation.lat,
+          lng: oldStation.lng,
+          line: oldStation.line,
+          type: 'metro'
+        };
+      }
+    }
+    
     if (!station) {
       return res.status(404).json({
         success: false,
-        message: 'Pickup station not found'
+        message: 'Pickup location not found'
       });
     }
     

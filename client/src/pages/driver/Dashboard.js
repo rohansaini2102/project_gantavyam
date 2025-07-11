@@ -27,11 +27,21 @@ const DriverDashboard = () => {
   
   // Driver status
   const [isOnline, setIsOnline] = useState(false);
-  const [selectedMetroBooth, setSelectedMetroBooth] = useState('');
+  const [selectedPickupLocation, setSelectedPickupLocation] = useState('');
+  const [selectedMetroBooth, setSelectedMetroBooth] = useState(''); // Legacy compatibility
   const [vehicleType, setVehicleType] = useState('auto');
   const [driverLocation, setDriverLocation] = useState(null);
   
-  // Metro stations
+  // Pickup locations
+  const [pickupLocations, setPickupLocations] = useState([]);
+  const [locationsByType, setLocationsByType] = useState({});
+  const [selectedLocationFilter, setSelectedLocationFilter] = useState('all');
+  const [pickupSearchQuery, setPickupSearchQuery] = useState('');
+  const [showPickupResults, setShowPickupResults] = useState(false);
+  const [selectedPickupIndex, setSelectedPickupIndex] = useState(-1);
+  const [maxPickupResults, setMaxPickupResults] = useState(8);
+  
+  // Backward compatibility
   const [metroStations, setMetroStations] = useState([]);
   
   // Ride state
@@ -46,6 +56,8 @@ const DriverDashboard = () => {
   // Error handling
   const [statusError, setStatusError] = useState('');
   const [rideError, setRideError] = useState('');
+  const [pickupLocationsLoading, setPickupLocationsLoading] = useState(false);
+  const [pickupLocationsError, setPickupLocationsError] = useState('');
   const [metroStationsLoading, setMetroStationsLoading] = useState(false);
   const [metroStationsError, setMetroStationsError] = useState('');
 
@@ -178,10 +190,53 @@ const DriverDashboard = () => {
     }
   };
 
-  // Load metro stations for booth selection
+  // Load pickup locations for booth selection
+  const loadPickupLocations = async (retryCount = 0) => {
+    const maxRetries = 3;
+    
+    try {
+      console.log(`[DriverDashboard] Loading pickup locations... (attempt ${retryCount + 1})`);
+      
+      setPickupLocationsLoading(true);
+      setPickupLocationsError('');
+      
+      const response = await drivers.getPickupLocations();
+      console.log('[DriverDashboard] Pickup locations loaded:', response.data);
+      
+      if (response.data && response.data.locations) {
+        setPickupLocations(response.data.locations);
+        setLocationsByType(response.data.locationsByType);
+        setPickupLocationsLoading(false);
+        console.log(`✅ [DriverDashboard] Successfully loaded ${response.data.locations.length} pickup locations`);
+      } else {
+        throw new Error('Invalid response structure: no locations data');
+      }
+      
+    } catch (error) {
+      console.error(`❌ [DriverDashboard] Error loading pickup locations (attempt ${retryCount + 1}):`, error);
+      
+      if (retryCount < maxRetries) {
+        const retryDelay = Math.pow(2, retryCount) * 1000;
+        console.log(`🔄 [DriverDashboard] Retrying in ${retryDelay}ms...`);
+        
+        setPickupLocationsError(`Loading... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        
+        setTimeout(() => {
+          loadPickupLocations(retryCount + 1);
+        }, retryDelay);
+      } else {
+        console.warn('⚠️ [DriverDashboard] All retries failed for pickup locations');
+        setPickupLocationsLoading(false);
+        setPickupLocationsError(`Failed to load pickup locations: ${error.error || error.message}`);
+      }
+    }
+  };
+
+  // Load metro stations for booth selection (legacy)
   useEffect(() => {
     if (driver) {
       loadMetroStations();
+      loadPickupLocations();
     }
   }, [driver]);
 
@@ -196,6 +251,7 @@ const DriverDashboard = () => {
         const dashboardData = response.data;
         setIsOnline(dashboardData.driver.isOnline || false);
         setSelectedMetroBooth(dashboardData.driver.currentMetroBooth || '');
+        setSelectedPickupLocation(dashboardData.driver.currentMetroBooth || '');
         setVehicleType(dashboardData.driver.vehicleType || 'auto');
       } catch (error) {
         console.error('[DriverDashboard] Error loading dashboard data:', error);
@@ -389,9 +445,9 @@ const DriverDashboard = () => {
     }
 
     if (!isOnline) {
-      // Going online - need metro booth and vehicle type
-      if (!selectedMetroBooth || !vehicleType) {
-        setStatusError('Please select metro booth and vehicle type');
+      // Going online - need pickup location and vehicle type
+      if (!selectedPickupLocation || !vehicleType) {
+        setStatusError('Please select pickup location and vehicle type');
         return;
       }
       
@@ -399,7 +455,8 @@ const DriverDashboard = () => {
       console.log('[DriverDashboard] Going online...');
       
       driverGoOnline({
-        metroBooth: selectedMetroBooth,
+        metroBooth: selectedPickupLocation, // Keep legacy field name for backend compatibility
+        pickupLocation: selectedPickupLocation,
         vehicleType: vehicleType,
         location: driverLocation
       });
@@ -408,6 +465,181 @@ const DriverDashboard = () => {
       console.log('[DriverDashboard] Going offline...');
       driverGoOffline();
     }
+  };
+
+  // Helper functions for transportation types
+  const getLocationIcon = (type) => {
+    const icons = {
+      metro: '🚇',
+      railway: '🚂', 
+      airport: '✈️',
+      bus_terminal: '🚌'
+    };
+    return icons[type] || '📍';
+  };
+
+  const getLocationTypeLabel = (type) => {
+    const labels = {
+      metro: 'Metro Station',
+      railway: 'Railway Station',
+      airport: 'Airport Terminal',
+      bus_terminal: 'Bus Terminal'
+    };
+    return labels[type] || 'Location';
+  };
+
+  // Fuzzy matching function with Levenshtein distance
+  const levenshteinDistance = (str1, str2) => {
+    const matrix = [];
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    return matrix[str2.length][str1.length];
+  };
+
+  // Enhanced search function with fuzzy matching
+  const searchPickupLocations = (query) => {
+    if (!query.trim()) return [];
+    
+    const searchTerm = query.toLowerCase().trim();
+    
+    // Apply location type filter
+    let filtered = pickupLocations;
+    if (selectedLocationFilter !== 'all') {
+      filtered = pickupLocations.filter(location => location.type === selectedLocationFilter);
+    }
+    
+    // Score-based matching for better relevance
+    const scored = filtered.map(location => {
+      const name = location.name.toLowerCase();
+      const address = (location.address || '').toLowerCase();
+      const line = (location.line || '').toLowerCase();
+      const subType = (location.subType || '').toLowerCase();
+      
+      let score = 0;
+      
+      // Exact name match (highest priority)
+      if (name === searchTerm) {
+        score += 100;
+      } else if (name.startsWith(searchTerm)) {
+        score += 80;
+      } else if (name.includes(searchTerm)) {
+        score += 60;
+      }
+      
+      // Address matching
+      if (address.includes(searchTerm)) {
+        score += 40;
+      }
+      
+      // Line/subtype matching
+      if (line.includes(searchTerm) || subType.includes(searchTerm)) {
+        score += 30;
+      }
+      
+      // Fuzzy matching for typo tolerance
+      const nameDistance = levenshteinDistance(searchTerm, name);
+      const maxDistance = Math.max(searchTerm.length, name.length);
+      if (nameDistance <= 2 && maxDistance > 3) {
+        score += Math.max(0, 20 - (nameDistance * 5));
+      }
+      
+      // Boost priority locations
+      if (location.priority >= 8) score += 10;
+      else if (location.priority >= 6) score += 5;
+      
+      return { ...location, searchScore: score };
+    });
+    
+    // Filter out very low scores and sort by score
+    return scored
+      .filter(item => item.searchScore > 0)
+      .sort((a, b) => {
+        if (b.searchScore !== a.searchScore) {
+          return b.searchScore - a.searchScore;
+        }
+        return a.name.localeCompare(b.name);
+      });
+  };
+
+  // Handle pickup location selection
+  const handlePickupSelect = (location) => {
+    setSelectedPickupLocation(location.name);
+    setSelectedMetroBooth(location.name); // Keep legacy compatibility
+    setPickupSearchQuery(location.name);
+    setShowPickupResults(false);
+    setSelectedPickupIndex(-1);
+  };
+
+  // Handle pickup search input changes
+  const handlePickupSearchChange = (e) => {
+    const value = e.target.value;
+    setPickupSearchQuery(value);
+    setSelectedPickupLocation(value);
+    setSelectedMetroBooth(value); // Keep legacy compatibility
+    setShowPickupResults(value.trim().length > 0);
+    setSelectedPickupIndex(-1);
+  };
+
+  // Handle keyboard navigation for pickup search
+  const handlePickupKeyDown = (e, results) => {
+    if (!showPickupResults || results.length === 0) return;
+    
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedPickupIndex(prev => 
+          prev < results.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedPickupIndex(prev => prev > 0 ? prev - 1 : -1);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (selectedPickupIndex >= 0 && results[selectedPickupIndex]) {
+          handlePickupSelect(results[selectedPickupIndex]);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setShowPickupResults(false);
+        setSelectedPickupIndex(-1);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Highlight matched text in search results
+  const highlightText = (text, query) => {
+    if (!query.trim()) return text;
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+    
+    return parts.map((part, index) => 
+      regex.test(part) ? 
+        <strong key={index} style={{ backgroundColor: '#fffbdd' }}>{part}</strong> : 
+        part
+    );
   };
 
   // Debug function to check driver status
@@ -437,7 +669,7 @@ Drivers in Socket Room: ${debugInfo.summary.driversInSocketRoom}
 Current Driver Status:
 Socket Connected: ${socketConnected}
 Is Online: ${isOnline}
-Metro Booth: ${selectedMetroBooth}
+Pickup Location: ${selectedPickupLocation}
 Vehicle Type: ${vehicleType}
 
 Check console for detailed information.`);
@@ -854,26 +1086,55 @@ Check console for detailed information.`);
               )}
             </div>
 
-            {/* Metro Booth Selection */}
+            {/* Pickup Location Selection */}
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                Metro Booth:
+                Pickup Location:
               </label>
               
-              {metroStationsLoading && (
+              {/* Location Type Filter */}
+              <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {[
+                  { value: 'all', label: 'All Types', icon: '📍' },
+                  { value: 'metro', label: 'Metro', icon: '🚇' },
+                  { value: 'railway', label: 'Railway', icon: '🚂' },
+                  { value: 'airport', label: 'Airport', icon: '✈️' },
+                  { value: 'bus_terminal', label: 'Bus', icon: '🚌' }
+                ].map(filter => (
+                  <button
+                    key={filter.value}
+                    onClick={() => setSelectedLocationFilter(filter.value)}
+                    disabled={isOnline}
+                    style={{
+                      padding: '0.4rem 0.75rem',
+                      fontSize: '0.8rem',
+                      border: selectedLocationFilter === filter.value ? '2px solid #007bff' : '1px solid #ddd',
+                      borderRadius: '20px',
+                      backgroundColor: selectedLocationFilter === filter.value ? '#e3f2fd' : '#fff',
+                      color: selectedLocationFilter === filter.value ? '#1976d2' : '#666',
+                      cursor: isOnline ? 'not-allowed' : 'pointer',
+                      fontWeight: selectedLocationFilter === filter.value ? 'bold' : 'normal'
+                    }}
+                  >
+                    {filter.icon} {filter.label}
+                  </button>
+                ))}
+              </div>
+
+              {pickupLocationsLoading && (
                 <div style={{
                   padding: '0.75rem',
-                  border: '1px solid #ddd',
+                  border: '1px solid #bee5eb',
                   borderRadius: '4px',
-                  backgroundColor: '#f8f9fa',
-                  color: '#666',
-                  textAlign: 'center'
+                  backgroundColor: '#d1ecf1',
+                  color: '#0c5460',
+                  marginBottom: '0.5rem'
                 }}>
-                  🔄 Loading metro stations...
+                  🔄 Loading pickup locations...
                 </div>
               )}
               
-              {metroStationsError && (
+              {pickupLocationsError && (
                 <div style={{
                   padding: '0.75rem',
                   border: '1px solid #f5c6cb',
@@ -882,10 +1143,10 @@ Check console for detailed information.`);
                   color: '#721c24',
                   marginBottom: '0.5rem'
                 }}>
-                  ⚠️ {metroStationsError}
-                  {metroStationsError.includes('Failed') && (
+                  ⚠️ {pickupLocationsError}
+                  {pickupLocationsError.includes('Failed') && (
                     <button
-                      onClick={() => loadMetroStations()}
+                      onClick={() => loadPickupLocations()}
                       style={{
                         marginLeft: '1rem',
                         padding: '0.25rem 0.5rem',
@@ -903,34 +1164,142 @@ Check console for detailed information.`);
                 </div>
               )}
               
-              <select 
-                value={selectedMetroBooth} 
-                onChange={(e) => setSelectedMetroBooth(e.target.value)}
-                disabled={isOnline || metroStationsLoading || metroStations.length === 0}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontSize: '1rem',
-                  backgroundColor: (isOnline || metroStationsLoading || metroStations.length === 0) ? '#f8f9fa' : '#fff'
-                }}
-              >
-                <option value="">
-                  {metroStationsLoading ? 'Loading stations...' : 
-                   metroStations.length === 0 ? 'No stations available' : 
-                   'Select metro booth'}
-                </option>
-                {metroStations.map(station => (
-                  <option key={station.id} value={station.name}>
-                    {station.name} ({station.line} Line)
-                  </option>
-                ))}
-              </select>
+              {/* Searchable Pickup Location Input */}
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={pickupSearchQuery}
+                  onChange={handlePickupSearchChange}
+                  onKeyDown={(e) => {
+                    const results = searchPickupLocations(pickupSearchQuery).slice(0, maxPickupResults);
+                    handlePickupKeyDown(e, results);
+                  }}
+                  onFocus={() => {
+                    if (pickupSearchQuery.trim()) {
+                      setShowPickupResults(true);
+                    }
+                  }}
+                  onBlur={() => {
+                    // Small delay to allow clicking on results
+                    setTimeout(() => setShowPickupResults(false), 200);
+                  }}
+                  disabled={isOnline || pickupLocationsLoading}
+                  placeholder={pickupLocationsLoading ? 'Loading locations...' : 'Search pickup location...'}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '1rem',
+                    backgroundColor: (isOnline || pickupLocationsLoading) ? '#f8f9fa' : '#fff'
+                  }}
+                />
+
+                {/* Search Results Dropdown */}
+                {showPickupResults && pickupSearchQuery.trim() && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    backgroundColor: '#fff',
+                    border: '1px solid #ddd',
+                    borderTop: 'none',
+                    borderRadius: '0 0 4px 4px',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                    zIndex: 1000,
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}>
+                    {(() => {
+                      const results = searchPickupLocations(pickupSearchQuery);
+                      const displayResults = results.slice(0, maxPickupResults);
+                      
+                      if (displayResults.length === 0) {
+                        return (
+                          <div style={{ padding: '0.75rem', color: '#666', fontStyle: 'italic' }}>
+                            No locations found
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <>
+                          {displayResults.map((location, index) => (
+                            <div
+                              key={location.id}
+                              onClick={() => handlePickupSelect(location)}
+                              style={{
+                                padding: '0.75rem',
+                                borderBottom: index < displayResults.length - 1 ? '1px solid #eee' : 'none',
+                                backgroundColor: index === selectedPickupIndex ? '#f8f9fa' : '#fff',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                              }}
+                              onMouseEnter={() => setSelectedPickupIndex(index)}
+                            >
+                              <span style={{ fontSize: '1.2rem' }}>{getLocationIcon(location.type)}</span>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>
+                                  {highlightText(location.name, pickupSearchQuery)}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                                  {highlightText(location.address || '', pickupSearchQuery)}
+                                  {location.line && (
+                                    <span style={{ color: '#007bff', marginLeft: '0.5rem' }}>
+                                      {highlightText(location.line, pickupSearchQuery)} Line
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#999', marginTop: '0.2rem' }}>
+                                  {getLocationTypeLabel(location.type)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          
+                          {results.length > maxPickupResults && (
+                            <div style={{
+                              padding: '0.5rem 0.75rem',
+                              backgroundColor: '#f8f9fa',
+                              borderTop: '1px solid #eee',
+                              fontSize: '0.8rem',
+                              color: '#666',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}>
+                              <span>Showing {maxPickupResults} of {results.length} results</span>
+                              <button
+                                onClick={() => setMaxPickupResults(prev => prev + 8)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#007bff',
+                                  cursor: 'pointer',
+                                  fontSize: '0.8rem'
+                                }}
+                              >
+                                Show more
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
               
-              {metroStations.length > 0 && !metroStationsLoading && (
-                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
-                  {metroStations.length} stations available
+              {/* Location Stats */}
+              {pickupLocations.length > 0 && !pickupLocationsLoading && (
+                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>
+                  {pickupLocations.length} pickup locations available
+                  {selectedLocationFilter !== 'all' && locationsByType[selectedLocationFilter] && (
+                    <span> • {locationsByType[selectedLocationFilter].length} {selectedLocationFilter} locations</span>
+                  )}
                 </div>
               )}
             </div>

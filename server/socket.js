@@ -659,16 +659,43 @@ const initializeSocket = (server) => {
       console.log('\n=== RIDE CANCELLATION ===');
       console.log('Requester:', socket.user.role, socket.user._id);
       console.log('Ride ID:', data.rideId);
+      console.log('Cancel Data:', data);
       
       try {
         const { rideId, reason } = data;
         
-        const rideRequest = await RideRequest.findById(rideId);
+        // Validate rideId
+        if (!rideId) {
+          console.error('❌ No ride ID provided');
+          if (callback) callback({ success: false, message: 'Ride ID is required for cancellation' });
+          return;
+        }
+        
+        console.log('🔍 Looking for ride with ID:', rideId);
+        
+        // First try to find by MongoDB _id
+        let rideRequest = await RideRequest.findById(rideId);
+        
+        // If not found by _id, try to find by custom rideId field
         if (!rideRequest) {
-          console.error('❌ Ride not found');
+          console.log('🔍 Not found by _id, trying custom rideId field...');
+          rideRequest = await RideRequest.findOne({ rideId: rideId });
+        }
+        
+        // If still not found, try uniqueRideId field (legacy support)
+        if (!rideRequest) {
+          console.log('🔍 Not found by rideId field, trying uniqueRideId field...');
+          rideRequest = await RideRequest.findOne({ uniqueRideId: rideId });
+        }
+        
+        if (!rideRequest) {
+          console.error('❌ Ride not found with any ID format');
+          console.log('❌ Tried searching for:', rideId);
           if (callback) callback({ success: false, message: 'Ride not found' });
           return;
         }
+        
+        console.log('✅ Found ride:', rideRequest._id, 'Status:', rideRequest.status);
         
         // Update ride status
         rideRequest.status = 'cancelled';
@@ -1048,13 +1075,56 @@ const broadcastRideRequest = async (data) => {
     });
     
     // Step 1: Find online drivers with matching vehicle type at the pickup metro station
-    const matchingDrivers = await Driver.find({
+    // Use flexible matching to handle partial names and case insensitivity
+    const pickupStation = data.pickupStation.toLowerCase();
+    const allDriversWithVehicleType = await Driver.find({
       isOnline: true,
-      vehicleType: data.vehicleType,
-      currentMetroBooth: data.pickupStation
+      vehicleType: data.vehicleType
     });
     
-    console.log(`🚗 Found ${matchingDrivers.length} online ${data.vehicleType} drivers at ${data.pickupStation}`);
+    // Filter drivers with flexible station name matching
+    const matchingDrivers = allDriversWithVehicleType.filter(driver => {
+      if (!driver.currentMetroBooth) return false;
+      
+      const driverBooth = driver.currentMetroBooth.toLowerCase();
+      const targetStation = pickupStation;
+      
+      // Exact match
+      if (driverBooth === targetStation) return true;
+      
+      // Partial matching - driver booth is contained in station name or vice versa
+      if (driverBooth.includes(targetStation) || targetStation.includes(driverBooth)) return true;
+      
+      // Check common abbreviations and variants
+      const abbreviationMaps = [
+        { full: ['kashmere', 'kashmere gate'], short: ['kash', 'kg'] },
+        { full: ['rajiv chowk', 'rajiv'], short: ['rajiv', 'rc'] },
+        { full: ['connaught place', 'connaught'], short: ['cp', 'connought'] },
+        { full: ['new delhi', 'newdelhi'], short: ['ndls', 'nd', 'new delhi'] },
+        { full: ['central secretariat'], short: ['cs', 'central'] },
+        { full: ['hauz khas'], short: ['hk', 'hauz'] },
+        { full: ['dwarka sector 21', 'dwarka'], short: ['dwarka', 'dwarka21'] },
+        { full: ['noida city centre', 'noida'], short: ['ncc', 'noida'] },
+        { full: ['chandni chowk'], short: ['cc', 'chandni'] }
+      ];
+      
+      for (const map of abbreviationMaps) {
+        const matchesFull = map.full.some(name => targetStation.includes(name));
+        const matchesShort = map.short.some(abbr => driverBooth.includes(abbr));
+        const matchesReverse = map.full.some(name => driverBooth.includes(name)) && map.short.some(abbr => targetStation.includes(abbr));
+        
+        if ((matchesFull && matchesShort) || matchesReverse) return true;
+      }
+      
+      return false;
+    });
+    
+    console.log(`🚗 Found ${matchingDrivers.length} online ${data.vehicleType} drivers matching station "${data.pickupStation}"`);
+    console.log('📍 Driver booth matching details:');
+    allDriversWithVehicleType.forEach(driver => {
+      const isMatch = matchingDrivers.includes(driver);
+      console.log(`  ${isMatch ? '✅' : '❌'} Driver ${driver._id}: booth="${driver.currentMetroBooth}" ${isMatch ? '(MATCHED)' : ''}`);
+    });
     
     // Step 2: Check all online drivers to understand the issue
     const allOnlineDrivers = await Driver.find({ isOnline: true });

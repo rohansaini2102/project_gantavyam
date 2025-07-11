@@ -11,6 +11,7 @@ const {
 } = require('../controllers/driverController');
 const Driver = require('../models/Driver');
 const MetroStation = require('../models/MetroStation');
+const PickupLocation = require('../models/PickupLocation');
 const { logDriverAction } = require('../utils/rideLogger');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -36,32 +37,153 @@ router.post('/login', loginDriver);
 router.get('/profile', protect, getDriverProfile);
 router.put('/location', protect, updateDriverLocation);
 
-// Go online at a specific metro booth
+// Get all pickup locations for driver booth selection
+router.get('/pickup-locations', protect, async (req, res) => {
+  try {
+    console.log('\n=== GET PICKUP LOCATIONS FOR DRIVER ===');
+    console.log('Driver ID:', req.user.id);
+    
+    // Check database connection
+    if (require('mongoose').connection.readyState !== 1) {
+      console.error('❌ Database not connected');
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection unavailable',
+        error: 'Database not connected'
+      });
+    }
+    
+    // Get statistics from PickupLocation model
+    const totalLocations = await PickupLocation.countDocuments();
+    const activeLocations = await PickupLocation.countDocuments({ isActive: true });
+    
+    console.log(`📊 Database stats: ${totalLocations} total locations, ${activeLocations} active`);
+    
+    // Get all active pickup locations
+    const locations = await PickupLocation.find({ isActive: true })
+      .select('id name type subType line lat lng address priority onlineDrivers')
+      .sort({ priority: -1, type: 1, name: 1 });
+    
+    // Group locations by type
+    const locationsByType = {};
+    
+    locations.forEach(location => {
+      if (!locationsByType[location.type]) {
+        locationsByType[location.type] = [];
+      }
+      locationsByType[location.type].push({
+        id: location.id,
+        name: location.name,
+        type: location.type,
+        subType: location.subType,
+        lat: location.lat,
+        lng: location.lng,
+        address: location.address,
+        line: location.line,
+        priority: location.priority,
+        onlineDrivers: location.onlineDrivers || 0
+      });
+    });
+    
+    // Get type statistics
+    const typeStats = await PickupLocation.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: '$type', count: { $sum: 1 }, totalDrivers: { $sum: '$onlineDrivers' } } },
+      { $sort: { _id: 1 } }
+    ]);
+    
+    console.log(`✅ Returning ${locations.length} pickup locations for driver booth selection`);
+    console.log(`📋 Types available: ${Object.keys(locationsByType).join(', ')}`);
+    
+    res.json({
+      success: true,
+      data: {
+        // All locations in a flat array
+        locations: locations.map(l => ({
+          id: l.id,
+          name: l.name,
+          type: l.type,
+          subType: l.subType,
+          line: l.line,
+          lat: l.lat,
+          lng: l.lng,
+          address: l.address,
+          priority: l.priority,
+          onlineDrivers: l.onlineDrivers || 0
+        })),
+        
+        // Grouped by type
+        locationsByType,
+        
+        // Summary counts
+        totalLocations: locations.length,
+        typeStats: typeStats.reduce((acc, stat) => {
+          acc[stat._id] = {
+            count: stat.count,
+            onlineDrivers: stat.totalDrivers || 0
+          };
+          return acc;
+        }, {})
+      },
+      meta: {
+        totalInDb: totalLocations,
+        activeInDb: activeLocations,
+        returned: locations.length,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error getting pickup locations for driver:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting pickup locations',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Go online at a specific pickup location booth
 router.post('/go-online', protect, async (req, res) => {
   try {
-    const { metroBoothName, vehicleType, location } = req.body;
+    const { pickupLocationName, vehicleType, location } = req.body;
     const driverId = req.user.id;
     
     console.log('\n=== DRIVER GO ONLINE REQUEST ===');
     console.log('Driver ID:', driverId);
-    console.log('Metro Booth:', metroBoothName);
+    console.log('Pickup Location:', pickupLocationName);
     console.log('Vehicle Type:', vehicleType);
     console.log('Location:', location);
     
     // Validate input
-    if (!metroBoothName || !vehicleType) {
+    if (!pickupLocationName || !vehicleType) {
       return res.status(400).json({
         success: false,
-        message: 'Metro booth name and vehicle type are required'
+        message: 'Pickup location and vehicle type are required'
       });
     }
     
-    // Check if metro booth exists
-    const metroStation = await MetroStation.findOne({ name: metroBoothName });
-    if (!metroStation) {
+    // Check if pickup location exists (try new model first, fallback to old model)
+    let pickupLocation = await PickupLocation.findOne({ name: pickupLocationName, isActive: true });
+    
+    if (!pickupLocation) {
+      // Fallback to MetroStation model for backward compatibility
+      const metroStation = await MetroStation.findOne({ name: pickupLocationName });
+      if (metroStation) {
+        pickupLocation = {
+          name: metroStation.name,
+          type: 'metro',
+          line: metroStation.line,
+          incrementDriverCount: () => metroStation.incrementOnlineDrivers()
+        };
+      }
+    }
+    
+    if (!pickupLocation) {
       return res.status(404).json({
         success: false,
-        message: 'Metro station not found'
+        message: 'Pickup location not found'
       });
     }
     
@@ -70,7 +192,8 @@ router.post('/go-online', protect, async (req, res) => {
       driverId,
       {
         isOnline: true,
-        currentMetroBooth: metroBoothName,
+        currentMetroBooth: pickupLocationName, // Keep field name for backward compatibility
+        currentPickupLocation: pickupLocationName, // New field for pickup location
         vehicleType: vehicleType,
         location: location ? {
           type: 'Point',
@@ -89,12 +212,21 @@ router.post('/go-online', protect, async (req, res) => {
       });
     }
     
-    // Update metro station driver count
-    await metroStation.incrementOnlineDrivers();
+    // Update pickup location driver count
+    if (pickupLocation.incrementDriverCount) {
+      await pickupLocation.incrementDriverCount();
+    } else {
+      // For PickupLocation model
+      await PickupLocation.findOneAndUpdate(
+        { name: pickupLocationName },
+        { $inc: { onlineDrivers: 1 } }
+      );
+    }
     
     // Log driver action
     logDriverAction(driverId, 'go_online', {
-      metroBoothName,
+      pickupLocationName,
+      locationType: pickupLocation.type || 'metro',
       vehicleType,
       location
     });

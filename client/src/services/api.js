@@ -256,10 +256,20 @@ export const drivers = {
     }
   },
 
-  // Get all metro stations for driver metro booth selection
+  // Get all metro stations for driver metro booth selection (legacy)
   getMetroStations: async () => {
     try {
       const response = await apiClient.get('/drivers/metro-stations');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get all pickup locations for driver booth selection
+  getPickupLocations: async () => {
+    try {
+      const response = await apiClient.get('/drivers/pickup-locations');
       return response.data;
     } catch (error) {
       throw error;

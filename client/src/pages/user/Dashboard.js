@@ -51,8 +51,15 @@ const UserDashboard = () => {
   
   // Location state
   const [userLocation, setUserLocation] = useState(null);
-  const [metroStations, setMetroStations] = useState([]);
+  const [pickupLocations, setPickupLocations] = useState([]);
+  const [locationsByType, setLocationsByType] = useState({});
+  const [metroStations, setMetroStations] = useState([]); // Keep for backward compatibility
+  const [selectedLocationFilter, setSelectedLocationFilter] = useState('all'); // all, metro, railway, airport, bus_terminal
   const [selectedStation, setSelectedStation] = useState('');
+  const [pickupSearchQuery, setPickupSearchQuery] = useState('');
+  const [showPickupResults, setShowPickupResults] = useState(false);
+  const [selectedPickupIndex, setSelectedPickupIndex] = useState(-1);
+  const [maxPickupResults, setMaxPickupResults] = useState(8);
   const [dropLocation, setDropLocation] = useState('');
   const [dropCoordinates, setDropCoordinates] = useState(null);
   const [autocomplete, setAutocomplete] = useState(null);
@@ -76,6 +83,206 @@ const UserDashboard = () => {
   const [isCancelling, setIsCancelling] = useState(false);
 
   console.log('[UserDashboard] Component mounted');
+
+  // Helper functions for transportation types
+  const getLocationIcon = (type) => {
+    const icons = {
+      metro: '🚇',
+      railway: '🚂', 
+      airport: '✈️',
+      bus_terminal: '🚌'
+    };
+    return icons[type] || '📍';
+  };
+
+  const getLocationTypeLabel = (type) => {
+    const labels = {
+      metro: 'Metro Station',
+      railway: 'Railway Station',
+      airport: 'Airport Terminal', 
+      bus_terminal: 'Bus Terminal'
+    };
+    return labels[type] || 'Location';
+  };
+
+  const getFilteredLocations = () => {
+    if (selectedLocationFilter === 'all') {
+      return pickupLocations;
+    }
+    return pickupLocations.filter(location => location.type === selectedLocationFilter);
+  };
+
+  // Search and filter pickup locations
+  const searchPickupLocations = (query) => {
+    if (!query.trim()) {
+      return getFilteredLocations().slice(0, maxPickupResults);
+    }
+
+    const searchTerm = query.toLowerCase().trim();
+    const filtered = getFilteredLocations();
+    
+    // Score-based matching for better relevance
+    const scored = filtered.map(location => {
+      let score = 0;
+      const name = location.name.toLowerCase();
+      const address = location.address.toLowerCase();
+      const line = location.line ? location.line.toLowerCase() : '';
+      const subType = location.subType ? location.subType.toLowerCase() : '';
+      
+      // Exact match gets highest score
+      if (name === searchTerm) score += 100;
+      else if (name.startsWith(searchTerm)) score += 80;
+      else if (name.includes(searchTerm)) score += 60;
+      
+      // Address matching
+      if (address.includes(searchTerm)) score += 40;
+      
+      // Line matching for metro
+      if (line && line.includes(searchTerm)) score += 30;
+      
+      // SubType matching
+      if (subType && subType.includes(searchTerm)) score += 25;
+      
+      // Fuzzy matching for typos (simple implementation)
+      if (score === 0) {
+        const words = [name, address, line, subType].join(' ').split(' ');
+        const hasPartialMatch = words.some(word => 
+          word.length > 2 && (
+            word.includes(searchTerm) || 
+            searchTerm.includes(word) ||
+            levenshteinDistance(word, searchTerm) <= 2
+          )
+        );
+        if (hasPartialMatch) score += 10;
+      }
+      
+      // Priority boost
+      score += (location.priority || 0) * 2;
+      
+      return { ...location, searchScore: score };
+    });
+    
+    // Filter out non-matches and sort by score
+    return scored
+      .filter(item => item.searchScore > 0)
+      .sort((a, b) => b.searchScore - a.searchScore)
+      .slice(0, maxPickupResults);
+  };
+
+  // Simple Levenshtein distance for fuzzy matching
+  const levenshteinDistance = (str1, str2) => {
+    const matrix = [];
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    return matrix[str2.length][str1.length];
+  };
+
+  // Get search results
+  const getSearchResults = () => {
+    return searchPickupLocations(pickupSearchQuery);
+  };
+
+  // Handle pickup location selection
+  const handlePickupSelect = (location) => {
+    setSelectedStation(location.name);
+    setPickupSearchQuery(location.name);
+    setShowPickupResults(false);
+    setSelectedPickupIndex(-1);
+    setFareEstimates(null);
+    setDirections(null);
+    
+    // Calculate directions if drop location is already set
+    if (dropCoordinates) {
+      calculateDirections(location.name, dropCoordinates);
+    }
+  };
+
+  // Highlight matched text in search results
+  const highlightMatch = (text, query) => {
+    if (!query.trim()) return text;
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+    
+    return parts.map((part, index) => 
+      regex.test(part) ? 
+        <span key={index} style={{ backgroundColor: '#ffeaa7', fontWeight: 'bold' }}>{part}</span> : 
+        part
+    );
+  };
+
+  // Handle keyboard navigation in search results
+  const handlePickupKeyDown = (e) => {
+    const results = getSearchResults();
+    
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedPickupIndex(prev => 
+          prev < results.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedPickupIndex(prev => prev > -1 ? prev - 1 : -1);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (selectedPickupIndex >= 0 && results[selectedPickupIndex]) {
+          handlePickupSelect(results[selectedPickupIndex]);
+        }
+        break;
+      case 'Escape':
+        setShowPickupResults(false);
+        setSelectedPickupIndex(-1);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Handle search input changes
+  const handlePickupSearchChange = (e) => {
+    const value = e.target.value;
+    setPickupSearchQuery(value);
+    setShowPickupResults(true);
+    setSelectedPickupIndex(-1);
+    
+    // Clear selected station if search query doesn't match
+    if (selectedStation && !selectedStation.toLowerCase().includes(value.toLowerCase())) {
+      setSelectedStation('');
+      setFareEstimates(null);
+      setDirections(null);
+    }
+  };
+
+  // Close search results when clicking outside
+  const handlePickupInputBlur = (e) => {
+    // Delay hiding to allow clicking on results
+    setTimeout(() => {
+      if (e.currentTarget && document.activeElement && !e.currentTarget.contains(document.activeElement)) {
+        setShowPickupResults(false);
+        setSelectedPickupIndex(-1);
+      }
+    }, 150);
+  };
 
   // Authentication check and socket initialization
   useEffect(() => {
@@ -169,22 +376,39 @@ const UserDashboard = () => {
     initializeAuth();
   }, [navigate]);
 
-  // Load metro stations from backend
+  // Load pickup locations from backend
   useEffect(() => {
-    const loadMetroStations = async () => {
+    const loadPickupLocations = async () => {
       try {
-        console.log('[UserDashboard] Loading metro stations from backend...');
-        const response = await users.getMetroStations();
-        console.log('[UserDashboard] Metro stations loaded:', response.data);
-        setMetroStations(response.data.stations || []);
+        console.log('[UserDashboard] Loading pickup locations from backend...');
+        const response = await users.getMetroStations(); // This now returns all pickup locations
+        console.log('[UserDashboard] Pickup locations loaded:', response.data);
+        
+        const locations = response.data.stations || [];
+        const byType = response.data.locationsByType || {};
+        
+        setPickupLocations(locations);
+        setLocationsByType(byType);
+        
+        // For backward compatibility, also set metroStations
+        const metroOnly = locations.filter(loc => loc.type === 'metro');
+        setMetroStations(metroOnly);
+        
+        console.log('[UserDashboard] Location summary:', {
+          total: locations.length,
+          metro: byType.metro?.length || 0,
+          railway: byType.railway?.length || 0,
+          airport: byType.airport?.length || 0,
+          bus_terminal: byType.bus_terminal?.length || 0
+        });
       } catch (error) {
-        console.error('[UserDashboard] Error loading metro stations:', error);
-        setBookingError('Failed to load metro stations');
+        console.error('[UserDashboard] Error loading pickup locations:', error);
+        setBookingError('Failed to load pickup locations');
       }
     };
 
     if (user) {
-      loadMetroStations();
+      loadPickupLocations();
     }
   }, [user]);
 
@@ -571,7 +795,7 @@ const UserDashboard = () => {
 
   // Calculate directions between pickup and drop
   const calculateDirections = (stationName, dropCoords) => {
-    const station = metroStations.find(s => s.name === stationName);
+    const station = pickupLocations.find(s => s.name === stationName);
     if (!station || !dropCoords) return;
 
     const directionsService = new window.google.maps.DirectionsService();
@@ -625,8 +849,22 @@ const UserDashboard = () => {
       reason: cancelReason
     });
     
+    // Debug log to understand activeRide structure
+    console.log('[UserDashboard] activeRide for cancellation:', activeRide);
+    
+    const rideId = activeRide.rideId || activeRide._id || activeRide.uniqueRideId;
+    
+    if (!rideId) {
+      console.error('[UserDashboard] No valid ride ID found for cancellation:', activeRide);
+      setIsCancelling(false);
+      setBookingError('Cannot cancel ride: Invalid ride ID');
+      return;
+    }
+    
+    console.log('[UserDashboard] Cancelling ride with ID:', rideId);
+    
     cancelRide({
-      rideId: activeRide._id || activeRide.rideId,
+      rideId: rideId,
       reason: cancelReason
     }, (response) => {
       setIsCancelling(false);
@@ -895,38 +1133,204 @@ const UserDashboard = () => {
             }}>
               <h2 style={{ marginTop: 0, color: '#333' }}>Book a Ride</h2>
               
-              {/* Station Selection */}
-              <div style={{ marginBottom: '1.5rem' }}>
+              {/* Location Type Filter */}
+              <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Pickup Metro Station:
+                  Transportation Type:
                 </label>
-                <select 
-                  value={selectedStation} 
-                  onChange={(e) => {
-                    setSelectedStation(e.target.value);
-                    setFareEstimates(null); // Clear fare when station changes
-                    setDirections(null); // Clear directions when station changes
-                    
-                    // Calculate directions if drop location is already set
-                    if (e.target.value && dropCoordinates) {
-                      calculateDirections(e.target.value, dropCoordinates);
-                    }
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    fontSize: '1rem'
-                  }}
-                >
-                  <option value="">Select a station</option>
-                  {metroStations.map(station => (
-                    <option key={station.id} value={station.name}>
-                      {station.name} ({station.line} Line)
-                    </option>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {[
+                    { value: 'all', label: '🚗 All', count: pickupLocations.length },
+                    { value: 'metro', label: '🚇 Metro', count: locationsByType.metro?.length || 0 },
+                    { value: 'railway', label: '🚂 Railway', count: locationsByType.railway?.length || 0 },
+                    { value: 'airport', label: '✈️ Airport', count: locationsByType.airport?.length || 0 },
+                    { value: 'bus_terminal', label: '🚌 Bus', count: locationsByType.bus_terminal?.length || 0 }
+                  ].map(type => (
+                    <button
+                      key={type.value}
+                      onClick={() => {
+                        setSelectedLocationFilter(type.value);
+                        setSelectedStation(''); // Clear selection when filter changes
+                        setPickupSearchQuery(''); // Clear search query
+                        setShowPickupResults(false);
+                        setFareEstimates(null);
+                        setDirections(null);
+                      }}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: selectedLocationFilter === type.value ? '#007bff' : '#f8f9fa',
+                        color: selectedLocationFilter === type.value ? '#fff' : '#333',
+                        border: '1px solid #ddd',
+                        borderRadius: '20px',
+                        cursor: 'pointer',
+                        fontSize: '0.9rem',
+                        fontWeight: selectedLocationFilter === type.value ? 'bold' : 'normal',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {type.label} ({type.count})
+                    </button>
                   ))}
-                </select>
+                </div>
+              </div>
+
+              {/* Searchable Pickup Location */}
+              <div style={{ marginBottom: '1.5rem', position: 'relative' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  Pickup Location:
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    value={pickupSearchQuery}
+                    onChange={handlePickupSearchChange}
+                    onKeyDown={handlePickupKeyDown}
+                    onFocus={() => setShowPickupResults(true)}
+                    onBlur={handlePickupInputBlur}
+                    placeholder={
+                      selectedLocationFilter === 'all' ? 
+                        'Search pickup location (type station name, area, or line)...' : 
+                        `Search ${getLocationTypeLabel(selectedLocationFilter).toLowerCase()}...`
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      paddingRight: '2.5rem',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      fontSize: '1rem',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    right: '0.75rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: '#999',
+                    fontSize: '1.2rem'
+                  }}>
+                    🔍
+                  </div>
+                </div>
+                
+                {/* Search Results Dropdown */}
+                {showPickupResults && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    backgroundColor: '#fff',
+                    border: '1px solid #ddd',
+                    borderTop: 'none',
+                    borderRadius: '0 0 4px 4px',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    zIndex: 1000,
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                  }}>
+                    {(() => {
+                      const results = getSearchResults();
+                      if (results.length === 0) {
+                        return (
+                          <div style={{ padding: '1rem', color: '#666', textAlign: 'center' }}>
+                            {pickupSearchQuery.trim() ? 
+                              `No locations found for "${pickupSearchQuery}"` : 
+                              `Start typing to search ${getFilteredLocations().length} locations...`
+                            }
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <>
+                          {results.map((location, index) => (
+                            <div
+                              key={location.id}
+                              onClick={() => handlePickupSelect(location)}
+                              style={{
+                                padding: '0.75rem',
+                                borderBottom: index < results.length - 1 ? '1px solid #eee' : 'none',
+                                cursor: 'pointer',
+                                backgroundColor: selectedPickupIndex === index ? '#e3f2fd' : '#fff',
+                                transition: 'background-color 0.2s ease'
+                              }}
+                              onMouseEnter={() => setSelectedPickupIndex(index)}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ fontSize: '1.2rem' }}>
+                                  {getLocationIcon(location.type)}
+                                </span>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
+                                    {highlightMatch(location.name, pickupSearchQuery)}
+                                    {location.type === 'metro' && location.line && (
+                                      <span style={{ 
+                                        fontSize: '0.8rem', 
+                                        color: '#666', 
+                                        marginLeft: '0.5rem',
+                                        fontWeight: 'normal'
+                                      }}>
+                                        ({location.line} Line)
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                                    {highlightMatch(location.address, pickupSearchQuery)}
+                                    {location.subType && location.type !== 'metro' && (
+                                      <span style={{ marginLeft: '0.5rem' }}>
+                                        • {location.subType}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{ 
+                                  fontSize: '0.7rem', 
+                                  color: '#999',
+                                  textAlign: 'right'
+                                }}>
+                                  {getLocationTypeLabel(location.type)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          
+                          {/* Show More Button */}
+                          {getFilteredLocations().length > maxPickupResults && results.length === maxPickupResults && (
+                            <div
+                              onClick={() => setMaxPickupResults(prev => prev + 8)}
+                              style={{
+                                padding: '0.75rem',
+                                textAlign: 'center',
+                                color: '#007bff',
+                                cursor: 'pointer',
+                                borderTop: '1px solid #eee',
+                                backgroundColor: '#f8f9fa'
+                              }}
+                            >
+                              ↓ Show {Math.min(8, getFilteredLocations().length - maxPickupResults)} more locations
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+                
+                {getFilteredLocations().length === 0 && selectedLocationFilter !== 'all' && (
+                  <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>
+                    No {getLocationTypeLabel(selectedLocationFilter).toLowerCase()}s available
+                  </p>
+                )}
+                
+                {/* Search Tips */}
+                {!showPickupResults && !selectedStation && (
+                  <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>
+                    💡 Try searching: "rajiv chowk", "new delhi", "airport", "red line", "anand vihar"
+                  </p>
+                )}
               </div>
 
               {/* Vehicle Type Selection */}
@@ -1082,6 +1486,26 @@ const UserDashboard = () => {
             height: 'fit-content'
           }}>
             <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#333' }}>Map</h3>
+            
+            {/* Map Legend */}
+            <div style={{ 
+              marginBottom: '1rem', 
+              padding: '0.75rem', 
+              backgroundColor: '#f8f9fa', 
+              borderRadius: '4px',
+              fontSize: '0.8rem'
+            }}>
+              <strong>Map Legend:</strong>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                <span>🔵 Metro</span>
+                <span>🟣 Railway</span>
+                <span>🟠 Airport</span>
+                <span>🟢 Bus Terminal</span>
+                <span>🔴 Selected</span>
+                <span>🟡 Driver</span>
+              </div>
+            </div>
+            
             <div style={{ height: '400px', borderRadius: '4px', overflow: 'hidden' }}>
               <GoogleMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
@@ -1115,18 +1539,18 @@ const UserDashboard = () => {
                   />
                 )}
 
-                {/* Selected metro station - Only show if no directions to avoid overlap */}
-                {selectedStation && metroStations.find(s => s.name === selectedStation) && !directions && (
+                {/* Selected pickup location - Only show if no directions to avoid overlap */}
+                {selectedStation && pickupLocations.find(s => s.name === selectedStation) && !directions && (
                   <Marker
                     position={{ 
-                      lat: metroStations.find(s => s.name === selectedStation).lat, 
-                      lng: metroStations.find(s => s.name === selectedStation).lng 
+                      lat: pickupLocations.find(s => s.name === selectedStation).lat, 
+                      lng: pickupLocations.find(s => s.name === selectedStation).lng 
                     }}
                     icon={{
                       url: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
                       scaledSize: new window.google.maps.Size(35, 35)
                     }}
-                    title={`Pickup: ${selectedStation} Metro Station`}
+                    title={`Pickup: ${selectedStation}`}
                   />
                 )}
 
@@ -1154,28 +1578,43 @@ const UserDashboard = () => {
                   />
                 )}
 
-                {/* All metro stations */}
-                {metroStations.map(station => (
-                  <Marker
-                    key={station.id}
-                    position={{ lat: station.lat, lng: station.lng }}
-                    icon={{
-                      url: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png',
-                      scaledSize: new window.google.maps.Size(20, 20)
-                    }}
-                    title={`${station.name} (${station.line} Line)`}
-                    onClick={() => {
-                      setSelectedStation(station.name);
-                      setFareEstimates(null);
-                      setDirections(null);
-                      
-                      // Calculate directions if drop location is already set
-                      if (dropCoordinates) {
-                        calculateDirections(station.name, dropCoordinates);
-                      }
-                    }}
-                  />
-                ))}
+                {/* All pickup locations with type-specific icons */}
+                {getFilteredLocations().map(location => {
+                  const getMarkerColor = (type) => {
+                    const colors = {
+                      metro: 'blue',
+                      railway: 'purple', 
+                      airport: 'orange',
+                      bus_terminal: 'green'
+                    };
+                    return colors[type] || 'blue';
+                  };
+                  
+                  return (
+                    <Marker
+                      key={location.id}
+                      position={{ lat: location.lat, lng: location.lng }}
+                      icon={{
+                        url: `http://maps.google.com/mapfiles/ms/icons/${getMarkerColor(location.type)}-dot.png`,
+                        scaledSize: new window.google.maps.Size(
+                          location.type === 'airport' ? 25 : location.type === 'railway' ? 22 : 20, 
+                          location.type === 'airport' ? 25 : location.type === 'railway' ? 22 : 20
+                        )
+                      }}
+                      title={`${getLocationIcon(location.type)} ${location.name}${location.line ? ` (${location.line} Line)` : ''}${location.subType && location.type !== 'metro' ? ` - ${location.subType}` : ''}`}
+                      onClick={() => {
+                        setSelectedStation(location.name);
+                        setFareEstimates(null);
+                        setDirections(null);
+                        
+                        // Calculate directions if drop location is already set
+                        if (dropCoordinates) {
+                          calculateDirections(location.name, dropCoordinates);
+                        }
+                      }}
+                    />
+                  );
+                })}
               </GoogleMap>
             </div>
           </div>
