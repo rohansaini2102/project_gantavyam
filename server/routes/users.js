@@ -689,46 +689,60 @@ router.get('/ride-history', protectUser, async (req, res) => {
     
     console.log('\n=== GET USER RIDE HISTORY ===');
     console.log('User ID:', userId);
+    console.log('Fetching from RideHistory collection...');
     
-    const rideHistory = await RideRequest.find({
-      userId: userId,
-      status: { $in: ['completed', 'cancelled', 'ride_ended'] }
+    // Import RideHistory model
+    const RideHistory = require('../models/RideHistory');
+    
+    // Get ride history from RideHistory collection (properly completed/cancelled rides)
+    const rideHistory = await RideHistory.find({
+      userId: userId
     })
     .populate('driverId', 'fullName mobileNo vehicleNo vehicleType rating')
-    .sort({ timestamp: -1 })
+    .sort({ createdAt: -1 }) // Sort by creation date in RideHistory
     .limit(limit * 1)
     .skip((page - 1) * limit);
     
-    const totalRides = await RideRequest.countDocuments({
-      userId: userId,
-      status: { $in: ['completed', 'cancelled', 'ride_ended'] }
+    // Get total count from RideHistory collection
+    const totalRides = await RideHistory.countDocuments({
+      userId: userId
     });
     
-    console.log(`📋 Found ${rideHistory.length} ride history entries`);
+    console.log(`📋 Found ${rideHistory.length} ride history entries from RideHistory collection`);
     
     const historyData = rideHistory.map(ride => ({
       rideId: ride._id,
       uniqueRideId: ride.rideId,
-      status: ride.status,
+      status: ride.status, // This will correctly show 'completed' or 'cancelled' from RideHistory
       pickupLocation: ride.pickupLocation,
       dropLocation: ride.dropLocation,
       vehicleType: ride.vehicleType,
       estimatedFare: ride.estimatedFare,
       actualFare: ride.actualFare,
       driver: ride.driverId ? {
-        name: ride.driverId.fullName,
-        vehicleNo: ride.driverId.vehicleNo,
-        vehicleType: ride.driverId.vehicleType,
-        rating: ride.driverId.rating
-      } : null,
+        name: ride.driverId.fullName || ride.driverName,
+        vehicleNo: ride.driverId.vehicleNo || ride.driverVehicleNo,
+        vehicleType: ride.driverId.vehicleType || ride.vehicleType,
+        rating: ride.driverId.rating || ride.driverRating
+      } : (ride.driverName ? {
+        name: ride.driverName,
+        vehicleNo: ride.driverVehicleNo,
+        vehicleType: ride.vehicleType,
+        rating: ride.driverRating
+      } : null),
       timestamps: {
-        created: ride.timestamp,
-        accepted: ride.acceptedAt,
-        started: ride.rideStartedAt,
-        ended: ride.rideEndedAt,
-        cancelled: ride.cancelledAt
+        created: ride.timestamps?.requested || ride.createdAt,
+        accepted: ride.timestamps?.driverAssigned,
+        started: ride.timestamps?.rideStarted,
+        ended: ride.timestamps?.rideEnded,
+        completed: ride.timestamps?.completed,
+        cancelled: ride.timestamps?.cancelled
       },
-      cancellationReason: ride.cancellationReason
+      cancellationReason: ride.cancellationReason,
+      cancelledBy: ride.cancelledBy,
+      paymentStatus: ride.paymentStatus,
+      paymentMethod: ride.paymentMethod,
+      journeyStats: ride.journeyStats
     }));
     
     res.json({
