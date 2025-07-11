@@ -9,13 +9,16 @@ const {
   getDriverById,
   getAllUsers,
   getUserById,
-  verifyDriver
+  verifyDriver,
+  getDashboardStats,
+  getBoothPerformance
 } = require('../controllers/adminController');
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 
-// Import queue routes
+// Import specialized admin routes
 const queueRoutes = require('./admin/queueRoutes');
+const rideRoutes = require('./admin/rideRoutes');
 
 // Configure multer for multiple files
 const driverDocumentUpload = uploadDriverDocuments.fields([
@@ -41,8 +44,13 @@ router.get('/users/:id', adminProtect, getUserById);
 // Approve/reject driver
 router.put('/drivers/:id/verify', adminProtect, verifyDriver);
 
-// Queue management routes
+// Specialized admin routes
 router.use('/queue', queueRoutes);
+router.use('/rides', rideRoutes);
+
+// Dashboard and statistics routes
+router.get('/dashboard/stats', adminProtect, getDashboardStats);
+router.get('/booths/performance', adminProtect, getBoothPerformance);
 
 // Delete driver
 router.delete('/drivers/:id', adminProtect, async (req, res) => {

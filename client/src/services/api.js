@@ -207,15 +207,23 @@ export const auth = {
   // Admin authentication
   adminLogin: async (credentials) => {
     try {
+      console.log('🔐 [API] Admin login request:', credentials.email);
       const response = await apiClient.post('/admin/login', credentials);
+      console.log('🔐 [API] Admin login response:', response.data);
+      
       // Store token in localStorage
       if (response.data.token) {
         localStorage.setItem('adminToken', response.data.token);
         localStorage.setItem('adminRole', 'admin');
         localStorage.setItem('admin', JSON.stringify(response.data.admin));
+        console.log('🔐 [API] Token stored successfully');
+      } else {
+        console.error('🔐 [API] No token in response!');
       }
       return response.data;
     } catch (error) {
+      console.error('🔐 [API] Admin login error:', error);
+      console.error('🔐 [API] Error response:', error.response?.data);
       throw error;
     }
   }
@@ -370,6 +378,83 @@ export const admin = {
   deleteDriver: async (id) => {
     try {
       const response = await apiClient.delete(`/admin/drivers/${id}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Ride Management APIs
+  getRides: async (filters = {}) => {
+    try {
+      const queryParams = new URLSearchParams(filters).toString();
+      const response = await apiClient.get(`/admin/rides?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getRideDetails: async (rideId) => {
+    try {
+      const response = await apiClient.get(`/admin/rides/${rideId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getBoothRides: async (boothName, filters = {}) => {
+    try {
+      const queryParams = new URLSearchParams(filters).toString();
+      const response = await apiClient.get(`/admin/rides/booth/${boothName}?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  updateRideStatus: async (rideId, statusData) => {
+    try {
+      const response = await apiClient.put(`/admin/rides/${rideId}/status`, statusData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getRideAnalytics: async (filters = {}) => {
+    try {
+      const queryParams = new URLSearchParams(filters).toString();
+      const response = await apiClient.get(`/admin/rides/analytics/summary?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getBoothsList: async () => {
+    try {
+      const response = await apiClient.get('/admin/rides/booths/list');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Dashboard and statistics
+  getDashboardStats: async () => {
+    try {
+      const response = await apiClient.get('/admin/dashboard/stats');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getBoothPerformance: async (days = 7) => {
+    try {
+      const response = await apiClient.get(`/admin/booths/performance?days=${days}`);
       return response.data;
     } catch (error) {
       throw error;

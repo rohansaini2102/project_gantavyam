@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FaUserPlus, FaUsers, FaCar, FaUser, FaHome, FaTachometerAlt, FaChartBar, FaCog } from 'react-icons/fa';
+import { FaUserPlus, FaUsers, FaCar, FaUser, FaHome, FaTachometerAlt, FaChartBar, FaCog, FaRoute, FaMapMarkerAlt } from 'react-icons/fa';
 
 const navLinks = [
   { to: '/admin', label: 'Dashboard', icon: <FaTachometerAlt />, isExact: true },
@@ -16,6 +16,13 @@ const navLinks = [
     items: [
       { to: '/admin/drivers', label: 'All Drivers', icon: <FaUsers /> },
       { to: '/admin/view-users', label: 'All Users', icon: <FaUser /> },
+    ]
+  },
+  {
+    category: 'Operations',
+    items: [
+      { to: '/admin/rides', label: 'Ride Management', icon: <FaRoute /> },
+      { to: '/admin/booths', label: 'Booth Management', icon: <FaMapMarkerAlt /> },
     ]
   },
   {

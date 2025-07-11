@@ -131,12 +131,14 @@ const rideRequestSchema = new mongoose.Schema({
   driversNotified: Number,
   broadcastAt: Date,
   broadcastMethod: String
+}, {
+  timestamps: true  // This automatically adds createdAt and updatedAt fields
 });
 
 // Index for efficient booth ride number queries
 rideRequestSchema.index({ boothRideNumber: 1 });
 rideRequestSchema.index({ paymentStatus: 1 });
-rideRequestSchema.index({ 'pickupLocation.boothName': 1, timestamp: -1 });
+rideRequestSchema.index({ 'pickupLocation.boothName': 1, createdAt: -1 });
 
 // Indexes for queue management
 rideRequestSchema.index({ queueNumber: 1 });

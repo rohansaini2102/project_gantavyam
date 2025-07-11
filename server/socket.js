@@ -102,6 +102,14 @@ const initializeSocket = (server) => {
       // Log all driver connections
       const driversRoom = io.sockets.adapter.rooms.get('drivers');
       console.log(`Total drivers online: ${driversRoom ? driversRoom.size : 0}`);
+    } else if (socket.user.role === 'admin') {
+      socket.join('admins');
+      socket.join(`admin_${socket.user._id}`);
+      console.log(`✅ Admin ${socket.user._id} joined rooms: admins, admin_${socket.user._id}`);
+      
+      // Log all admin connections
+      const adminsRoom = io.sockets.adapter.rooms.get('admins');
+      console.log(`Total admins online: ${adminsRoom ? adminsRoom.size : 0}`);
     } else {
       socket.join(`user_${socket.user._id}`);
       console.log(`✅ User ${socket.user._id} joined room: user_${socket.user._id}`);
@@ -479,6 +487,19 @@ const initializeSocket = (server) => {
           uniqueRideId: rideRequest.rideId
         });
         
+        // Notify admins of ride acceptance
+        notifyAdmins('rideAccepted', {
+          rideId: rideRequest._id.toString(),
+          uniqueRideId: rideRequest.rideId,
+          driverId: driverId,
+          driverName: driverName,
+          userName: rideRequest.userName,
+          pickupLocation: rideRequest.pickupLocation,
+          status: 'driver_assigned',
+          queueNumber: rideRequest.queueNumber,
+          acceptedAt: rideRequest.acceptedAt
+        });
+        
         console.log('✅ All notifications sent');
 
         // Confirm to the accepting driver with complete ride information
@@ -586,6 +607,18 @@ const initializeSocket = (server) => {
         
         io.to(`user_${rideRequest.userId}`).emit('rideStarted', startData);
         io.to(`driver_${rideRequest.driverId}`).emit('rideStarted', startData);
+        
+        // Notify admins of ride start
+        notifyAdmins('rideStarted', {
+          rideId: rideRequest._id.toString(),
+          uniqueRideId: rideRequest.rideId,
+          userName: rideRequest.userName,
+          driverName: rideRequest.driverName,
+          pickupLocation: rideRequest.pickupLocation,
+          status: 'ride_started',
+          startedAt: rideRequest.rideStartedAt,
+          queueNumber: rideRequest.queueNumber
+        });
         
         console.log('📤 Both parties notified of ride start');
         
@@ -703,6 +736,20 @@ const initializeSocket = (server) => {
           // Notify both parties of completion
           io.to(`user_${rideRequest.userId}`).emit('rideCompleted', completionData);
           io.to(`driver_${rideRequest.driverId}`).emit('rideCompleted', completionData);
+          
+          // Notify admins of ride completion
+          notifyAdmins('rideCompleted', {
+            rideId: rideRequest._id.toString(),
+            uniqueRideId: rideRequest.rideId,
+            userName: rideRequest.userName,
+            driverName: rideRequest.driverName,
+            pickupLocation: rideRequest.pickupLocation,
+            status: 'completed',
+            completedAt: completionData.completedAt,
+            actualFare: rideRequest.actualFare,
+            paymentMethod: rideRequest.paymentMethod,
+            queueNumber: rideRequest.queueNumber
+          });
           
           console.log('📤 Both parties notified of ride completion');
         } else {
@@ -839,6 +886,20 @@ const initializeSocket = (server) => {
             console.log('📤 Driver notified of cancellation');
           }
         }
+        
+        // Notify admins of ride cancellation
+        notifyAdmins('rideCancelled', {
+          rideId: rideRequest._id.toString(),
+          uniqueRideId: rideRequest.rideId,
+          userName: rideRequest.userName,
+          driverName: rideRequest.driverName || 'No driver assigned',
+          pickupLocation: rideRequest.pickupLocation,
+          status: 'cancelled',
+          cancelledAt: rideRequest.cancelledAt,
+          cancelledBy: socket.user.role,
+          reason: reason,
+          queueNumber: rideRequest.queueNumber
+        });
         
         // Send callback acknowledgment
         if (callback) {
@@ -1151,6 +1212,23 @@ const getIO = () => {
   return io;
 };
 
+// Function to notify admins of ride events
+const notifyAdmins = (eventType, data) => {
+  if (!io) {
+    console.warn('Socket.IO not initialized - cannot notify admins');
+    return;
+  }
+  
+  console.log(`📢 [Admin Notification] ${eventType}:`, data);
+  
+  // Send to all admin sockets
+  io.to('admins').emit('rideUpdate', {
+    type: eventType,
+    data: data,
+    timestamp: new Date().toISOString()
+  });
+};
+
 // Standalone function to broadcast ride requests (called from API routes)
 const broadcastRideRequest = async (data) => {
   if (!io) {
@@ -1331,6 +1409,23 @@ const broadcastRideRequest = async (data) => {
     
     console.log(`✅ Ride request broadcast completed - ${successCount} drivers notified using ${broadcastMethod} method`);
     
+    // Notify admins of new ride request
+    notifyAdmins('newRideRequest', {
+      rideId: rideRequest._id.toString(),
+      uniqueRideId: rideRequest.rideId,
+      userName: rideRequest.userName,
+      userPhone: rideRequest.userPhone,
+      pickupLocation: rideRequest.pickupLocation,
+      dropLocation: rideRequest.dropLocation,
+      vehicleType: rideRequest.vehicleType,
+      estimatedFare: rideRequest.estimatedFare,
+      distance: rideRequest.distance,
+      status: 'pending',
+      driversNotified: successCount,
+      broadcastMethod: broadcastMethod,
+      createdAt: rideRequest.createdAt || rideRequest.timestamp
+    });
+    
     return { 
       success: true, 
       driversNotified: successCount,
@@ -1347,5 +1442,6 @@ const broadcastRideRequest = async (data) => {
 module.exports = {
   initializeSocket,
   getIO,
-  broadcastRideRequest
+  broadcastRideRequest,
+  notifyAdmins
 };

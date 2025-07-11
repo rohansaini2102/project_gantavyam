@@ -1,6 +1,9 @@
 // controllers/adminController.js
 const Driver = require('../models/Driver');
 const User = require('../models/User');
+const RideRequest = require('../models/RideRequest');
+const BoothQueue = require('../models/BoothQueue');
+const PickupLocation = require('../models/PickupLocation');
 const { createContextLogger } = require('../config/logger');
 
 const logger = createContextLogger('AdminController');
@@ -202,6 +205,159 @@ exports.deleteDriver = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Server error while deleting driver'
+    });
+  }
+};
+
+// @desc    Get dashboard statistics
+// @route   GET /api/admin/dashboard/stats
+// @access  Private (Admin only)
+exports.getDashboardStats = async (req, res) => {
+  try {
+    logger.info('Admin fetching dashboard statistics', { adminId: req.admin?.id });
+
+    // Get counts
+    const [userCount, driverCount, rideCount, pendingDrivers] = await Promise.all([
+      User.countDocuments(),
+      Driver.countDocuments({ isVerified: true }),
+      RideRequest.countDocuments(),
+      Driver.countDocuments({ isVerified: false })
+    ]);
+
+    // Get today's ride count
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const todayRides = await RideRequest.countDocuments({
+      createdAt: { $gte: today, $lt: tomorrow }
+    });
+
+    // Get active rides count
+    const activeRides = await RideRequest.countDocuments({
+      status: { $in: ['pending', 'driver_assigned', 'ride_started'] }
+    });
+
+    // Get recent rides for activity feed
+    const recentRides = await RideRequest.find()
+      .populate('userId', 'name')
+      .populate('driverId', 'name')
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('status pickupLocation destination createdAt userId driverId');
+
+    const stats = {
+      userCount,
+      driverCount,
+      totalRides: rideCount,
+      pendingApprovals: pendingDrivers,
+      todayRides,
+      activeRides,
+      recentActivity: recentRides
+    };
+
+    logger.info('Successfully fetched dashboard stats', { stats: Object.keys(stats) });
+
+    res.status(200).json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    logger.error('Error fetching dashboard stats', { 
+      error: error.message, 
+      stack: error.stack,
+      adminId: req.admin?.id 
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Server error while fetching dashboard statistics'
+    });
+  }
+};
+
+// @desc    Get booth performance metrics
+// @route   GET /api/admin/booths/performance
+// @access  Private (Admin only)
+exports.getBoothPerformance = async (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    
+    logger.info('Admin fetching booth performance', { adminId: req.admin?.id, days });
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
+    // Get ride counts by booth
+    const boothPerformance = await RideRequest.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate },
+          pickupLocation: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: '$pickupLocation',
+          totalRides: { $sum: 1 },
+          completedRides: {
+            $sum: { $cond: [{ $eq: ['$status', 'ride_ended'] }, 1, 0] }
+          },
+          cancelledRides: {
+            $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] }
+          },
+          avgFare: { $avg: '$totalFare' }
+        }
+      },
+      {
+        $addFields: {
+          completionRate: {
+            $cond: [
+              { $eq: ['$totalRides', 0] },
+              0,
+              { $multiply: [{ $divide: ['$completedRides', '$totalRides'] }, 100] }
+            ]
+          }
+        }
+      },
+      { $sort: { totalRides: -1 } },
+      { $limit: 20 }
+    ]);
+
+    // Get booth queue status for today
+    const today = new Date().toISOString().split('T')[0];
+    const boothQueues = await BoothQueue.find({ date: today });
+
+    // Combine performance data with queue status
+    const combinedData = boothPerformance.map(booth => {
+      const queueData = boothQueues.find(q => q.boothName === booth._id);
+      return {
+        ...booth,
+        queueInfo: queueData ? queueData.getQueueStatus() : null
+      };
+    });
+
+    logger.info('Successfully fetched booth performance', { boothCount: combinedData.length });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        performance: combinedData,
+        period: `${days} days`,
+        totalBooths: combinedData.length
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error fetching booth performance', { 
+      error: error.message, 
+      stack: error.stack,
+      adminId: req.admin?.id 
+    });
+    res.status(500).json({
+      success: false,
+      error: 'Server error while fetching booth performance'
     });
   }
 };

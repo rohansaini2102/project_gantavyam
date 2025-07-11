@@ -12,14 +12,36 @@ const AdminLogin = () => {
     e.preventDefault();
     setError('');
     try {
+      console.log('🔐 [Admin Login] Attempting login with:', { email });
+      
+      // Test connectivity first
+      try {
+        const testResponse = await fetch('http://localhost:5000/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: 'test', password: 'test' })
+        });
+        console.log('🔐 [Admin Login] Connectivity test:', testResponse.status);
+      } catch (connectError) {
+        console.error('🔐 [Admin Login] Connectivity test failed:', connectError);
+        setError('Cannot connect to server. Please check if the backend is running.');
+        return;
+      }
+      
       const response = await adminLogin({ email, password });
+      console.log('🔐 [Admin Login] Login response:', response);
+      
       if (response.success && response.token) {
+        console.log('🔐 [Admin Login] Login successful, navigating to admin');
+        console.log('🔐 [Admin Login] Token stored:', !!localStorage.getItem('adminToken'));
         navigate('/admin');
       } else {
+        console.error('🔐 [Admin Login] Login failed - no token in response:', response);
         setError('Login failed.');
       }
     } catch (err) {
-      setError(err.error || 'Login failed.');
+      console.error('🔐 [Admin Login] Login error:', err);
+      setError(err.error || err.message || 'Login failed.');
     }
   };
 
