@@ -19,6 +19,8 @@ const Admin = require('../models/Admin');
 // Import specialized admin routes
 const queueRoutes = require('./admin/queueRoutes');
 const rideRoutes = require('./admin/rideRoutes');
+const { router: rideManagementTools } = require('./admin/rideManagementTools');
+const driverInfoRecoveryRoutes = require('./admin/driverInfoRecovery');
 
 // Configure multer for multiple files
 const driverDocumentUpload = uploadDriverDocuments.fields([
@@ -47,6 +49,8 @@ router.put('/drivers/:id/verify', adminProtect, verifyDriver);
 // Specialized admin routes
 router.use('/queue', queueRoutes);
 router.use('/rides', rideRoutes);
+router.use('/ride-tools', rideManagementTools);
+router.use('/driver-recovery', driverInfoRecoveryRoutes);
 
 // Dashboard and statistics routes
 router.get('/dashboard/stats', adminProtect, getDashboardStats);
@@ -90,7 +94,7 @@ router.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET || 'your_jwt_secret', { expiresIn: '1d' });
+    const token = jwt.sign({ id: admin._id, role: 'admin' }, process.env.JWT_SECRET || 'your_jwt_secret', { expiresIn: '1d' });
     res.json({ success: true, token, admin: { id: admin._id, email: admin.email, name: admin.name } });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Server error' });

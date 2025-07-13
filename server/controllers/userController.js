@@ -50,6 +50,20 @@ exports.registerUser = async (req, res) => {
       name 
     });
 
+    // Notify admins of new user registration
+    try {
+      const { notifyAdmins } = require('../socket');
+      notifyAdmins('userRegistered', {
+        userId: user._id,
+        name,
+        email,
+        phone,
+        registeredAt: new Date().toISOString()
+      });
+    } catch (socketError) {
+      logger.warn('Failed to notify admins of user registration', { error: socketError.message });
+    }
+
     res.status(201).json({
       success: true,
       message: 'User registered successfully'

@@ -15,19 +15,19 @@ class SocketService {
   // Initialize socket connection with authentication token
   initialize(token) {
     if (!token) {
-      console.error('Cannot initialize socket: No token provided');
+      console.error('[SocketService] ❌ Cannot initialize socket: No token provided');
       return null;
     }
 
-    // Check if we already have a connection
-    if (this.socket && this.socket.connected) {
-      console.log('Reusing existing socket connection');
+    // Check if we already have a healthy connection
+    if (this.socket && this.socket.connected && this.connected) {
+      console.log('[SocketService] ✅ Reusing existing healthy socket connection');
       return this.socket;
     }
 
     // Check if initialization is in progress
     if (this.initializePromise) {
-      console.log('Socket initialization already in progress');
+      console.log('[SocketService] ⏳ Socket initialization already in progress');
       return this.initializePromise;
     }
 
@@ -35,36 +35,58 @@ class SocketService {
     this.disconnect();
 
     // Create new socket connection
-    console.log('[SocketService] 🔌 Initializing new socket connection with token');
+    console.log('[SocketService] 🔌 Initializing new socket connection');
     console.log('[SocketService] 🔌 Server URL:', this.serverUrl);
+    console.log('[SocketService] 🔌 Token provided:', !!token);
     
-    this.initializePromise = new Promise((resolve) => {
-      this.socket = io(this.serverUrl, {
-        auth: { token },
-        reconnection: true,
-        reconnectionAttempts: this.reconnectionAttempts,
-        reconnectionDelay: this.reconnectionDelay,
-        transports: ['websocket', 'polling']
-      });
+    this.initializePromise = new Promise((resolve, reject) => {
+      try {
+        this.socket = io(this.serverUrl, {
+          auth: { token },
+          reconnection: true,
+          reconnectionAttempts: this.reconnectionAttempts,
+          reconnectionDelay: this.reconnectionDelay,
+          reconnectionDelayMax: 5000,
+          timeout: 10000,
+          transports: ['websocket', 'polling'],
+          upgrade: true,
+          rememberUpgrade: true
+        });
 
-      // Set up event listeners
-      this._setupEventListeners();
-      
-      // Wait for connection
-      this.socket.once('connect', () => {
+        // Set up event listeners
+        this._setupEventListeners();
+        
+        // Set up timeout for connection
+        const connectionTimeout = setTimeout(() => {
+          console.error('[SocketService] ❌ Connection timeout after 10 seconds');
+          this.initializePromise = null;
+          resolve(null);
+        }, 10000);
+        
+        // Wait for connection
+        this.socket.once('connect', () => {
+          clearTimeout(connectionTimeout);
+          console.log('[SocketService] ✅ Socket connected successfully');
+          this.initializePromise = null;
+          resolve(this.socket);
+        });
+        
+        // Handle connection error
+        this.socket.once('connect_error', (error) => {
+          clearTimeout(connectionTimeout);
+          this.initializePromise = null;
+          console.error('[SocketService] ❌ Failed to connect:', error.message || error);
+          resolve(null); // Resolve with null instead of rejecting
+        });
+
+      } catch (error) {
+        console.error('[SocketService] ❌ Error creating socket:', error);
         this.initializePromise = null;
-        resolve(this.socket);
-      });
-      
-      // Handle connection error
-      this.socket.once('connect_error', (error) => {
-        this.initializePromise = null;
-        console.error('Failed to connect:', error);
         resolve(null);
-      });
+      }
     });
 
-    return this.socket;
+    return this.initializePromise;
   }
 
   // Set up socket event listeners
@@ -72,26 +94,60 @@ class SocketService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log('✅ Connected to socket server with ID:', this.socket.id);
+      console.log('[SocketService] ✅ Connected to socket server with ID:', this.socket.id);
       this.connected = true;
     });
 
     this.socket.on('connectionSuccess', (data) => {
-      console.log('✅ Server confirmed authentication:', data);
+      console.log('[SocketService] ✅ Server confirmed authentication:', data);
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('❌ Socket connection error:', error.message);
+      console.error('[SocketService] ❌ Socket connection error:', error.message || error);
       this.connected = false;
+      
+      // Log additional connection debugging info
+      console.log('[SocketService] 🔍 Connection debugging info:', {
+        serverUrl: this.serverUrl,
+        connected: this.connected,
+        socketExists: !!this.socket,
+        errorType: error.type,
+        errorDescription: error.description
+      });
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.warn('⚠️ Socket disconnected:', reason);
+      console.warn('[SocketService] ⚠️ Socket disconnected:', reason);
+      this.connected = false;
+      
+      // Log reconnection info
+      if (reason === 'io server disconnect') {
+        console.log('[SocketService] 🔄 Server initiated disconnect - will not auto-reconnect');
+      } else {
+        console.log('[SocketService] 🔄 Client initiated disconnect or connection lost - will auto-reconnect');
+      }
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log('[SocketService] 🔄 Reconnected after', attemptNumber, 'attempts');
+      this.connected = true;
+    });
+
+    this.socket.on('reconnect_attempt', (attemptNumber) => {
+      console.log('[SocketService] 🔄 Reconnection attempt', attemptNumber);
+    });
+
+    this.socket.on('reconnect_error', (error) => {
+      console.error('[SocketService] ❌ Reconnection error:', error.message || error);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.error('[SocketService] ❌ Reconnection failed after', this.reconnectionAttempts, 'attempts');
       this.connected = false;
     });
 
     this.socket.on('error', (error) => {
-      console.error('Socket error:', error);
+      console.error('[SocketService] ❌ Socket error:', error);
     });
   }
 

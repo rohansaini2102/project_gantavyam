@@ -27,49 +27,157 @@ const RideManagement = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [rideStats, setRideStats] = useState({
+    total: 0,
+    completed: 0,
+    active: 0,
+    cancelled: 0
+  });
+  const [statsLoading, setStatsLoading] = useState(false);
   const socketRef = useRef(null);
 
   // Initialize socket connection for real-time updates
   useEffect(() => {
-    const adminToken = localStorage.getItem('adminToken');
-    if (adminToken) {
+    const initializeAdminSocket = async () => {
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        console.error('🔌 [Ride Management] No admin token found for socket connection');
+        return;
+      }
+
       console.log('🔌 [Ride Management] Initializing admin socket connection');
       socketRef.current = socketService;
-      const socket = socketService.initialize(adminToken);
       
-      if (socket) {
-        // Listen for real-time ride updates
-        socket.on('rideUpdate', (data) => {
-          console.log('📢 [Ride Management] Real-time update received:', data);
-          handleRealTimeUpdate(data);
-        });
+      try {
+        // socketService.initialize() returns a Promise that resolves to the socket
+        const socket = await socketService.initialize(adminToken);
         
-        socket.on('connectionSuccess', (data) => {
-          console.log('✅ [Ride Management] Admin socket connected:', data);
+        if (socket && socket.connected) {
+          console.log('✅ [Ride Management] Socket initialized successfully');
           setSocketConnected(true);
-        });
+          
+          // Set up event listeners for admin-specific events
+          // Primary event: rideUpdate (sent to admins room)
+          socket.on('rideUpdate', (updateData) => {
+            console.log('📢 [Ride Management] Real-time rideUpdate received:', updateData);
+            if (updateData.type === 'newRideRequest') {
+              console.log('🚨 [NEW RIDE DEBUG] Admin received new ride via rideUpdate:', updateData.data);
+            }
+            // updateData structure: { type: eventType, data: eventData, timestamp: ... }
+            handleRealTimeUpdate(updateData);
+          });
+          
+          // Fallback: Listen to direct events as well (for compatibility)
+          socket.on('newRideRequest', (data) => {
+            console.log('📢 [Ride Management] Direct newRideRequest received:', data);
+            console.log('🚨 [NEW RIDE DEBUG] Admin received new ride via direct event:', data);
+            handleRealTimeUpdate({ type: 'newRideRequest', data });
+          });
+          
+          socket.on('rideAccepted', (data) => {
+            console.log('📢 [Ride Management] Direct rideAccepted received:', data);
+            handleRealTimeUpdate({ type: 'rideAccepted', data });
+          });
+          
+          socket.on('rideStarted', (data) => {
+            console.log('📢 [Ride Management] Direct rideStarted received:', data);
+            handleRealTimeUpdate({ type: 'rideStarted', data });
+          });
+          
+          socket.on('rideCompleted', (data) => {
+            console.log('📢 [Ride Management] Direct rideCompleted received:', data);
+            handleRealTimeUpdate({ type: 'rideCompleted', data });
+          });
+          
+          socket.on('rideEnded', (data) => {
+            console.log('📢 [Ride Management] Direct rideEnded received:', data);
+            handleRealTimeUpdate({ type: 'rideEnded', data });
+          });
+          
+          socket.on('rideCancelled', (data) => {
+            console.log('📢 [Ride Management] Direct rideCancelled received:', data);
+            handleRealTimeUpdate({ type: 'rideCancelled', data });
+          });
+          
+          // Listen to driver status events
+          socket.on('driverOnline', (data) => {
+            console.log('📢 [Ride Management] Driver online notification:', data);
+            handleRealTimeUpdate({ type: 'driverOnline', data });
+          });
+          
+          socket.on('driverOffline', (data) => {
+            console.log('📢 [Ride Management] Driver offline notification:', data);
+            handleRealTimeUpdate({ type: 'driverOffline', data });
+          });
+          
+          // Listen to registration events
+          socket.on('userRegistered', (data) => {
+            console.log('📢 [Ride Management] User registration notification:', data);
+            handleRealTimeUpdate({ type: 'userRegistered', data });
+          });
+          
+          socket.on('driverRegistered', (data) => {
+            console.log('📢 [Ride Management] Driver registration notification:', data);
+            handleRealTimeUpdate({ type: 'driverRegistered', data });
+          });
+          
+          socket.on('connectionSuccess', (data) => {
+            console.log('✅ [Ride Management] Admin socket authenticated:', data);
+            setSocketConnected(true);
+          });
 
-        socket.on('connect', () => {
-          setSocketConnected(true);
-          console.log('✅ [Ride Management] Socket connected');
-        });
+          socket.on('connect', () => {
+            console.log('✅ [Ride Management] Socket connected');
+            setSocketConnected(true);
+          });
 
-        socket.on('disconnect', () => {
+          socket.on('disconnect', (reason) => {
+            console.warn('❌ [Ride Management] Socket disconnected:', reason);
+            setSocketConnected(false);
+          });
+          
+          socket.on('connect_error', (error) => {
+            console.error('❌ [Ride Management] Socket connection error:', error);
+            setSocketConnected(false);
+          });
+          
+        } else {
+          console.error('❌ [Ride Management] Failed to initialize socket or socket not connected');
           setSocketConnected(false);
-          console.log('❌ [Ride Management] Socket disconnected');
-        });
-        
-        socket.on('connect_error', (error) => {
-          console.error('❌ [Ride Management] Socket connection error:', error);
-          setSocketConnected(false);
-        });
+        }
+      } catch (error) {
+        console.error('❌ [Ride Management] Error initializing socket:', error);
+        setSocketConnected(false);
       }
-    }
+    };
+
+    // Initialize socket connection
+    initializeAdminSocket();
     
+    // Cleanup function
     return () => {
       if (socketRef.current) {
-        console.log('🔌 [Ride Management] Disconnecting socket');
-        socketService.disconnect();
+        console.log('🔌 [Ride Management] Cleaning up socket connection');
+        const socket = socketService.getSocket();
+        if (socket) {
+          // Remove only the listeners we added
+          socket.off('rideUpdate');
+          socket.off('newRideRequest');
+          socket.off('rideAccepted');
+          socket.off('rideStarted');
+          socket.off('rideCompleted');
+          socket.off('rideEnded');
+          socket.off('rideCancelled');
+          socket.off('driverOnline');
+          socket.off('driverOffline');
+          socket.off('userRegistered');
+          socket.off('driverRegistered');
+          socket.off('connectionSuccess');
+          socket.off('connect');
+          socket.off('disconnect');
+          socket.off('connect_error');
+        }
+        // Don't disconnect the socket as it might be used by other components
       }
     };
   }, []);
@@ -78,6 +186,7 @@ const RideManagement = () => {
   useEffect(() => {
     loadRides();
     loadBooths();
+    loadRideStatistics();
   }, []);
   
   // Reset retry count when filters change
@@ -89,6 +198,7 @@ const RideManagement = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       loadRides(true); // Reset pagination
+      loadRideStatistics(); // Refresh statistics when filters change
     }, 300);
     return () => clearTimeout(timer);
   }, [filters]);
@@ -111,13 +221,32 @@ const RideManagement = () => {
         return;
       }
 
+      // Build query params - only include non-empty filters
       const queryParams = {
-        ...filters,
         limit: pagination.limit,
         skip: resetPagination ? 0 : pagination.skip
       };
+      
+      // Only add filters that have actual values
+      if (filters.booth && filters.booth !== 'all') {
+        queryParams.booth = filters.booth;
+      }
+      if (filters.status && filters.status !== 'all') {
+        queryParams.status = filters.status;
+      }
+      if (filters.startDate && filters.startDate.trim()) {
+        queryParams.startDate = filters.startDate;
+      }
+      if (filters.endDate && filters.endDate.trim()) {
+        queryParams.endDate = filters.endDate;
+      }
+      if (filters.searchQuery && filters.searchQuery.trim()) {
+        queryParams.searchQuery = filters.searchQuery;
+      }
 
       console.log('🔍 [Ride Management] Loading rides with filters:', queryParams);
+      console.log('🔍 [Ride Management] Original filters state:', filters);
+      console.log('🔍 [Ride Management] Query will include date filters:', !!queryParams.startDate || !!queryParams.endDate);
 
       const response = await api.admin.getRides(queryParams);
       
@@ -129,35 +258,18 @@ const RideManagement = () => {
       let ridesData = [];
       let paginationData = { total: 0, hasMore: false };
       
-      // Simple, robust parsing logic
-      try {
-        if (response && response.data && response.data.success) {
-          // Standard success response: { data: { success: true, data: { rides: [...], pagination: {...} } } }
-          const responseData = response.data.data;
-          ridesData = Array.isArray(responseData?.rides) ? responseData.rides : [];
-          paginationData = responseData?.pagination || { total: ridesData.length, hasMore: false };
-        } else if (response && response.success) {
-          // Direct success response: { success: true, data: { rides: [...], pagination: {...} } }
-          ridesData = Array.isArray(response.data?.rides) ? response.data.rides : [];
-          paginationData = response.data?.pagination || { total: ridesData.length, hasMore: false };
-        } else if (Array.isArray(response)) {
-          // Direct array response
-          ridesData = response;
-          paginationData = { total: response.length, hasMore: false };
-        } else {
-          console.error('🔍 [Ride Management] Unexpected response structure:', response);
-          ridesData = [];
-          paginationData = { total: 0, hasMore: false };
-        }
+      // Parse standardized response: { success: true, data: { rides: [...], pagination: {...} } }
+      if (response && response.success && response.data) {
+        ridesData = Array.isArray(response.data.rides) ? response.data.rides : [];
+        paginationData = response.data.pagination || { total: ridesData.length, hasMore: false };
         
-        // Ensure ridesData is always an array
-        if (!Array.isArray(ridesData)) {
-          console.warn('🔍 [Ride Management] ridesData is not an array, defaulting to empty array:', ridesData);
-          ridesData = [];
-        }
-        
-      } catch (parseError) {
-        console.error('🔍 [Ride Management] Error parsing response:', parseError);
+        console.log('🔍 [Ride Management] Parsed response:', {
+          ridesCount: ridesData.length,
+          totalRides: paginationData.total,
+          hasMore: paginationData.hasMore
+        });
+      } else {
+        console.error('🔍 [Ride Management] Invalid response format:', response);
         ridesData = [];
         paginationData = { total: 0, hasMore: false };
       }
@@ -166,9 +278,9 @@ const RideManagement = () => {
       console.log('🔍 [Ride Management] Sample ride:', ridesData[0]);
       
       if (resetPagination) {
-        // Ensure ridesData is an array before setting state
+        // Ensure ridesData is an array before setting state and deduplicate
         const safeRidesData = Array.isArray(ridesData) ? ridesData : [];
-        setRides(safeRidesData);
+        setRides(deduplicateRides(safeRidesData));
         setPagination(prev => ({
           ...prev,
           skip: 0,
@@ -180,8 +292,8 @@ const RideManagement = () => {
           // Ensure both prev and ridesData are arrays before spreading
           const safePrev = Array.isArray(prev) ? prev : [];
           const safeRidesData = Array.isArray(ridesData) ? ridesData : [];
-          const updated = [...safePrev, ...safeRidesData];
-          return updated;
+          const combined = [...safePrev, ...safeRidesData];
+          return deduplicateRides(combined);
         });
         setPagination(prev => ({
           ...prev,
@@ -279,6 +391,119 @@ const RideManagement = () => {
     }
   };
 
+  const loadRideStatistics = async () => {
+    try {
+      setStatsLoading(true);
+      console.log('📊 [Ride Management] Loading ride statistics...');
+      
+      // Use the ride analytics endpoint to get accurate counts
+      const response = await api.admin.getRideAnalytics();
+      console.log('📊 [Ride Management] Statistics response:', response);
+      
+      if (response && response.success && response.data) {
+        const stats = response.data;
+        const ridesByStatus = stats.ridesByStatus || {};
+        
+        // Calculate active rides (pending + driver_assigned + ride_started)
+        const activeRides = (ridesByStatus.pending || 0) + 
+                           (ridesByStatus.driver_assigned || 0) + 
+                           (ridesByStatus.ride_started || 0);
+        
+        // Calculate completed rides (ride_ended + completed)
+        const completedRides = (ridesByStatus.ride_ended || 0) + 
+                              (ridesByStatus.completed || 0);
+        
+        setRideStats({
+          total: stats.totalRides || 0,
+          completed: completedRides,
+          active: activeRides,
+          cancelled: ridesByStatus.cancelled || 0
+        });
+        
+        console.log('📊 [Ride Management] Statistics loaded:', {
+          total: stats.totalRides,
+          completed: completedRides,
+          active: activeRides,
+          cancelled: ridesByStatus.cancelled || 0,
+          ridesByStatus: ridesByStatus
+        });
+      } else {
+        // Fallback: try direct rides endpoint to get counts
+        console.log('📊 [Ride Management] Analytics endpoint structure unexpected, using fallback...');
+        
+        // Get total count from main rides endpoint
+        const totalResponse = await api.admin.getRides({ limit: 1 });
+        const totalRides = totalResponse?.data?.pagination?.total || 0;
+        
+        // If we have rides, estimate the distribution (this is a fallback)
+        if (totalRides > 0) {
+          // Load first page to get a sample of statuses
+          const sampleResponse = await api.admin.getRides({ limit: 100 });
+          const sampleRides = sampleResponse?.data?.rides || [];
+          
+          // Count statuses in sample
+          const statusCounts = sampleRides.reduce((acc, ride) => {
+            const status = ride.status || 'unknown';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+          }, {});
+          
+          // Calculate based on sample (rough estimate)
+          const sampleSize = sampleRides.length;
+          const ratio = totalRides / Math.max(sampleSize, 1);
+          
+          const activeCount = Math.round(
+            ((statusCounts.pending || 0) + 
+             (statusCounts.driver_assigned || 0) + 
+             (statusCounts.ride_started || 0)) * ratio
+          );
+          
+          const completedCount = Math.round(
+            ((statusCounts.ride_ended || 0) + 
+             (statusCounts.completed || 0)) * ratio
+          );
+          
+          const cancelledCount = Math.round((statusCounts.cancelled || 0) * ratio);
+          
+          setRideStats({
+            total: totalRides,
+            completed: completedCount,
+            active: activeCount,
+            cancelled: cancelledCount
+          });
+          
+          console.log('📊 [Ride Management] Estimated statistics from sample:', {
+            total: totalRides,
+            sampleSize,
+            ratio,
+            statusCounts
+          });
+        } else {
+          // No rides found
+          setRideStats({
+            total: 0,
+            completed: 0,
+            active: 0,
+            cancelled: 0
+          });
+        }
+      }
+    } catch (error) {
+      console.error('📊 [Ride Management] Error loading ride statistics:', error);
+      
+      if (error.status === 401) {
+        localStorage.removeItem('adminToken');
+        window.location.href = '/admin/login';
+        return;
+      }
+      
+      // Keep existing stats or set to zero
+      console.warn('📊 [Ride Management] Keeping existing statistics due to error');
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({
       ...prev,
@@ -306,17 +531,32 @@ const RideManagement = () => {
     
     switch (type) {
       case 'newRideRequest':
+        console.log('🚨 [NEW RIDE DEBUG] Received new ride request:', data);
+        console.log('🚨 [NEW RIDE DEBUG] Current filters:', filters);
+        console.log('🚨 [NEW RIDE DEBUG] Should show ride:', shouldShowRide(data));
+        
         // Add new ride to the beginning of the list if it matches current filters
         if (shouldShowRide(data)) {
+          console.log('✅ [NEW RIDE DEBUG] Adding ride to list');
           setRides(prev => {
             const safePrev = Array.isArray(prev) ? prev : [];
-            // Check if ride already exists to avoid duplicates
-            const exists = safePrev.some(ride => ride._id === data.rideId);
+            // Check if ride already exists to avoid duplicates - check multiple ID fields
+            const exists = safePrev.some(ride => 
+              ride._id === data.rideId || 
+              ride._id === data._id ||
+              ride.rideId === data.rideId ||
+              ride.rideId === data.uniqueRideId
+            );
+            console.log('🚨 [NEW RIDE DEBUG] Ride already exists:', exists);
             if (!exists) {
               const newRide = formatRideData(data);
-              return [newRide, ...safePrev];
+              console.log('🚨 [NEW RIDE DEBUG] Formatted new ride:', newRide);
+              const updatedRides = [newRide, ...safePrev];
+              const deduplicatedRides = deduplicateRides(updatedRides);
+              console.log('🚨 [NEW RIDE DEBUG] Final rides count:', deduplicatedRides.length);
+              return deduplicatedRides;
             }
-            return safePrev;
+            return deduplicateRides(safePrev);
           });
           
           // Update pagination total
@@ -324,18 +564,29 @@ const RideManagement = () => {
             ...prev,
             total: (prev.total || 0) + 1
           }));
+        } else {
+          console.log('🚨 [NEW RIDE DEBUG] Ride doesn\'t match current filters, but force refreshing...');
         }
+        
+        // IMMEDIATE REFRESH: Reload rides list to ensure new ride is visible
+        console.log('🔄 [NEW RIDE DEBUG] Refreshing rides list for new ride...');
+        loadRides(true); // Reset pagination and reload immediately
+        
+        // Update ride statistics - new ride means +1 total, +1 active (pending)
+        setRideStats(prev => ({
+          ...prev,
+          total: prev.total + 1,
+          active: prev.active + 1
+        }));
         break;
         
       case 'rideAccepted':
       case 'rideStarted':
-      case 'rideCompleted':
-      case 'rideCancelled':
       case 'rideStatusUpdated':
         // Update existing ride in the list
         setRides(prev => {
           const safePrev = Array.isArray(prev) ? prev : [];
-          return safePrev.map(ride => {
+          const updatedRides = safePrev.map(ride => {
             if (ride._id === data.rideId || ride.rideId === data.uniqueRideId) {
               return {
                 ...ride,
@@ -347,7 +598,84 @@ const RideManagement = () => {
             }
             return ride;
           });
+          return deduplicateRides(updatedRides);
         });
+        // No statistics change for status updates (still active)
+        break;
+        
+      case 'rideCompleted':
+      case 'rideEnded':
+        // Update existing ride in the list
+        setRides(prev => {
+          const safePrev = Array.isArray(prev) ? prev : [];
+          const updatedRides = safePrev.map(ride => {
+            if (ride._id === data.rideId || ride.rideId === data.uniqueRideId) {
+              return {
+                ...ride,
+                status: data.status || 'ride_ended', // Use the status from data if available
+                driverName: data.driverName || ride.driverName,
+                updatedAt: data.timestamp || data.updatedAt || new Date().toISOString(),
+                queueNumber: data.queueNumber || ride.queueNumber
+              };
+            }
+            return ride;
+          });
+          return deduplicateRides(updatedRides);
+        });
+        
+        // Update statistics - ride completed/ended means -1 active, +1 completed
+        setRideStats(prev => ({
+          ...prev,
+          active: Math.max(0, prev.active - 1),
+          completed: prev.completed + 1
+        }));
+        break;
+        
+      case 'rideCancelled':
+        // Update existing ride in the list
+        setRides(prev => {
+          const safePrev = Array.isArray(prev) ? prev : [];
+          const updatedRides = safePrev.map(ride => {
+            if (ride._id === data.rideId || ride.rideId === data.uniqueRideId) {
+              return {
+                ...ride,
+                status: 'cancelled',
+                driverName: data.driverName || ride.driverName,
+                updatedAt: data.timestamp || data.updatedAt || new Date().toISOString(),
+                queueNumber: data.queueNumber || ride.queueNumber
+              };
+            }
+            return ride;
+          });
+          return deduplicateRides(updatedRides);
+        });
+        
+        // Update statistics - ride cancelled means -1 active, +1 cancelled
+        setRideStats(prev => ({
+          ...prev,
+          active: Math.max(0, prev.active - 1),
+          cancelled: prev.cancelled + 1
+        }));
+        break;
+        
+      case 'driverOnline':
+        console.log('🚗 [Ride Management] Driver came online:', data);
+        // Could refresh driver statistics or show notification
+        break;
+        
+      case 'driverOffline':
+        console.log('🚗 [Ride Management] Driver went offline:', data);
+        // Could refresh driver statistics or show notification
+        break;
+        
+      case 'userRegistered':
+        console.log('👤 [Ride Management] New user registered:', data);
+        // Could refresh user statistics or show notification
+        break;
+        
+      case 'driverRegistered':
+        console.log('🚚 [Ride Management] New driver registered:', data);
+        // Could refresh driver statistics or show notification
         break;
         
       default:
@@ -376,9 +704,23 @@ const RideManagement = () => {
   };
 
   // Format ride data from real-time updates to match expected structure
+  // Deduplicate rides array based on multiple ID fields
+  const deduplicateRides = (rides) => {
+    const seen = new Set();
+    return rides.filter(ride => {
+      const id = ride._id || ride.rideId;
+      if (seen.has(id)) {
+        console.warn('🔍 [Ride Management] Removing duplicate ride:', id);
+        return false;
+      }
+      seen.add(id);
+      return true;
+    });
+  };
+
   const formatRideData = (data) => {
     return {
-      _id: data.rideId,
+      _id: data.rideId || data._id,
       rideId: data.uniqueRideId || data.rideId,
       status: data.status,
       pickupLocation: data.pickupLocation,
@@ -432,7 +774,8 @@ const RideManagement = () => {
       pending: 'bg-yellow-100 text-yellow-800',
       driver_assigned: 'bg-blue-100 text-blue-800',
       ride_started: 'bg-green-100 text-green-800',
-      ride_ended: 'bg-gray-100 text-gray-800',
+      ride_ended: 'bg-orange-100 text-orange-800',
+      completed: 'bg-green-100 text-green-800',
       cancelled: 'bg-red-100 text-red-800'
     };
 
@@ -440,7 +783,8 @@ const RideManagement = () => {
       pending: 'Pending',
       driver_assigned: 'Driver Assigned',
       ride_started: 'In Progress',
-      ride_ended: 'Completed',
+      ride_ended: 'Ended',
+      completed: 'Completed',
       cancelled: 'Cancelled'
     };
 
@@ -511,7 +855,10 @@ const RideManagement = () => {
           </div>
           <div className="flex space-x-3">
             <button
-              onClick={() => loadRides(true)}
+              onClick={() => {
+                loadRides(true);
+                loadRideStatistics();
+              }}
               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <MdRefresh />
@@ -526,26 +873,40 @@ const RideManagement = () => {
 
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-gray-900">{pagination?.total || 0}</div>
+          <div className="bg-white p-4 rounded-lg shadow relative">
+            {statsLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></div>
+              </div>
+            )}
+            <div className="text-2xl font-bold text-gray-900">{rideStats.total}</div>
             <div className="text-sm text-gray-600">Total Rides</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-green-600">
-              {Array.isArray(rides) ? rides.filter(r => r?.status === 'ride_ended').length : 0}
-            </div>
+          <div className="bg-white p-4 rounded-lg shadow relative">
+            {statsLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+              </div>
+            )}
+            <div className="text-2xl font-bold text-green-600">{rideStats.completed}</div>
             <div className="text-sm text-gray-600">Completed</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-blue-600">
-              {Array.isArray(rides) ? rides.filter(r => ['pending', 'driver_assigned', 'ride_started'].includes(r?.status)).length : 0}
-            </div>
+          <div className="bg-white p-4 rounded-lg shadow relative">
+            {statsLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              </div>
+            )}
+            <div className="text-2xl font-bold text-blue-600">{rideStats.active}</div>
             <div className="text-sm text-gray-600">Active</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-red-600">
-              {Array.isArray(rides) ? rides.filter(r => r?.status === 'cancelled').length : 0}
-            </div>
+          <div className="bg-white p-4 rounded-lg shadow relative">
+            {statsLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600"></div>
+              </div>
+            )}
+            <div className="text-2xl font-bold text-red-600">{rideStats.cancelled}</div>
             <div className="text-sm text-gray-600">Cancelled</div>
           </div>
         </div>
@@ -583,7 +944,8 @@ const RideManagement = () => {
               <option value="pending">Pending</option>
               <option value="driver_assigned">Driver Assigned</option>
               <option value="ride_started">In Progress</option>
-              <option value="ride_ended">Completed</option>
+              <option value="ride_ended">Ended</option>
+              <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
@@ -669,15 +1031,15 @@ const RideManagement = () => {
                   : (pickupLocation || 'Unknown');
                 const userName = ride.userId?.name || ride.user?.name || 'Unknown User';
                 const userPhone = ride.userId?.phone || ride.user?.phone || '';
-                const driverName = ride.driverId?.name || ride.driver?.name || '';
-                const vehicleNumber = ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driver?.vehicleNumber || '';
+                const driverName = ride.driverId?.name || ride.driverId?.fullName || ride.driver?.name || ride.driverName || '';
+                const vehicleNumber = ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driver?.vehicleNumber || ride.driverVehicleNo || '';
                 const status = ride.status || 'unknown';
                 const queueNumber = ride.queueNumber || '';
                 const queuePosition = ride.queuePosition || '';
                 const createdAt = ride.createdAt || ride.bookingTime || null;
                 
                 return (
-                <tr key={ride._id} className="hover:bg-gray-50">
+                <tr key={ride._id || ride.rideId || `ride-${index}`} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">
                       #{rideId}

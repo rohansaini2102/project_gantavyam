@@ -149,6 +149,153 @@ class RideEventTracker {
   }
 
   /**
+   * Log status transition with detailed context
+   * @param {string} rideId - Unique ride identifier
+   * @param {string} fromStatus - Previous status
+   * @param {string} toStatus - New status
+   * @param {Object} context - Additional context
+   */
+  logStatusTransition(rideId, fromStatus, toStatus, context = {}) {
+    const transitionData = {
+      rideId,
+      transition: `${fromStatus} → ${toStatus}`,
+      fromStatus,
+      toStatus,
+      timestamp: new Date().toISOString(),
+      context
+    };
+
+    // Check for valid transitions
+    const validTransitions = {
+      'pending': ['driver_assigned', 'cancelled'],
+      'driver_assigned': ['ride_started', 'cancelled'],
+      'ride_started': ['ride_ended', 'cancelled'],
+      'ride_ended': ['completed', 'cancelled'],
+      'completed': [],
+      'cancelled': []
+    };
+
+    const allowedTransitions = validTransitions[fromStatus] || [];
+    const isValidTransition = allowedTransitions.includes(toStatus);
+
+    if (!isValidTransition) {
+      transitionData.warning = 'INVALID_TRANSITION';
+      rideLogger.warn(`INVALID-STATUS-TRANSITION: ${rideId} | ${fromStatus} → ${toStatus}`, transitionData);
+    } else {
+      rideLogger.info(`STATUS-TRANSITION: ${rideId} | ${fromStatus} → ${toStatus}`, transitionData);
+    }
+
+    // Track in active rides
+    if (this.activeRides.has(rideId)) {
+      const rideTracking = this.activeRides.get(rideId);
+      rideTracking.statusHistory = rideTracking.statusHistory || [];
+      rideTracking.statusHistory.push({
+        from: fromStatus,
+        to: toStatus,
+        timestamp: transitionData.timestamp,
+        valid: isValidTransition,
+        context
+      });
+      rideTracking.status = toStatus;
+    }
+
+    return { valid: isValidTransition, data: transitionData };
+  }
+
+  /**
+   * Log socket event delivery status
+   * @param {string} rideId - Unique ride identifier
+   * @param {string} eventType - Socket event type
+   * @param {Object} deliveryStatus - Delivery status details
+   */
+  logSocketDelivery(rideId, eventType, deliveryStatus) {
+    const logData = {
+      rideId,
+      eventType,
+      delivered: deliveryStatus.delivered,
+      total: deliveryStatus.total,
+      success: deliveryStatus.delivered > 0,
+      timestamp: new Date().toISOString()
+    };
+
+    if (deliveryStatus.delivered === 0) {
+      rideLogger.warn(`SOCKET-DELIVERY-FAILED: ${rideId} | ${eventType}`, logData);
+    } else if (deliveryStatus.delivered < deliveryStatus.total) {
+      rideLogger.warn(`SOCKET-DELIVERY-PARTIAL: ${rideId} | ${eventType}`, logData);
+    } else {
+      rideLogger.info(`SOCKET-DELIVERY-SUCCESS: ${rideId} | ${eventType}`, logData);
+    }
+
+    return logData;
+  }
+
+  /**
+   * Get statistics for active rides
+   */
+  getActiveRideStats() {
+    const stats = {
+      totalActive: this.activeRides.size,
+      byStatus: {},
+      longRunning: [],
+      recentActivity: []
+    };
+
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    for (const [rideId, ride] of this.activeRides) {
+      // Count by status
+      stats.byStatus[ride.status] = (stats.byStatus[ride.status] || 0) + 1;
+
+      // Check for long-running rides
+      const startTime = new Date(ride.startTime);
+      if (startTime < oneHourAgo) {
+        stats.longRunning.push({
+          rideId,
+          status: ride.status,
+          duration: this.calculateDuration(ride.startTime, new Date().toISOString()),
+          events: ride.events.length
+        });
+      }
+
+      // Recent activity (last 10 minutes)
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      const lastActivity = new Date(ride.lastActivity);
+      if (lastActivity > tenMinutesAgo) {
+        stats.recentActivity.push({
+          rideId,
+          status: ride.status,
+          lastEvent: ride.events[ride.events.length - 1]?.event,
+          timeSinceLastActivity: this.calculateDuration(ride.lastActivity, new Date().toISOString())
+        });
+      }
+    }
+
+    return stats;
+  }
+
+  /**
+   * Clear old completed rides from memory (cleanup)
+   */
+  cleanup() {
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    let cleaned = 0;
+
+    for (const [rideId, ride] of this.activeRides) {
+      const lastActivity = new Date(ride.lastActivity);
+      if (lastActivity < cutoffTime) {
+        this.activeRides.delete(rideId);
+        cleaned++;
+      }
+    }
+
+    if (cleaned > 0) {
+      rideLogger.info(`CLEANUP: Removed ${cleaned} old ride records from memory`);
+    }
+
+    return cleaned;
+  }
+
+  /**
    * Get active rides summary
    * @returns {Object} Active rides statistics
    */
@@ -267,6 +414,23 @@ const getActiveRidesSummary = () => {
   return rideTracker.getActiveRidesSummary();
 };
 
+// Enhanced logging functions
+const logStatusTransition = (rideId, fromStatus, toStatus, context = {}) => {
+  return rideTracker.logStatusTransition(rideId, fromStatus, toStatus, context);
+};
+
+const logSocketDelivery = (rideId, eventType, deliveryStatus) => {
+  return rideTracker.logSocketDelivery(rideId, eventType, deliveryStatus);
+};
+
+const getActiveRideStats = () => {
+  return rideTracker.getActiveRideStats();
+};
+
+const cleanupOldRides = () => {
+  return rideTracker.cleanup();
+};
+
 // Log system startup metrics every 5 minutes
 setInterval(() => {
   const summary = rideTracker.getActiveRidesSummary();
@@ -285,5 +449,9 @@ module.exports = {
   logDriverAction,
   logSystemMetrics,
   logError,
-  getActiveRidesSummary
+  getActiveRidesSummary,
+  logStatusTransition,
+  logSocketDelivery,
+  getActiveRideStats,
+  cleanupOldRides
 };

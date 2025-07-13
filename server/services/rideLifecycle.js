@@ -28,12 +28,57 @@ class RideLifecycleService {
       }
       
       console.log('Found ride request:', rideRequest.rideId);
+      console.log('Driver Info Check:', {
+        driverId: rideRequest.driverId ? (typeof rideRequest.driverId === 'object' ? rideRequest.driverId._id : rideRequest.driverId) : null,
+        driverName: rideRequest.driverName,
+        driverPhone: rideRequest.driverPhone,
+        driverVehicleNo: rideRequest.driverVehicleNo,
+        isDriverPopulated: rideRequest.driverId && typeof rideRequest.driverId === 'object'
+      });
+      
+      // Extract driver information with fallback logic
+      let driverInfo = {
+        driverId: null,
+        driverName: rideRequest.driverName,
+        driverPhone: rideRequest.driverPhone,
+        driverVehicleNo: rideRequest.driverVehicleNo,
+        driverRating: rideRequest.driverRating
+      };
+      
+      // Handle populated vs non-populated driverId
+      if (rideRequest.driverId) {
+        if (typeof rideRequest.driverId === 'object') {
+          // Driver is populated - use populated data as fallback
+          driverInfo.driverId = rideRequest.driverId._id;
+          driverInfo.driverName = driverInfo.driverName || rideRequest.driverId.fullName || rideRequest.driverId.name;
+          driverInfo.driverPhone = driverInfo.driverPhone || rideRequest.driverId.mobileNo || rideRequest.driverId.phone;
+          driverInfo.driverVehicleNo = driverInfo.driverVehicleNo || rideRequest.driverId.vehicleNo;
+          driverInfo.driverRating = driverInfo.driverRating || rideRequest.driverId.rating;
+          console.log('✅ Using populated driver data as fallback:', driverInfo);
+        } else {
+          // Driver is just an ObjectId
+          driverInfo.driverId = rideRequest.driverId;
+          console.log('✅ Using stored driver details from RideRequest:', driverInfo);
+        }
+      } else {
+        console.warn('⚠️ No driverId found in ride request');
+      }
+      
+      // Validate driver information
+      if (!driverInfo.driverId) {
+        console.error('❌ Critical: No driver ID found for ride completion');
+        // Don't fail the completion, but log the issue
+      }
+      
+      if (!driverInfo.driverName) {
+        console.warn('⚠️ Warning: No driver name found for ride completion');
+      }
       
       // Create comprehensive ride history entry
       const rideHistoryData = {
         // Basic ride information
         userId: rideRequest.userId._id,
-        driverId: rideRequest.driverId ? rideRequest.driverId._id : null,
+        driverId: driverInfo.driverId,
         rideId: rideRequest.rideId,
         boothRideNumber: rideRequest.boothRideNumber,
         
@@ -60,11 +105,11 @@ class RideLifecycleService {
         cancellationReason: completionData.cancellationReason,
         cancelledBy: completionData.cancelledBy,
         
-        // Driver information
-        driverName: rideRequest.driverName,
-        driverPhone: rideRequest.driverPhone,
-        driverVehicleNo: rideRequest.driverVehicleNo,
-        driverRating: rideRequest.driverRating,
+        // Driver information - using extracted and validated data
+        driverName: driverInfo.driverName,
+        driverPhone: driverInfo.driverPhone,
+        driverVehicleNo: driverInfo.driverVehicleNo,
+        driverRating: driverInfo.driverRating,
         
         // Journey timeline
         timestamps: {
@@ -92,6 +137,12 @@ class RideLifecycleService {
       // Create ride history entry
       const rideHistory = await RideHistory.create(rideHistoryData);
       console.log('✅ Ride history created:', rideHistory._id);
+      console.log('✅ Driver info in history:', {
+        driverId: rideHistory.driverId,
+        driverName: rideHistory.driverName,
+        driverPhone: rideHistory.driverPhone,
+        driverVehicleNo: rideHistory.driverVehicleNo
+      });
       
       // Update user statistics
       await this.updateUserStatistics(rideRequest.userId._id, rideHistoryData);

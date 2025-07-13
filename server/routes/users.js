@@ -454,11 +454,37 @@ router.post('/book-ride', protectUser, async (req, res) => {
       });
     }
     
+    // Validate drop location structure
+    if (!dropLocation.address || typeof dropLocation.lat !== 'number' || typeof dropLocation.lng !== 'number') {
+      console.error('❌ Invalid drop location structure:', dropLocation);
+      return res.status(400).json({
+        success: false,
+        message: 'Drop location must include address, lat, and lng coordinates'
+      });
+    }
+    
+    // Validate coordinates range
+    if (dropLocation.lat < -90 || dropLocation.lat > 90 || dropLocation.lng < -180 || dropLocation.lng > 180) {
+      console.error('❌ Invalid coordinates range:', { lat: dropLocation.lat, lng: dropLocation.lng });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid coordinate values. Latitude must be between -90 and 90, longitude between -180 and 180'
+      });
+    }
+    
     // Validate vehicle type
     if (!['bike', 'auto', 'car'].includes(vehicleType)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid vehicle type'
+      });
+    }
+    
+    // Validate fare (allow 0 fare and calculate fallback later)
+    if (typeof estimatedFare !== 'number' || estimatedFare < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Estimated fare must be a non-negative number'
       });
     }
     
@@ -502,6 +528,29 @@ router.post('/book-ride', protectUser, async (req, res) => {
       email: user.email
     });
     
+    // Calculate final fare (with fallback if needed)
+    let finalFare = estimatedFare;
+    if (estimatedFare === 0) {
+      console.log('⚠️ Fare is 0, calculating fallback fare...');
+      try {
+        const { calculateDistance } = require('../utils/fareCalculator');
+        const distance = calculateDistance(
+          station.lat, station.lng,
+          dropLocation.lat, dropLocation.lng
+        );
+        
+        // Simple fallback calculation: base fare + distance-based fare
+        const baseFare = vehicleType === 'bike' ? 25 : vehicleType === 'auto' ? 45 : 85;
+        const perKmRate = vehicleType === 'bike' ? 10 : vehicleType === 'auto' ? 15 : 25;
+        finalFare = Math.max(baseFare, baseFare + Math.ceil(distance) * perKmRate);
+        
+        console.log(`✅ Calculated fallback fare: ₹${finalFare} for ${distance}km`);
+      } catch (fallbackError) {
+        console.error('❌ Fallback fare calculation failed:', fallbackError);
+        finalFare = vehicleType === 'bike' ? 50 : vehicleType === 'auto' ? 100 : 150; // Default minimum
+      }
+    }
+    
     // Generate unique ride ID and OTPs
     const rideId = generateRideId();
     const { startOTP, endOTP } = generateRideOTPs();
@@ -517,6 +566,19 @@ router.post('/book-ride', protectUser, async (req, res) => {
     );
     
     // Create ride request
+    console.log('📝 Creating ride request with data:', {
+      userId,
+      userName: user.name,
+      userPhone: user.phone,
+      pickupStation,
+      dropLocation: dropLocation,
+      vehicleType,
+      distance,
+      estimatedFare,
+      rideId,
+      boothRideNumber
+    });
+    
     const rideRequest = await RideRequest.create({
       userId: userId,
       userName: user.name, // Fixed: Use 'name' instead of 'fullName'
@@ -533,8 +595,8 @@ router.post('/book-ride', protectUser, async (req, res) => {
       },
       vehicleType: vehicleType,
       distance: distance,
-      fare: estimatedFare,
-      estimatedFare: estimatedFare,
+      fare: finalFare,
+      estimatedFare: finalFare,
       rideId: rideId,
       boothRideNumber: boothRideNumber,
       startOTP: startOTP,
@@ -542,7 +604,12 @@ router.post('/book-ride', protectUser, async (req, res) => {
       status: 'pending'
     });
     
-    console.log(`✅ Ride request created: ${rideRequest._id}`);
+    console.log(`✅ Ride request created successfully:`, {
+      _id: rideRequest._id,
+      rideId: rideRequest.rideId,
+      status: rideRequest.status,
+      boothRideNumber: rideRequest.boothRideNumber
+    });
     console.log(`🔐 Generated OTPs - Start: ${startOTP}, End: ${endOTP}`);
     
     // Log ride event
@@ -578,18 +645,53 @@ router.post('/book-ride', protectUser, async (req, res) => {
       console.log(`📡 Broadcasting ride request to matching drivers:`, broadcastData);
       
       // Call the socket handler directly
-      const { broadcastRideRequest } = require('../socket');
-      const broadcastResult = await broadcastRideRequest(broadcastData);
+      const { broadcastRideRequest, notifyAdmins } = require('../socket');
       
-      if (broadcastResult.success) {
-        console.log(`✅ Socket broadcast completed for ride ${rideId} - ${broadcastResult.driversNotified} drivers notified`);
+      // Validate that the socket service is available
+      const { getIO } = require('../socket');
+      const io = getIO();
+      if (!io) {
+        console.error('❌ Socket.IO not initialized - drivers will not be notified');
       } else {
-        console.error(`❌ Socket broadcast failed for ride ${rideId}:`, broadcastResult.error);
+        console.log('✅ Socket.IO is available for broadcasting');
+        
+        const broadcastResult = await broadcastRideRequest(broadcastData);
+        
+        if (broadcastResult && broadcastResult.success) {
+          console.log(`✅ Socket broadcast completed for ride ${rideId} - ${broadcastResult.driversNotified} drivers notified`);
+        } else {
+          console.error(`❌ Socket broadcast failed for ride ${rideId}:`, broadcastResult?.error || 'Unknown error');
+        }
+        
+        // IMPORTANT FIX: Notify admins of new ride creation
+        try {
+          console.log(`📢 Notifying admins of new ride request: ${rideId}`);
+          notifyAdmins('newRideRequest', {
+            rideId: rideRequest._id.toString(),
+            uniqueRideId: rideId,
+            userName: user.name,
+            userPhone: user.phone,
+            pickupLocation: rideRequest.pickupLocation,
+            dropLocation: rideRequest.dropLocation,
+            vehicleType: vehicleType,
+            estimatedFare: finalFare,
+            distance: distance,
+            status: 'pending',
+            boothRideNumber: boothRideNumber,
+            createdAt: rideRequest.createdAt || rideRequest.timestamp,
+            timestamp: new Date().toISOString()
+          });
+          console.log(`✅ Admin notification sent for ride ${rideId}`);
+        } catch (adminNotifyError) {
+          console.error('❌ Failed to notify admins:', adminNotifyError);
+          // Don't fail the request if admin notification fails
+        }
       }
       
     } catch (socketError) {
-      console.error('❌ Socket broadcast failed:', socketError);
-      // Don't fail the API call if socket fails
+      console.error('❌ Socket broadcast exception:', socketError.message);
+      console.error('Stack trace:', socketError.stack);
+      // Don't fail the API call if socket fails - ride is still created
     }
     
     res.json({
@@ -603,7 +705,7 @@ router.post('/book-ride', protectUser, async (req, res) => {
         pickupStation: pickupStation,
         dropLocation: dropLocation,
         vehicleType: vehicleType,
-        estimatedFare: estimatedFare,
+        estimatedFare: finalFare,
         distance: distance,
         startOTP: startOTP, // Show to user for driver verification
         // endOTP will be shown after ride starts

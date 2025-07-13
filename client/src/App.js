@@ -23,6 +23,7 @@ import DriverProfile from './pages/driver/Profile';
 import PendingApproval from './pages/driver/PendingApproval';
 // User
 import UserDashboard from './pages/user/Dashboard';
+import NewUserDashboard from './pages/user/NewDashboard';
 import UserLogin from './pages/user/Login';
 import UserSignup from './pages/user/Signup';
 import ForgotPassword from './pages/user/ForgotPassword';
@@ -66,7 +67,8 @@ function App() {
         <Route path="/driver/login" element={<DriverLogin />} />
         <Route path="/user/signup" element={<UserSignup />} />
         <Route path="/user/login" element={<UserLogin />} />
-        <Route path="/user/dashboard" element={<UserDashboard />} />
+        <Route path="/user/dashboard" element={<NewUserDashboard />} />
+        <Route path="/user/dashboard-old" element={<UserDashboard />} />
         <Route path="/driver/dashboard" element={<DriverDashboard />} />
         <Route path="/driver/profile/:id" element={<DriverProfile />} />
         <Route path="/user/forgot-password" element={<ForgotPassword />} />

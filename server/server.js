@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { printDriverStats } = require('./controllers/driverController');
 const http = require('http');
-const { initializeSocket } = require('./socket');
+const { initializeSocket, getServices } = require('./socket');
 const config = require('./config/config');
 const Admin = require('./models/Admin');
 const { createContextLogger } = require('./config/logger');
@@ -177,6 +177,16 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 // Initialize Socket.IO
 initializeSocket(server);
+
+// Initialize admin tools with services after socket initialization
+try {
+  const { initializeServices } = require('./routes/admin/rideManagementTools');
+  const { enhancedNotificationService } = getServices();
+  initializeServices(enhancedNotificationService);
+  logger.info('✅ Admin ride management tools initialized successfully');
+} catch (error) {
+  logger.warn('⚠️ Failed to initialize admin tools:', error.message);
+}
 server.listen(PORT, () => {
   logger.info('GANTAVYAM SERVER STARTED', {
     port: PORT,

@@ -221,6 +221,21 @@ exports.registerDriver = async (req, res) => {
       { expiresIn: '30d' }
     );
 
+    // Notify admins of new driver registration
+    try {
+      const { notifyAdmins } = require('../socket');
+      notifyAdmins('driverRegistered', {
+        driverId: savedDriver._id,
+        fullName: savedDriver.fullName,
+        mobileNo: savedDriver.mobileNo,
+        vehicleType: savedDriver.vehicleType,
+        vehicleNo: savedDriver.vehicleNo,
+        registeredAt: new Date().toISOString()
+      });
+    } catch (socketError) {
+      console.warn('[Driver Registration] Failed to notify admins:', socketError.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Driver registered successfully',

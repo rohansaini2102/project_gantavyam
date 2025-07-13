@@ -7,12 +7,16 @@ const Driver = require('./models/Driver');
 const User = require('./models/User');
 const MetroStation = require('./models/MetroStation');
 const { generateRideId, generateRideOTPs, verifyOTP } = require('./utils/otpUtils');
-const { logRideEvent, logUserAction, logDriverAction, logError } = require('./utils/rideLogger');
+const { logRideEvent, logUserAction, logDriverAction, logError, logStatusTransition, logSocketDelivery } = require('./utils/rideLogger');
 const { calculateFareEstimates, getDynamicPricingFactor } = require('./utils/fareCalculator');
 const { generateQueueNumber, updateQueuePosition, removeFromQueue } = require('./utils/queueManager');
 const RideLifecycleService = require('./services/rideLifecycle');
+const EnhancedNotificationService = require('./utils/enhancedNotification');
+const RideCompletionService = require('./utils/rideCompletionService');
 
 let io;
+let enhancedNotificationService;
+let rideCompletionService;
 
 const initializeSocket = (server) => {
   console.log('\n=== INITIALIZING SOCKET.IO SERVER ===');
@@ -107,6 +111,11 @@ const initializeSocket = (server) => {
       socket.join(`admin_${socket.user._id}`);
       console.log(`✅ Admin ${socket.user._id} joined rooms: admins, admin_${socket.user._id}`);
       
+      // Send queued notifications to reconnecting admin
+      if (enhancedNotificationService) {
+        enhancedNotificationService.sendQueuedNotifications(socket.id);
+      }
+      
       // Log all admin connections
       const adminsRoom = io.sockets.adapter.rooms.get('admins');
       console.log(`Total admins online: ${adminsRoom ? adminsRoom.size : 0}`);
@@ -172,6 +181,16 @@ const initializeSocket = (server) => {
           roomStatus: { inDriversRoom, inDriverSpecificRoom, allRooms: rooms }
         });
         
+        // Notify admins of driver going online
+        notifyAdmins('driverOnline', {
+          driverId: socket.user._id,
+          driverName: `Driver ${socket.user._id}`,
+          metroBooth,
+          vehicleType,
+          location,
+          timestamp: new Date().toISOString()
+        });
+        
         socket.emit('driverOnlineConfirmed', { 
           success: true,
           metroBooth,
@@ -216,6 +235,14 @@ const initializeSocket = (server) => {
         
         console.log(`✅ Driver ${socket.user._id} is now offline`);
         logRideEvent(`DRIVER-${socket.user._id}`, 'driver_offline', { metroBooth });
+        
+        // Notify admins of driver going offline
+        notifyAdmins('driverOffline', {
+          driverId: socket.user._id,
+          driverName: `Driver ${socket.user._id}`,
+          metroBooth,
+          timestamp: new Date().toISOString()
+        });
         
         socket.emit('driverOfflineConfirmed', { 
           success: true,
@@ -680,6 +707,38 @@ const initializeSocket = (server) => {
           return;
         }
         
+        // Validate driver information before completing
+        if (!rideRequest.driverId) {
+          console.error('❌ Critical: No driverId found during ride completion');
+          const errorResponse = { success: false, message: 'Driver information missing - cannot complete ride' };
+          socket.emit('otpVerificationError', errorResponse);
+          if (callback) callback(errorResponse);
+          return;
+        }
+        
+        // Ensure driver details are populated in the ride request
+        if (!rideRequest.driverName || !rideRequest.driverPhone) {
+          console.warn('⚠️ Warning: Driver details missing, attempting to fetch from driver record');
+          try {
+            const driver = await Driver.findById(rideRequest.driverId);
+            if (driver) {
+              rideRequest.driverName = rideRequest.driverName || driver.fullName;
+              rideRequest.driverPhone = rideRequest.driverPhone || driver.mobileNo;
+              rideRequest.driverVehicleNo = rideRequest.driverVehicleNo || driver.vehicleNo;
+              rideRequest.driverRating = rideRequest.driverRating || driver.rating;
+              console.log('✅ Driver details populated from driver record:', {
+                driverName: rideRequest.driverName,
+                driverPhone: rideRequest.driverPhone,
+                driverVehicleNo: rideRequest.driverVehicleNo
+              });
+            } else {
+              console.error('❌ Driver record not found for ID:', rideRequest.driverId);
+            }
+          } catch (driverFetchError) {
+            console.error('❌ Error fetching driver details:', driverFetchError);
+          }
+        }
+        
         // Update ride status to ride_ended first
         rideRequest.status = 'ride_ended';
         rideRequest.rideEndedAt = new Date();
@@ -689,6 +748,13 @@ const initializeSocket = (server) => {
         rideRequest.paymentCollectedAt = new Date();
         rideRequest.queueStatus = 'completed'; // Update queue status
         await rideRequest.save();
+        
+        console.log('✅ Ride ended with driver info:', {
+          driverId: rideRequest.driverId,
+          driverName: rideRequest.driverName,
+          driverPhone: rideRequest.driverPhone,
+          driverVehicleNo: rideRequest.driverVehicleNo
+        });
         
         console.log('✅ Ride ended, now completing automatically...');
         
@@ -1200,6 +1266,14 @@ const initializeSocket = (server) => {
     console.error('Error:', error);
   });
 
+  // Initialize enhanced notification service
+  enhancedNotificationService = new EnhancedNotificationService(io);
+  console.log('✅ Enhanced notification service initialized');
+  
+  // Initialize ride completion service
+  rideCompletionService = new RideCompletionService(enhancedNotificationService);
+  console.log('✅ Ride completion service initialized');
+  
   console.log('✅ Socket.IO server initialized successfully\n');
 };
 
@@ -1212,21 +1286,23 @@ const getIO = () => {
   return io;
 };
 
-// Function to notify admins of ride events
-const notifyAdmins = (eventType, data) => {
-  if (!io) {
-    console.warn('Socket.IO not initialized - cannot notify admins');
+// Enhanced function to notify admins of ride events
+const notifyAdmins = (eventType, data, options = {}) => {
+  if (!enhancedNotificationService) {
+    console.warn('Enhanced notification service not initialized - falling back to basic notification');
+    // Fallback to basic notification
+    if (io) {
+      io.to('admins').emit('rideUpdate', {
+        type: eventType,
+        data: data,
+        timestamp: new Date().toISOString()
+      });
+      io.to('admins').emit(eventType, data);
+    }
     return;
   }
   
-  console.log(`📢 [Admin Notification] ${eventType}:`, data);
-  
-  // Send to all admin sockets
-  io.to('admins').emit('rideUpdate', {
-    type: eventType,
-    data: data,
-    timestamp: new Date().toISOString()
-  });
+  return enhancedNotificationService.notifyAdmins(eventType, data, options);
 };
 
 // Standalone function to broadcast ride requests (called from API routes)
@@ -1259,9 +1335,27 @@ const broadcastRideRequest = async (data) => {
     // Step 1: Find online drivers with matching vehicle type at the pickup metro station
     // Use flexible matching to handle partial names and case insensitivity
     const pickupStation = data.pickupStation.toLowerCase();
+    
+    // First, check if there are ANY online drivers
+    const totalOnlineDrivers = await Driver.countDocuments({ isOnline: true });
+    console.log(`📊 Total online drivers: ${totalOnlineDrivers}`);
+    
     const allDriversWithVehicleType = await Driver.find({
       isOnline: true,
       vehicleType: data.vehicleType
+    });
+    
+    console.log(`📊 Online drivers with vehicle type '${data.vehicleType}': ${allDriversWithVehicleType.length}`);
+    
+    if (allDriversWithVehicleType.length === 0) {
+      console.log('❌ No online drivers found with matching vehicle type');
+      return { success: false, error: `No online drivers with vehicle type '${data.vehicleType}'` };
+    }
+    
+    // Log available drivers and their booths
+    console.log('📋 Available drivers and their current booths:');
+    allDriversWithVehicleType.forEach((driver, index) => {
+      console.log(`  ${index + 1}. ${driver.fullName} - Booth: "${driver.currentMetroBooth}" - Vehicle: ${driver.vehicleType}`);
     });
     
     // Filter drivers with flexible station name matching
@@ -1271,8 +1365,13 @@ const broadcastRideRequest = async (data) => {
       const driverBooth = driver.currentMetroBooth.toLowerCase();
       const targetStation = pickupStation;
       
+      console.log(`🔍 Matching driver ${driver.fullName}: "${driverBooth}" vs "${targetStation}"`);
+      
       // Exact match
-      if (driverBooth === targetStation) return true;
+      if (driverBooth === targetStation) {
+        console.log(`✅ Exact match found for ${driver.fullName}`);
+        return true;
+      }
       
       // Partial matching - driver booth is contained in station name or vice versa
       if (driverBooth.includes(targetStation) || targetStation.includes(driverBooth)) return true;
@@ -1439,9 +1538,17 @@ const broadcastRideRequest = async (data) => {
   }
 };
 
+// Export function to get services for admin tools
+const getServices = () => ({
+  enhancedNotificationService,
+  rideCompletionService,
+  io
+});
+
 module.exports = {
   initializeSocket,
   getIO,
   broadcastRideRequest,
-  notifyAdmins
+  notifyAdmins,
+  getServices
 };

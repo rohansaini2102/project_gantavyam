@@ -135,6 +135,86 @@ const rideRequestSchema = new mongoose.Schema({
   timestamps: true  // This automatically adds createdAt and updatedAt fields
 });
 
+// Status transition validation
+const validStatusTransitions = {
+  'pending': ['driver_assigned', 'cancelled'],
+  'driver_assigned': ['ride_started', 'cancelled'],
+  'ride_started': ['ride_ended', 'cancelled'],
+  'ride_ended': ['completed', 'cancelled'],
+  'completed': [], // Terminal state
+  'cancelled': []  // Terminal state
+};
+
+// Pre-save middleware to validate status transitions and enforce business rules
+rideRequestSchema.pre('save', async function(next) {
+  if (this.isModified('status') && !this.isNew) {
+    try {
+      const oldDoc = await this.constructor.findById(this._id);
+      if (oldDoc && oldDoc.status !== this.status) {
+        const allowedTransitions = validStatusTransitions[oldDoc.status] || [];
+        if (!allowedTransitions.includes(this.status)) {
+          return next(new Error(`Invalid status transition from ${oldDoc.status} to ${this.status}`));
+        }
+      }
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  // Validate business rules
+  if (this.status === 'driver_assigned' && !this.driverId) {
+    return next(new Error('Cannot assign driver status without a driver'));
+  }
+
+  if (this.status === 'ride_started') {
+    if (!this.driverId) {
+      return next(new Error('Cannot start ride without a driver'));
+    }
+    if (!this.rideStartedAt) {
+      this.rideStartedAt = new Date();
+    }
+  }
+
+  if (this.status === 'ride_ended') {
+    if (!this.rideStartedAt) {
+      return next(new Error('Cannot end ride that was never started'));
+    }
+    if (!this.rideEndedAt) {
+      this.rideEndedAt = new Date();
+    }
+  }
+
+  if (this.status === 'completed') {
+    if (!this.rideEndedAt) {
+      return next(new Error('Cannot complete ride that was not ended'));
+    }
+    if (!this.completedAt) {
+      this.completedAt = new Date();
+    }
+  }
+
+  if (this.status === 'cancelled' && !this.cancelledAt) {
+    this.cancelledAt = new Date();
+  }
+
+  next();
+});
+
+// Instance method to safely update status with validation
+rideRequestSchema.methods.updateStatus = function(newStatus, additionalData = {}) {
+  const currentStatus = this.status;
+  const allowedTransitions = validStatusTransitions[currentStatus] || [];
+  
+  if (!allowedTransitions.includes(newStatus)) {
+    throw new Error(`Invalid status transition from ${currentStatus} to ${newStatus}`);
+  }
+  
+  this.status = newStatus;
+  Object.assign(this, additionalData);
+  
+  return this.save();
+};
+
 // Index for efficient booth ride number queries
 rideRequestSchema.index({ boothRideNumber: 1 });
 rideRequestSchema.index({ paymentStatus: 1 });
