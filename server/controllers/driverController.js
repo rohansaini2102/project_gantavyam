@@ -11,6 +11,9 @@ const mongoose = require('mongoose');
 exports.registerDriver = async (req, res) => {
   try {
     console.log('[Driver Registration] Processing registration request');
+    console.log('[Driver Registration] Request body keys:', Object.keys(req.body));
+    console.log('[Driver Registration] Request files keys:', req.files ? Object.keys(req.files) : 'No files');
+    console.log('[Driver Registration] Full request body:', JSON.stringify(req.body, null, 2));
     
     // Check if files exist in the request
     if (!req.files) {
@@ -68,15 +71,70 @@ exports.registerDriver = async (req, res) => {
       });
     }
 
-    // Extract Cloudinary URLs
+    // Extract file URLs from dual storage results
     const filePaths = {};
-    Object.keys(req.files).forEach(fieldName => {
-      if (req.files[fieldName] && req.files[fieldName][0]) {
-        // Store Cloudinary URL
-        filePaths[fieldName] = req.files[fieldName][0].path || req.files[fieldName][0].secure_url;
-        console.log(`[Driver Registration] Cloudinary URL for ${fieldName}:`, filePaths[fieldName]);
+    const uploadErrors = req.uploadErrors || [];
+    
+    console.log('[Driver Registration] Upload Results Debug:');
+    console.log('req.uploadResults:', req.uploadResults);
+    console.log('req.uploadErrors:', req.uploadErrors);
+    console.log('req.files keys:', req.files ? Object.keys(req.files) : 'No files');
+    
+    if (req.uploadResults && Object.keys(req.uploadResults).length > 0) {
+      console.log('[Driver Registration] Using dual storage results');
+      Object.keys(req.uploadResults).forEach(fieldName => {
+        filePaths[fieldName] = req.uploadResults[fieldName];
+        console.log(`[Driver Registration] Dual storage URL for ${fieldName}:`, filePaths[fieldName]);
+      });
+    } else {
+      console.log('[Driver Registration] Using fallback Cloudinary processing');
+      // Fallback to old Cloudinary handling for backward compatibility
+      if (req.files) {
+        Object.keys(req.files).forEach(fieldName => {
+          if (req.files[fieldName] && req.files[fieldName][0]) {
+            try {
+              filePaths[fieldName] = req.files[fieldName][0].path || req.files[fieldName][0].secure_url;
+              console.log(`[Driver Registration] Legacy Cloudinary URL for ${fieldName}:`, filePaths[fieldName]);
+              
+              if (!filePaths[fieldName] || filePaths[fieldName] === 'undefined') {
+                uploadErrors.push(fieldName);
+                console.warn(`[Driver Registration] Upload failed for ${fieldName}, no valid URL found`);
+              }
+            } catch (uploadError) {
+              console.error(`[Driver Registration] Error processing upload for ${fieldName}:`, uploadError);
+              uploadErrors.push(fieldName);
+            }
+          } else {
+            console.warn(`[Driver Registration] No file found for ${fieldName}`);
+            uploadErrors.push(fieldName);
+          }
+        });
       }
-    });
+    }
+    
+    console.log('[Driver Registration] Final filePaths object:', filePaths);
+    console.log('[Driver Registration] Upload errors:', uploadErrors);
+    
+    // Check if we have required files
+    const requiredFilesList = ['aadhaarPhotoFront', 'aadhaarPhotoBack', 'driverSelfie', 'registrationCertificatePhoto', 'drivingLicensePhoto'];
+    const missingRequiredFiles = requiredFilesList.filter(field => !filePaths[field] || filePaths[field].startsWith('UPLOAD_FAILED'));
+    
+    if (missingRequiredFiles.length > 0) {
+      console.error(`[Driver Registration] Missing required files: ${missingRequiredFiles.join(', ')}`);
+      return res.status(400).json({
+        success: false,
+        error: `Missing required files: ${missingRequiredFiles.join(', ')}`,
+        missingFiles: missingRequiredFiles,
+        uploadErrors: uploadErrors
+      });
+    }
+    
+    // Log upload status
+    if (uploadErrors.length > 0) {
+      console.warn(`[Driver Registration] ${uploadErrors.length} file uploads failed:`, uploadErrors);
+    } else {
+      console.log('[Driver Registration] All files uploaded successfully');
+    }
 
     // Process bank details
     let bankDetails;
@@ -157,8 +215,15 @@ exports.registerDriver = async (req, res) => {
     };
 
     // Create and save new driver
+    console.log('[Driver Registration] Creating driver with data:', JSON.stringify(driverData, null, 2));
     const newDriver = new Driver(driverData);
+    
+    console.log('[Driver Registration] Validating driver data...');
+    await newDriver.validate();
+    console.log('[Driver Registration] Validation passed, saving to database...');
+    
     const savedDriver = await newDriver.save();
+    console.log('[Driver Registration] Driver saved successfully with ID:', savedDriver._id);
     
     console.log(`[Driver Registration] Driver registered successfully with ID: ${savedDriver._id}`);
     
@@ -238,27 +303,41 @@ exports.registerDriver = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Driver registered successfully',
+      message: uploadErrors.length > 0 
+        ? `Driver registered successfully. Note: ${uploadErrors.length} file uploads failed and will need to be re-uploaded later.`
+        : 'Driver registered successfully',
       token,
       driver: {
         id: savedDriver._id,
         fullName: savedDriver.fullName,
         mobileNo: savedDriver.mobileNo,
         role: 'driver'
+      },
+      uploadStatus: {
+        totalFiles: Object.keys(req.files || {}).length,
+        successfulUploads: Object.keys(req.files || {}).length - uploadErrors.length,
+        failedUploads: uploadErrors.length,
+        failedFiles: uploadErrors.length > 0 ? uploadErrors : undefined
       }
     });
     
   } catch (error) {
     console.error('[Driver Registration] ERROR:', error);
+    console.error('[Driver Registration] Error stack:', error.stack);
+    console.error('[Driver Registration] Error name:', error.name);
+    console.error('[Driver Registration] Error code:', error.code);
     
     // Handle validation errors
     if (error.name === 'ValidationError') {
+      console.log('[Driver Registration] Mongoose validation error detected');
       const validationErrors = {};
       
       for (const field in error.errors) {
         validationErrors[field] = error.errors[field].message;
         console.log(`[Driver Registration] Validation error for ${field}: ${error.errors[field].message}`);
       }
+      
+      console.log('[Driver Registration] All validation errors:', JSON.stringify(validationErrors, null, 2));
       
       return res.status(400).json({
         success: false,
@@ -269,16 +348,48 @@ exports.registerDriver = async (req, res) => {
     
     // Handle duplicate key errors
     if (error.code === 11000) {
+      console.log('[Driver Registration] Duplicate key error detected');
       const field = Object.keys(error.keyValue)[0];
+      console.log('[Driver Registration] Duplicate field:', field, 'Value:', error.keyValue[field]);
       return res.status(400).json({
         success: false,
         error: `Driver with this ${field} already exists`
       });
     }
     
+    // Handle Cloudinary and network errors
+    if (error.message && (error.message.includes('cloudinary') || 
+                         error.code === 'ETIMEDOUT' || 
+                         error.code === 'ENETUNREACH' ||
+                         error.code === 'ECONNRESET' ||
+                         error.message.includes('timeout'))) {
+      console.log('[Driver Registration] Network/Cloudinary error detected:', {
+        message: error.message,
+        code: error.code,
+        address: error.address,
+        port: error.port
+      });
+      return res.status(500).json({
+        success: false,
+        error: 'File upload failed due to network connectivity issues. Please check your internet connection and try again.',
+        code: 'UPLOAD_NETWORK_ERROR'
+      });
+    }
+    
+    // Handle database connection errors
+    if (error.name === 'MongoError' || error.name === 'MongooseError') {
+      console.log('[Driver Registration] Database error detected');
+      return res.status(500).json({
+        success: false,
+        error: 'Database connection error. Please try again.'
+      });
+    }
+    
+    console.log('[Driver Registration] Unhandled error type, returning generic 500');
     res.status(500).json({
       success: false,
-      error: 'Server error during driver registration'
+      error: 'Server error during driver registration',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

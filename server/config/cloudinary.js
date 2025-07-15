@@ -2,11 +2,13 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
 
-// Configure cloudinary
+// Configure cloudinary with timeout and retry settings
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  timeout: 60000, // 60 second timeout
+  secure: true // Use HTTPS
 });
 
 // Create storage for driver documents
@@ -44,11 +46,19 @@ const profileImageStorage = new CloudinaryStorage({
   }
 });
 
-// Create multer instances
+// Create multer instances with enhanced error handling
 const uploadDriverDocuments = multer({ 
   storage: driverDocumentStorage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept only images and PDFs
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files and PDFs are allowed'), false);
+    }
   }
 });
 
@@ -59,20 +69,46 @@ const uploadProfileImage = multer({
   }
 });
 
-// Delete image from cloudinary
-const deleteFromCloudinary = async (publicId) => {
-  try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    return result;
-  } catch (error) {
-    console.error('Error deleting from Cloudinary:', error);
-    throw error;
+// Retry function for Cloudinary operations
+const retryCloudinaryOperation = async (operation, maxRetries = 3, delay = 1000) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      console.log(`Cloudinary operation attempt ${i + 1} failed:`, error.message);
+      
+      if (i === maxRetries - 1) {
+        throw error; // Last attempt failed, throw the error
+      }
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+    }
   }
+};
+
+// Upload file to cloudinary with retry
+const uploadToCloudinary = async (filePath, options = {}) => {
+  return retryCloudinaryOperation(async () => {
+    return await cloudinary.uploader.upload(filePath, {
+      timeout: 60000,
+      ...options
+    });
+  });
+};
+
+// Delete image from cloudinary with retry
+const deleteFromCloudinary = async (publicId) => {
+  return retryCloudinaryOperation(async () => {
+    return await cloudinary.uploader.destroy(publicId);
+  });
 };
 
 module.exports = {
   cloudinary,
   uploadDriverDocuments,
   uploadProfileImage,
-  deleteFromCloudinary
+  deleteFromCloudinary,
+  uploadToCloudinary,
+  retryCloudinaryOperation
 };

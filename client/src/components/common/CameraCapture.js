@@ -17,8 +17,8 @@ const CameraCapture = ({ onCapture, label = "Live Photo", required = false }) =>
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
           facingMode: 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { ideal: 1080, max: 1920 },
+          height: { ideal: 720, max: 1080 }
         } 
       });
       
@@ -74,10 +74,11 @@ const CameraCapture = ({ onCapture, label = "Live Photo", required = false }) =>
         if (blob) {
           const file = new File([blob], 'driver-selfie.jpg', { type: 'image/jpeg' });
           setCapturedImage(URL.createObjectURL(blob));
+          console.log(`[Camera Capture] Selfie captured: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
           onCapture(file);
           stopCamera();
         }
-      }, 'image/jpeg', 0.9);
+      }, 'image/jpeg', 0.85); // Slightly lower quality for smaller file size
     }
   };
 

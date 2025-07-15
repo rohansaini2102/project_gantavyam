@@ -1,7 +1,7 @@
 // routes/drivers.js
 const express = require('express');
 const router = express.Router();
-const { uploadDriverDocuments } = require('../config/cloudinary');
+const { dualUploadFields, dualStorageManager } = require('../config/dualStorage');
 const { protect } = require('../middleware/auth');
 const {
   registerDriver,
@@ -17,20 +17,38 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { getIO } = require('../socket');
 
-// Configure multer for multiple files
-const driverDocumentUpload = uploadDriverDocuments.fields([
-  { name: 'aadhaarPhotoFront', maxCount: 1 },
-  { name: 'aadhaarPhotoBack', maxCount: 1 },
-  { name: 'driverSelfie', maxCount: 1 },
-  { name: 'drivingLicensePhoto', maxCount: 1 },
-  { name: 'registrationCertificatePhoto', maxCount: 1 },
-  { name: 'permitPhoto', maxCount: 1 },
-  { name: 'fitnessCertificatePhoto', maxCount: 1 },
-  { name: 'insurancePolicyPhoto', maxCount: 1 }
-]);
+// Configure multer for multiple files with dual storage
+const driverDocumentUpload = dualUploadFields;
 
 // Public routes
-router.post('/register', driverDocumentUpload, registerDriver);
+router.post('/register', driverDocumentUpload, async (req, res, next) => {
+  try {
+    console.log('[Middleware] Processing file uploads with dual storage');
+    console.log('[Middleware] req.files:', req.files ? Object.keys(req.files) : 'No files');
+    
+    // Process file uploads with dual storage
+    if (req.files) {
+      console.log('[Middleware] Processing uploads with dual storage manager');
+      const { results, errors } = await dualStorageManager.processUploads(req.files, req);
+      req.uploadResults = results;
+      req.uploadErrors = errors;
+      console.log('[Middleware] Upload processing complete. Results:', Object.keys(results || {}));
+      console.log('[Middleware] Upload errors:', errors);
+    } else {
+      console.log('[Middleware] No files found in request');
+      req.uploadResults = {};
+      req.uploadErrors = [];
+    }
+    next();
+  } catch (error) {
+    console.error('❌ File upload processing error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'File upload failed',
+      error: error.message
+    });
+  }
+}, registerDriver);
 router.post('/login', loginDriver);
 
 // Protected routes

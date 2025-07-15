@@ -14,10 +14,12 @@ const apiClient = axios.create({
 // Create axios instance for multipart/form-data requests (file uploads)
 const fileClient = axios.create({
   baseURL: API_URL,
-  timeout: 30000, // Longer timeout for file uploads
+  timeout: 180000, // 3 minutes timeout for file uploads
   headers: {
     'Content-Type': 'multipart/form-data'
-  }
+  },
+  maxContentLength: Infinity,
+  maxBodyLength: Infinity
 });
 
 // Add authentication token to requests with context-aware selection
@@ -232,26 +234,112 @@ export const auth = {
 // Driver APIs
 export const drivers = {
   // Driver registration (with file uploads)
-  driverSignup: async (formData, options = {}) => {
-    try {
-      console.log('Sending driver registration data');
-      let response;
-      if (options.isAdmin) {
-        // Use admin endpoint for immediate approval
-        response = await fileClient.post('/admin/drivers', formData);
-      } else {
-        response = await fileClient.post('/drivers/register', formData);
+  driverSignup: async (formData, onProgress = null, options = {}) => {
+    const startTime = performance.now();
+    const maxRetries = 2;
+    let attempt = 0;
+    
+    // Safely call progress callback
+    const safeProgressCallback = (progress) => {
+      if (typeof onProgress === 'function') {
+        try {
+          onProgress(Math.min(100, Math.max(0, Math.round(progress))));
+        } catch (error) {
+          console.error('[Driver Signup] Progress callback error:', error);
+        }
       }
-      // Store token if provided in response
-      if (response.data.token) {
-        localStorage.setItem('driverToken', response.data.token);
-        localStorage.setItem('driverRole', 'driver');
-        localStorage.setItem('driver', JSON.stringify(response.data.driver));
+    };
+
+    while (attempt <= maxRetries) {
+      try {
+        console.log(`[Driver Signup] Attempt ${attempt + 1}/${maxRetries + 1} - Sending driver registration data`);
+        
+        // Configure upload progress tracking with improved handling
+        const config = {
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const progress = (progressEvent.loaded / progressEvent.total) * 100;
+              safeProgressCallback(progress);
+              
+              // Log progress for debugging
+              if (progress % 20 === 0 || progress === 100) {
+                console.log(`[Driver Signup] Upload progress: ${progress.toFixed(1)}%`);
+              }
+            }
+          },
+          // Add retry-specific timeouts
+          timeout: attempt === 0 ? 180000 : 120000, // First attempt longer timeout
+          validateStatus: (status) => {
+            // Accept 2xx status codes
+            return status >= 200 && status < 300;
+          }
+        };
+        
+        let response;
+        if (options.isAdmin) {
+          // Use admin endpoint for immediate approval
+          response = await fileClient.post('/admin/drivers', formData, config);
+        } else {
+          response = await fileClient.post('/drivers/register', formData, config);
+        }
+        
+        const processingTime = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.log(`[Driver Signup] Registration successful after ${processingTime}s`);
+        
+        // Store token if provided in response
+        if (response.data.token) {
+          localStorage.setItem('driverToken', response.data.token);
+          localStorage.setItem('driverRole', 'driver');
+          localStorage.setItem('driver', JSON.stringify(response.data.driver));
+        }
+        
+        // Ensure 100% progress is reported
+        safeProgressCallback(100);
+        
+        return response.data;
+        
+      } catch (error) {
+        const processingTime = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.error(`[Driver Signup] Attempt ${attempt + 1} failed after ${processingTime}s:`, error);
+        
+        attempt++;
+        
+        // Check if we should retry
+        const shouldRetry = attempt <= maxRetries && (
+          error.code === 'ECONNABORTED' || // Timeout
+          error.code === 'NETWORK_ERROR' || // Network error
+          (error.response && error.response.status >= 500) // Server error
+        );
+        
+        if (shouldRetry) {
+          console.log(`[Driver Signup] Retrying in 2 seconds... (${attempt}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+        
+        // No more retries or non-retryable error
+        console.error(`[Driver Signup] Final failure after ${attempt} attempts:`, error);
+        
+        // Enhanced error handling
+        let errorMessage = 'Registration failed. Please try again.';
+        
+        if (error.response) {
+          // Server responded with error
+          errorMessage = error.response.data?.error || 
+                        error.response.data?.message || 
+                        `Server error (${error.response.status})`;
+        } else if (error.code === 'ECONNABORTED') {
+          errorMessage = 'Upload timeout. Please check your internet connection and try again.';
+        } else if (error.code === 'NETWORK_ERROR') {
+          errorMessage = 'Network error. Please check your internet connection.';
+        }
+        
+        throw {
+          error: errorMessage,
+          status: error.response?.status,
+          attempts: attempt
+        };
       }
-      return response.data;
-    } catch (error) {
-      console.error('Driver signup error:', error);
-      throw error;
     }
   },
   

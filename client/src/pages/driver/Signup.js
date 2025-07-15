@@ -4,7 +4,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { driverSignup } from '../../services/api';
 import ModernUpload from '../../components/common/ModernUpload';
 import CameraCapture from '../../components/common/CameraCapture';
-import { FiUser, FiCreditCard, FiClipboard, FiLock } from 'react-icons/fi';
+import { FiUser, FiCreditCard, FiClipboard, FiLock, FiCheckCircle } from 'react-icons/fi';
+import { compressMultipleImages, validateImageFile, getReadableFileSize } from '../../utils/imageCompression';
 
 const steps = [
   { key: 'personal', label: 'Personal Info', icon: <FiUser /> },
@@ -48,6 +49,11 @@ const DriverSignup = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeSection, setActiveSection] = useState('personal');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedFiles, setUploadedFiles] = useState({});
+  const [compressing, setCompressing] = useState(false);
+  const [compressionProgress, setCompressionProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState(''); // Track current processing step
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -64,11 +70,36 @@ const DriverSignup = () => {
   };
 
   const handleFileChange = (e) => {
-    setFiles({ ...files, [e.target.name]: e.target.files[0] });
+    const file = e.target.files[0];
+    const fieldName = e.target.name;
+    
+    // Validate file
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
+    
+    setFiles({ ...files, [fieldName]: file });
+    
+    // Mark as uploaded (pre-upload)
+    setUploadedFiles(prev => ({ ...prev, [fieldName]: false }));
+    
+    // Show file size
+    console.log(`[File Upload] ${fieldName}: ${getReadableFileSize(file.size)}`);
   };
 
   const handleCameraCapture = (file) => {
+    // Validate file
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
+    
     setFiles({ ...files, driverSelfie: file });
+    setUploadedFiles(prev => ({ ...prev, driverSelfie: false }));
+    console.log(`[Camera Capture] driverSelfie: ${getReadableFileSize(file.size)}`);
   };
 
   const handleSubmit = async (e) => {
@@ -84,9 +115,37 @@ const DriverSignup = () => {
       setError('Passwords do not match');
       return;
     }
+    
+    // Check if required files are selected
+    const requiredFiles = ['aadhaarPhotoFront', 'aadhaarPhotoBack', 'driverSelfie', 'registrationCertificatePhoto', 'drivingLicensePhoto'];
+    const missingFiles = requiredFiles.filter(field => !files[field]);
+    if (missingFiles.length > 0) {
+      setError(`Please upload all required files: ${missingFiles.join(', ')}`);
+      return;
+    }
+    
     setLoading(true);
     setError(null);
+    setCompressing(true);
+    setCompressionProgress(0);
+    setUploadProgress(0);
+    setCurrentStep('Preparing files for upload...');
+    
     try {
+      // Compress images before upload
+      console.log('[Registration] Starting image compression...');
+      setCurrentStep('Compressing images...');
+      
+      const compressedFiles = await compressMultipleImages(files, (progress) => {
+        setCompressionProgress(progress);
+        console.log(`[Compression Progress] ${progress}%`);
+      });
+      
+      console.log('[Registration] Image compression complete');
+      setCompressing(false);
+      setCurrentStep('Uploading files to server...');
+      
+      // Create form data with compressed images
       const submitData = new FormData();
       submitData.append('fullName', formData.fullName);
       submitData.append('mobileNo', formData.mobileNo);
@@ -104,18 +163,64 @@ const DriverSignup = () => {
       submitData.append('fitnessCertificateNo', formData.fitnessCertificateNo);
       submitData.append('insurancePolicyNo', formData.insurancePolicyNo);
       submitData.append('password', formData.password);
-      Object.keys(files).forEach(key => {
-        if (files[key]) {
-          submitData.append(key, files[key]);
+      
+      // Add compressed files
+      let totalCompressedSize = 0;
+      Object.keys(compressedFiles).forEach(key => {
+        if (compressedFiles[key] && compressedFiles[key][0]) {
+          const file = compressedFiles[key][0];
+          submitData.append(key, file);
+          totalCompressedSize += file.size;
+          console.log(`[Form Data] Adding ${key}: ${getReadableFileSize(file.size)}`);
         }
       });
-      await driverSignup(submitData);
+      
+      console.log(`[Form Data] Total compressed size: ${getReadableFileSize(totalCompressedSize)}`);
+      
+      // Submit with progress tracking
+      await driverSignup(submitData, (progress) => {
+        setUploadProgress(progress);
+        
+        // Update current step based on progress
+        if (progress < 50) {
+          setCurrentStep('Uploading files to server...');
+        } else if (progress < 90) {
+          setCurrentStep('Processing documents...');
+        } else {
+          setCurrentStep('Finalizing registration...');
+        }
+        
+        // Mark files as uploaded based on progress
+        if (progress > 0) {
+          const filesCount = Object.keys(compressedFiles).length;
+          const uploadedCount = Math.floor((progress / 100) * filesCount);
+          const fileKeys = Object.keys(compressedFiles);
+          
+          const newUploadedFiles = {};
+          fileKeys.forEach((key, index) => {
+            newUploadedFiles[key] = index < uploadedCount;
+          });
+          setUploadedFiles(newUploadedFiles);
+        }
+      });
+      
+      // Mark all files as uploaded on success
+      const allUploaded = {};
+      Object.keys(files).forEach(key => {
+        if (files[key]) allUploaded[key] = true;
+      });
+      setUploadedFiles(allUploaded);
+      
+      setCurrentStep('Registration complete!');
       setLoading(false);
       alert('Registration successful! Your account is pending admin approval.');
       navigate('/driver/login');
     } catch (err) {
-      setError(err.error || 'Failed to register');
+      console.error('[Registration] Error:', err);
+      setError(err.error || 'Failed to register. Please try again.');
       setLoading(false);
+      setCompressing(false);
+      setCurrentStep('');
     }
   };
 
@@ -177,6 +282,7 @@ const DriverSignup = () => {
                 name="aadhaarPhotoFront"
                 file={files.aadhaarPhotoFront}
                 onChange={handleFileChange}
+                isUploaded={uploadedFiles.aadhaarPhotoFront}
                 required
               />
               <ModernUpload
@@ -184,6 +290,7 @@ const DriverSignup = () => {
                 name="aadhaarPhotoBack"
                 file={files.aadhaarPhotoBack}
                 onChange={handleFileChange}
+                isUploaded={uploadedFiles.aadhaarPhotoBack}
                 required
               />
               <CameraCapture
@@ -200,6 +307,7 @@ const DriverSignup = () => {
                 name="registrationCertificatePhoto"
                 file={files.registrationCertificatePhoto}
                 onChange={handleFileChange}
+                isUploaded={uploadedFiles.registrationCertificatePhoto}
                 required
               />
             </div>
@@ -246,6 +354,7 @@ const DriverSignup = () => {
                 name="drivingLicensePhoto"
                 file={files.drivingLicensePhoto}
                 onChange={handleFileChange}
+                isUploaded={uploadedFiles.drivingLicensePhoto}
                 required
               />
               <div>
@@ -257,6 +366,7 @@ const DriverSignup = () => {
                 name="permitPhoto"
                 file={files.permitPhoto}
                 onChange={handleFileChange}
+                isUploaded={uploadedFiles.permitPhoto}
                 required={false}
               />
               <div>
@@ -268,6 +378,7 @@ const DriverSignup = () => {
                 name="fitnessCertificatePhoto"
                 file={files.fitnessCertificatePhoto}
                 onChange={handleFileChange}
+                isUploaded={uploadedFiles.fitnessCertificatePhoto}
                 required={false}
               />
               <div>
@@ -278,6 +389,7 @@ const DriverSignup = () => {
                 label="Insurance Policy Photo (Optional)"
                 name="insurancePolicyPhoto"
                 file={files.insurancePolicyPhoto}
+                isUploaded={uploadedFiles.insurancePolicyPhoto}
                 onChange={handleFileChange}
                 required={false}
               />
@@ -301,10 +413,49 @@ const DriverSignup = () => {
                 <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} required minLength="6" placeholder="Confirm your password" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 text-lg pr-10" />
               </div>
             </div>
+            {(compressing || loading) && (
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-4">
+                <div className="text-center">
+                  {compressing && (
+                    <>
+                      <div className="text-blue-700 font-medium mb-2">🗜️ Compressing images...</div>
+                      {compressionProgress > 0 && (
+                        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                          <div 
+                            className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+                            style={{ width: `${compressionProgress}%` }}
+                          ></div>
+                        </div>
+                      )}
+                      <div className="text-sm text-blue-600">{compressionProgress}% compressed</div>
+                    </>
+                  )}
+                  {loading && !compressing && (
+                    <>
+                      <div className="text-blue-700 font-medium mb-2">📤 {currentStep}</div>
+                      {uploadProgress > 0 && (
+                        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                            style={{ width: `${uploadProgress}%` }}
+                          ></div>
+                        </div>
+                      )}
+                      <div className="text-sm text-blue-600">{uploadProgress}% complete</div>
+                      {uploadProgress > 0 && uploadProgress < 100 && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Please wait while we process your documents...
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex justify-center gap-4 mt-6">
               <button type="button" onClick={() => changeSection('license')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
-              <button type="submit" disabled={loading} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition disabled:bg-gray-400">
-                {loading ? 'Signing up...' : 'Sign Up'}
+              <button type="submit" disabled={loading || compressing} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition disabled:bg-gray-400 disabled:cursor-not-allowed">
+                {compressing ? `Compressing... (${compressionProgress}%)` : loading ? `Uploading... (${uploadProgress}%)` : 'Sign Up'}
               </button>
             </div>
           </div>
