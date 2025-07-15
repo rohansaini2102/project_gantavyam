@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { GoogleMap, Marker, DirectionsRenderer } from '@react-google-maps/api';
 import { users } from '../../services/api';
 import { initializeSocket, subscribeToUserRideUpdates, unsubscribeFromUserRideUpdates, isSocketConnected, cancelRide } from '../../services/socket';
+import { FIXED_PICKUP_LOCATION } from '../../config/fixedLocations';
 
 // New Components
 import UserLayout from '../../components/user/UserLayout';
@@ -244,15 +245,14 @@ const NewUserDashboard = () => {
     try {
       console.log('[NewUserDashboard] Loading initial data');
       
-      const [locationsResponse, activeResponse, historyResponse] = await Promise.all([
-        users.getPickupLocations(),
+      const [activeResponse, historyResponse] = await Promise.all([
         users.getActiveRides(),
         users.getRideHistory(1, 5)
       ]);
       
-      if (locationsResponse.success) {
-        setPickupLocations(locationsResponse.data?.locations || []);
-      }
+      // Use fixed pickup location instead of fetching from API
+      setPickupLocations([FIXED_PICKUP_LOCATION]);
+      setSelectedPickup(FIXED_PICKUP_LOCATION);
       
       if (activeResponse.success && activeResponse.data?.ride) {
         setActiveRide(activeResponse.data.ride);

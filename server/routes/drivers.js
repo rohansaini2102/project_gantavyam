@@ -61,54 +61,37 @@ router.get('/pickup-locations', async (req, res) => {
     console.log('\n=== GET PICKUP LOCATIONS FOR DRIVER ===');
     console.log('Public endpoint - no authentication required');
     
-    // Check database connection
-    if (require('mongoose').connection.readyState !== 1) {
-      console.error('❌ Database not connected');
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection unavailable',
-        error: 'Database not connected'
-      });
-    }
+    // Return only the fixed pickup location - Hauz Khas Metro Gate No 1
+    const fixedLocation = {
+      id: 'M-Y-024-GATE1',
+      name: 'Hauz Khas Metro Gate No 1',
+      type: 'metro',
+      subType: 'Yellow Line',
+      address: 'Hauz Khas Metro Station Gate No 1, Outer Ring Road, Hauz Khas, New Delhi',
+      lat: 28.5433,
+      lng: 77.2066,
+      line: 'yellow',
+      priority: 10,
+      onlineDrivers: 0,
+      metadata: {
+        description: 'Fixed pickup location - Hauz Khas Metro Station Gate No 1',
+        facilities: ['parking', 'waiting_area'],
+        gateNumber: 1
+      }
+    };
     
-    // Get statistics from PickupLocation model
-    const totalLocations = await PickupLocation.countDocuments();
-    const activeLocations = await PickupLocation.countDocuments({ isActive: true });
+    console.log('✅ Returning fixed pickup location for driver: Hauz Khas Metro Gate No 1');
     
-    console.log(`📊 Database stats: ${totalLocations} total locations, ${activeLocations} active`);
-    
-    // Get all active pickup locations
-    const locations = await PickupLocation.find({ isActive: true })
-      .select('id name type subType line lat lng address priority onlineDrivers')
-      .sort({ priority: -1, type: 1, name: 1 });
+    // Return only the fixed pickup location array
+    const locations = [fixedLocation];
     
     // Group locations by type
-    const locationsByType = {};
+    const locationsByType = {
+      metro: [fixedLocation]
+    };
     
-    locations.forEach(location => {
-      if (!locationsByType[location.type]) {
-        locationsByType[location.type] = [];
-      }
-      locationsByType[location.type].push({
-        id: location.id,
-        name: location.name,
-        type: location.type,
-        subType: location.subType,
-        lat: location.lat,
-        lng: location.lng,
-        address: location.address,
-        line: location.line,
-        priority: location.priority,
-        onlineDrivers: location.onlineDrivers || 0
-      });
-    });
-    
-    // Get type statistics
-    const typeStats = await PickupLocation.aggregate([
-      { $match: { isActive: true } },
-      { $group: { _id: '$type', count: { $sum: 1 }, totalDrivers: { $sum: '$onlineDrivers' } } },
-      { $sort: { _id: 1 } }
-    ]);
+    // Type statistics for the fixed location
+    const typeStats = [{ _id: 'metro', count: 1, totalDrivers: 0 }];
     
     console.log(`✅ Returning ${locations.length} pickup locations for driver booth selection`);
     console.log(`📋 Types available: ${Object.keys(locationsByType).join(', ')}`);
@@ -117,18 +100,7 @@ router.get('/pickup-locations', async (req, res) => {
       success: true,
       data: {
         // All locations in a flat array
-        locations: locations.map(l => ({
-          id: l.id,
-          name: l.name,
-          type: l.type,
-          subType: l.subType,
-          line: l.line,
-          lat: l.lat,
-          lng: l.lng,
-          address: l.address,
-          priority: l.priority,
-          onlineDrivers: l.onlineDrivers || 0
-        })),
+        locations: locations,
         
         // Grouped by type
         locationsByType,
@@ -144,8 +116,8 @@ router.get('/pickup-locations', async (req, res) => {
         }, {})
       },
       meta: {
-        totalInDb: totalLocations,
-        activeInDb: activeLocations,
+        totalInDb: 1,
+        activeInDb: 1,
         returned: locations.length,
         timestamp: new Date().toISOString()
       }

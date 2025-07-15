@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Autocomplete } from '@react-google-maps/api';
 import VehicleCard from './VehicleCard';
+import { FIXED_PICKUP_LOCATION, FIXED_PICKUP_MESSAGE } from '../../config/fixedLocations';
 
 const BookingPanel = ({
   pickupLocations = [],
@@ -17,20 +18,21 @@ const BookingPanel = ({
   className = ''
 }) => {
   const [currentStep, setCurrentStep] = useState(1); // 1: Locations, 2: Vehicle, 3: Confirm
-  const [pickupSearchQuery, setPickupSearchQuery] = useState('');
-  const [showPickupResults, setShowPickupResults] = useState(false);
-  const [selectedPickupIndex, setSelectedPickupIndex] = useState(-1);
+  const [pickupSearchQuery, setPickupSearchQuery] = useState(FIXED_PICKUP_LOCATION.name);
+  
+  // Auto-select fixed pickup location on mount
+  useEffect(() => {
+    if (!selectedPickup) {
+      onPickupSelect(FIXED_PICKUP_LOCATION);
+      setPickupSearchQuery(FIXED_PICKUP_LOCATION.name);
+    }
+  }, [selectedPickup, onPickupSelect]);
   
   // Google Places Autocomplete state
   const [autocomplete, setAutocomplete] = useState(null);
   const [isGeocodingLocation, setIsGeocodingLocation] = useState(false);
 
-  // Filter pickup locations based on search
-  const filteredPickupLocations = pickupLocations.filter(location => {
-    if (!pickupSearchQuery) return true;
-    return location.name.toLowerCase().includes(pickupSearchQuery.toLowerCase()) ||
-           location.address?.toLowerCase().includes(pickupSearchQuery.toLowerCase());
-  }).slice(0, 8);
+  // Removed pickup location filtering since we use fixed location
 
   // Vehicle options
   const vehicles = [
@@ -54,20 +56,7 @@ const BookingPanel = ({
     }
   ];
 
-  const handlePickupSearch = (query) => {
-    setPickupSearchQuery(query);
-    setShowPickupResults(query.length > 0);
-    setSelectedPickupIndex(-1);
-  };
-
-  const handlePickupSelect = (location) => {
-    onPickupSelect(location);
-    setPickupSearchQuery(location.name);
-    setShowPickupResults(false);
-    if (dropLocation) {
-      setCurrentStep(2);
-    }
-  };
+  // Removed pickup search and select handlers since we use fixed location
 
   const handleVehicleSelect = (vehicleType) => {
     onVehicleSelect(vehicleType);
@@ -198,7 +187,7 @@ const BookingPanel = ({
             {/* Pickup Location */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Pickup Location
+                Pickup Location (Fixed)
               </label>
               <div className="relative">
                 <div className="flex items-center">
@@ -206,42 +195,13 @@ const BookingPanel = ({
                   <input
                     type="text"
                     value={pickupSearchQuery}
-                    onChange={(e) => handlePickupSearch(e.target.value)}
-                    placeholder="Search metro stations, railway stations..."
-                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={true}
+                    className="flex-1 p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
                   />
                 </div>
-
-                {/* Pickup Results */}
-                {showPickupResults && filteredPickupLocations.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
-                    {filteredPickupLocations.map((location, index) => (
-                      <div
-                        key={location.id || index}
-                        onClick={() => handlePickupSelect(location)}
-                        className={`
-                          p-3 cursor-pointer border-b border-gray-100 last:border-b-0
-                          ${selectedPickupIndex === index ? 'bg-blue-50' : 'hover:bg-gray-50'}
-                        `}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className="text-lg">
-                            {location.type === 'metro' && '🚇'}
-                            {location.type === 'railway' && '🚂'}
-                            {location.type === 'airport' && '✈️'}
-                            {location.type === 'bus_terminal' && '🚌'}
-                          </span>
-                          <div>
-                            <div className="font-medium text-gray-900">{location.name}</div>
-                            {location.address && (
-                              <div className="text-sm text-gray-600">{location.address}</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <p className="text-xs text-blue-600 mt-1">
+                  {FIXED_PICKUP_MESSAGE}
+                </p>
               </div>
             </div>
 

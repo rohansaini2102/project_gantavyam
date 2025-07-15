@@ -134,68 +134,42 @@ router.get('/pickup-locations', async (req, res) => {
     console.log('Request headers:', req.headers);
     console.log('Database connection state:', require('mongoose').connection.readyState);
     
-    // Check database connection
-    if (require('mongoose').connection.readyState !== 1) {
-      console.error('❌ Database not connected');
-      return res.status(503).json({
-        success: false,
-        message: 'Database connection unavailable',
-        error: 'Database not connected'
-      });
-    }
+    // Return only the fixed pickup location - Hauz Khas Metro Gate No 1
+    const fixedLocation = {
+      id: 'M-Y-024-GATE1',
+      name: 'Hauz Khas Metro Gate No 1',
+      type: 'metro',
+      subType: 'Yellow Line',
+      address: 'Hauz Khas Metro Station Gate No 1, Outer Ring Road, Hauz Khas, New Delhi',
+      lat: 28.5433,
+      lng: 77.2066,
+      line: 'yellow',
+      isActive: true,
+      priority: 10,
+      metadata: {
+        description: 'Fixed pickup location - Hauz Khas Metro Station Gate No 1',
+        facilities: ['parking', 'waiting_area'],
+        gateNumber: 1
+      }
+    };
     
-    // Get statistics from PickupLocation model
-    const totalLocations = await PickupLocation.countDocuments();
-    const activeLocations = await PickupLocation.countDocuments({ isActive: true });
+    console.log('✅ Returning fixed pickup location: Hauz Khas Metro Gate No 1');
     
-    console.log(`📊 Database stats: ${totalLocations} total locations, ${activeLocations} active`);
-    
-    // Get all active pickup locations
-    const locations = await PickupLocation.find({ isActive: true })
-      .select('id name type subType line lat lng address priority')
-      .sort({ priority: -1, type: 1, name: 1 });
+    // Return only the fixed pickup location array
+    const locations = [fixedLocation];
     
     // Group locations by type
-    const locationsByType = {};
-    const stationsByLine = {}; // For backward compatibility with metro stations
+    const locationsByType = {
+      metro: [fixedLocation]
+    };
     
-    locations.forEach(location => {
-      // Group by type
-      if (!locationsByType[location.type]) {
-        locationsByType[location.type] = [];
-      }
-      locationsByType[location.type].push({
-        id: location.id,
-        name: location.name,
-        type: location.type,
-        subType: location.subType,
-        lat: location.lat,
-        lng: location.lng,
-        address: location.address,
-        line: location.line,
-        priority: location.priority
-      });
-      
-      // Group metro stations by line for backward compatibility
-      if (location.type === 'metro' && location.line) {
-        if (!stationsByLine[location.line]) {
-          stationsByLine[location.line] = [];
-        }
-        stationsByLine[location.line].push({
-          id: location.id,
-          name: location.name,
-          lat: location.lat,
-          lng: location.lng
-        });
-      }
-    });
+    // Group metro stations by line for backward compatibility
+    const stationsByLine = {
+      yellow: [fixedLocation]
+    };
     
-    // Get type statistics
-    const typeStats = await PickupLocation.aggregate([
-      { $match: { isActive: true } },
-      { $group: { _id: '$type', count: { $sum: 1 } } },
-      { $sort: { _id: 1 } }
-    ]);
+    // Type statistics for the fixed location
+    const typeStats = [{ _id: 'metro', count: 1 }];
     
     console.log(`✅ Returning ${locations.length} pickup locations across ${Object.keys(locationsByType).length} types`);
     console.log(`📋 Types available: ${Object.keys(locationsByType).join(', ')}`);
@@ -204,30 +178,10 @@ router.get('/pickup-locations', async (req, res) => {
       success: true,
       data: {
         // All locations in a flat array (new standard format)
-        locations: locations.map(l => ({
-          id: l.id,
-          name: l.name,
-          type: l.type,
-          subType: l.subType,
-          line: l.line, // For metro stations
-          lat: l.lat,
-          lng: l.lng,
-          address: l.address,
-          priority: l.priority
-        })),
+        locations: locations,
         
         // Backward compatibility - same data as locations
-        stations: locations.map(l => ({
-          id: l.id,
-          name: l.name,
-          type: l.type,
-          subType: l.subType,
-          line: l.line, // For metro stations
-          lat: l.lat,
-          lng: l.lng,
-          address: l.address,
-          priority: l.priority
-        })),
+        stations: locations,
         
         // Grouped by type (metro, railway, airport, bus_terminal)
         locationsByType,
@@ -243,8 +197,8 @@ router.get('/pickup-locations', async (req, res) => {
         }, {})
       },
       meta: {
-        totalInDb: totalLocations,
-        activeInDb: activeLocations,
+        totalInDb: 1,
+        activeInDb: 1,
         returned: locations.length,
         timestamp: new Date().toISOString()
       }
@@ -368,28 +322,42 @@ router.post('/fare-estimate', protectUser, async (req, res) => {
       });
     }
     
-    // Find pickup location details (try new model first, fallback to old model)
-    let station = await PickupLocation.findOne({ name: pickupStation, isActive: true });
-    
-    if (!station) {
-      // Fallback to MetroStation model for backward compatibility
-      const oldStation = await MetroStation.findOne({ name: pickupStation });
-      if (oldStation) {
-        station = {
-          name: oldStation.name,
-          lat: oldStation.lat,
-          lng: oldStation.lng,
-          line: oldStation.line,
-          type: 'metro'
-        };
+    // Handle fixed pickup location - Hauz Khas Metro Gate No 1
+    let station;
+    if (pickupStation === 'Hauz Khas Metro Gate No 1') {
+      // Use the fixed location directly
+      station = {
+        name: 'Hauz Khas Metro Gate No 1',
+        lat: 28.5433,
+        lng: 77.2066,
+        line: 'yellow',
+        type: 'metro'
+      };
+      console.log('✅ Using fixed pickup location for fare estimation: Hauz Khas Metro Gate No 1');
+    } else {
+      // Fallback to database lookup for other stations (backward compatibility)
+      station = await PickupLocation.findOne({ name: pickupStation, isActive: true });
+      
+      if (!station) {
+        // Fallback to MetroStation model for backward compatibility
+        const oldStation = await MetroStation.findOne({ name: pickupStation });
+        if (oldStation) {
+          station = {
+            name: oldStation.name,
+            lat: oldStation.lat,
+            lng: oldStation.lng,
+            line: oldStation.line,
+            type: 'metro'
+          };
+        }
       }
-    }
-    
-    if (!station) {
-      return res.status(404).json({
-        success: false,
-        message: 'Pickup location not found'
-      });
+      
+      if (!station) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pickup location not found'
+        });
+      }
     }
     
     // Calculate fare estimates
@@ -447,7 +415,7 @@ router.post('/book-ride', protectUser, async (req, res) => {
     console.log('Estimated Fare:', estimatedFare);
     
     // Validate input
-    if (!pickupStation || !dropLocation || !vehicleType || !estimatedFare) {
+    if (!pickupStation || !dropLocation || !vehicleType || estimatedFare === undefined || estimatedFare === null) {
       return res.status(400).json({
         success: false,
         message: 'All booking details are required'
@@ -488,28 +456,43 @@ router.post('/book-ride', protectUser, async (req, res) => {
       });
     }
     
-    // Find pickup location (try new model first, fallback to old model)
-    let station = await PickupLocation.findOne({ name: pickupStation, isActive: true });
-    
-    if (!station) {
-      // Fallback to MetroStation model for backward compatibility
-      const oldStation = await MetroStation.findOne({ name: pickupStation });
-      if (oldStation) {
-        station = {
-          name: oldStation.name,
-          lat: oldStation.lat,
-          lng: oldStation.lng,
-          line: oldStation.line,
-          type: 'metro'
-        };
+    // Handle fixed pickup location - Hauz Khas Metro Gate No 1
+    let station;
+    if (pickupStation === 'Hauz Khas Metro Gate No 1') {
+      // Use the fixed location directly
+      station = {
+        id: 'M-Y-024-GATE1',
+        name: 'Hauz Khas Metro Gate No 1',
+        lat: 28.5433,
+        lng: 77.2066,
+        line: 'yellow',
+        type: 'metro'
+      };
+      console.log('✅ Using fixed pickup location: Hauz Khas Metro Gate No 1');
+    } else {
+      // Fallback to database lookup for other stations (backward compatibility)
+      station = await PickupLocation.findOne({ name: pickupStation, isActive: true });
+      
+      if (!station) {
+        // Fallback to MetroStation model for backward compatibility
+        const oldStation = await MetroStation.findOne({ name: pickupStation });
+        if (oldStation) {
+          station = {
+            name: oldStation.name,
+            lat: oldStation.lat,
+            lng: oldStation.lng,
+            line: oldStation.line,
+            type: 'metro'
+          };
+        }
       }
-    }
-    
-    if (!station) {
-      return res.status(404).json({
-        success: false,
-        message: 'Pickup location not found'
-      });
+      
+      if (!station) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pickup location not found'
+        });
+      }
     }
     
     // Get user details
