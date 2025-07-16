@@ -210,7 +210,10 @@ export const auth = {
   adminLogin: async (credentials) => {
     try {
       console.log('🔐 [API] Admin login request:', credentials.email);
-      const response = await apiClient.post('/admin/login', credentials);
+      console.log('🔐 [API] Using API URL:', apiClient.defaults.baseURL);
+      
+      // Use the correct auth endpoint
+      const response = await apiClient.post('/auth/admin/login', credentials);
       console.log('🔐 [API] Admin login response:', response.data);
       
       // Store token in localStorage

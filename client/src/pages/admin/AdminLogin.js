@@ -18,7 +18,7 @@ const AdminLogin = () => {
       
       // Test connectivity first using the proper API URL
       try {
-        const testResponse = await fetch(`${API_URL}/admin/login`, {
+        const testResponse = await fetch(`${API_URL}/auth/admin/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: 'test', password: 'test' })

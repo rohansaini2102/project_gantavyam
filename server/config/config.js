@@ -21,7 +21,7 @@ module.exports = {
     'http://localhost:3000', // Frontend development server
     'https://gt2-seven.vercel.app',
     'https://gantavyam.site',
-    'https://www.gantavyam.site',
+    'https://www.gantavyam.site', // Main production domain
     'https://gt2-evx6vat1j-rohan-sainis-projects.vercel.app',
     'https://gt2-2.onrender.com',
     'https://gt3-nkqc.onrender.com',

@@ -1,8 +1,8 @@
 // client/src/config.js
 
 // Get URLs from environment variables
-const API_URL_PRODUCTION = process.env.REACT_APP_API_URL_PRODUCTION || 'https://gt3-nkqc.onrender.com/api';
-const SOCKET_URL_PRODUCTION = process.env.REACT_APP_SOCKET_URL_PRODUCTION || 'https://gt3-nkqc.onrender.com';
+const API_URL_PRODUCTION = process.env.REACT_APP_API_URL_PRODUCTION || 'https://project-gantavyam.onrender.com/api';
+const SOCKET_URL_PRODUCTION = process.env.REACT_APP_SOCKET_URL_PRODUCTION || 'https://project-gantavyam.onrender.com';
 const API_URL_LOCAL = process.env.REACT_APP_API_URL_LOCAL || 'http://localhost:5000/api';
 const SOCKET_URL_LOCAL = process.env.REACT_APP_SOCKET_URL_LOCAL || 'http://localhost:5000';
 
