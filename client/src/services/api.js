@@ -605,7 +605,7 @@ export const users = {
   // Get user's ride history
   getRideHistory: async (page = 1, limit = 10) => {
     try {
-      const response = await apiClient.get(`/users/ride-history?page=${page}&limit=${limit}`);
+      const response = await apiClient.get(`/ride-history/user-rides?page=${page}&limit=${limit}`);
       return response.data;
     } catch (error) {
       throw error;

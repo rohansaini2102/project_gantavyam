@@ -15,10 +15,18 @@ const BookingPanel = ({
   onBookRide,
   isBooking = false,
   socketConnected = false,
-  className = ''
+  className = '',
+  onStepChange
 }) => {
   const [currentStep, setCurrentStep] = useState(1); // 1: Locations, 2: Vehicle, 3: Confirm
   const [pickupSearchQuery, setPickupSearchQuery] = useState(FIXED_PICKUP_LOCATION.name);
+  
+  // Notify parent component of step changes
+  useEffect(() => {
+    if (onStepChange) {
+      onStepChange(currentStep);
+    }
+  }, [currentStep, onStepChange]);
   
   // Auto-select fixed pickup location on mount
   useEffect(() => {
@@ -60,6 +68,7 @@ const BookingPanel = ({
 
   const handleVehicleSelect = (vehicleType) => {
     onVehicleSelect(vehicleType);
+    // Auto-advance to confirmation step
     setCurrentStep(3);
   };
 
@@ -147,6 +156,14 @@ const BookingPanel = ({
 
   const canProceedToVehicles = selectedPickup && dropLocation;
   const canBookRide = selectedPickup && dropLocation && vehicleType;
+  
+  // Helper function to get validation message
+  const getValidationMessage = () => {
+    if (!selectedPickup) return 'Please select a pickup location';
+    if (!dropLocation) return 'Please enter a drop location';
+    if (!vehicleType) return 'Please select a vehicle type';
+    return '';
+  };
 
   return (
     <div className={`bg-white ${className}`}>
@@ -180,7 +197,7 @@ const BookingPanel = ({
         </div>
       </div>
 
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         {/* Step 1: Locations */}
         {currentStep === 1 && (
           <div className="space-y-4">
@@ -278,7 +295,9 @@ const BookingPanel = ({
                 }
               `}
             >
-              Continue to Vehicle Selection
+              {!selectedPickup ? 'Select pickup location' :
+               !dropLocation ? 'Enter drop location' :
+               'Continue to Vehicle Selection'}
             </button>
           </div>
         )}
@@ -320,7 +339,7 @@ const BookingPanel = ({
                   }
                 `}
               >
-                Continue to Booking
+                {!vehicleType ? 'Select a vehicle' : 'Continue to Booking'}
               </button>
             </div>
           </div>
@@ -368,11 +387,17 @@ const BookingPanel = ({
             <div className="space-y-2">
               <div className={`
                 flex items-center space-x-2 text-sm
-                ${socketConnected ? 'text-green-600' : 'text-red-600'}
+                ${socketConnected ? 'text-green-600' : 'text-orange-600'}
               `}>
-                <div className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                <span>{socketConnected ? 'Connected & Ready' : 'Connecting... Please wait'}</span>
+                <div className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`} />
+                <span>{socketConnected ? 'Connected & Ready' : 'Offline Mode - Booking Available'}</span>
               </div>
+              
+              {!socketConnected && (
+                <div className="text-xs text-gray-500 bg-orange-50 p-2 rounded">
+                  ⚠️ You can still book rides. Real-time updates may be limited.
+                </div>
+              )}
               
               {dropLocation && !window.google?.maps && (
                 <div className="flex items-center space-x-2 text-sm text-yellow-600">
@@ -382,27 +407,36 @@ const BookingPanel = ({
               )}
             </div>
 
+            {/* Validation Message */}
+            {!canBookRide && getValidationMessage() && (
+              <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                ❌ {getValidationMessage()}
+              </div>
+            )}
+
             {/* Book Button */}
-            <div className="flex space-x-3">
+            <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-3 pb-6 md:pb-0">
               <button
                 onClick={() => setCurrentStep(2)}
-                className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                className="w-full md:flex-1 py-4 md:py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
               >
                 Back
               </button>
               <button
                 onClick={onBookRide}
-                disabled={!canBookRide || isBooking || !socketConnected}
+                disabled={!canBookRide || isBooking}
                 className={`
-                  flex-1 py-3 rounded-lg font-medium transition-colors
-                  ${canBookRide && socketConnected && !isBooking
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                  w-full md:flex-1 py-4 md:py-3 rounded-lg font-medium transition-colors text-lg md:text-base
+                  ${canBookRide && !isBooking
+                    ? socketConnected 
+                      ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg'
+                      : 'bg-orange-500 text-white hover:bg-orange-600 shadow-lg'
                     : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                   }
                 `}
               >
                 {isBooking ? 'Booking...' : 
-                 !socketConnected ? 'Waiting for Connection...' :
+                 !socketConnected ? 'Book Ride (Offline Mode)' :
                  'Book Ride'}
               </button>
             </div>

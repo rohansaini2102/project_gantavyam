@@ -47,6 +47,132 @@ code {
   border: 1px solid #666;
 }
 
+/* Safe area support for mobile devices with fallbacks */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.h-safe-area-inset-top {
+  height: env(safe-area-inset-top, 0px);
+}
+
+.h-safe-area-inset-bottom {
+  height: env(safe-area-inset-bottom, 0px);
+}
+
+/* iOS safe area support */
+@supports (padding: max(0px)) {
+  .safe-area-pb {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+}
+
+/* Enhanced responsive breakpoints */
+@media (max-width: 767.98px) {
+  /* Mobile specific styles */
+  .mobile-optimized {
+    touch-action: manipulation;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Improve mobile scrolling performance */
+  body {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Prevent zoom on input focus on iOS */
+  input[type="tel"],
+  input[type="email"],
+  input[type="text"],
+  input[type="password"],
+  textarea,
+  select {
+    font-size: 16px !important;
+    transform: translateZ(0);
+  }
+  
+  /* Better mobile tap targets */
+  button,
+  .btn,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  /* Tablet specific styles */
+  .tablet-optimized {
+    /* Tablet optimizations */
+  }
+}
+
+@media (min-width: 1024px) {
+  /* Desktop specific styles */
+  .desktop-optimized {
+    /* Desktop optimizations */
+  }
+}
+
+/* Custom scrollbar for better mobile experience */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Mobile touch improvements */
+@media (hover: none) and (pointer: coarse) {
+  button, .cursor-pointer {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Mobile scrolling utility classes */
+.mobile-scroll-fix {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.mobile-scroll-container {
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+.mobile-scroll-content {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Fix for iOS viewport units */
+.mobile-full-height {
+  height: 100vh;
+  height: -webkit-fill-available;
+}
+
+/* Prevent horizontal scroll on mobile */
+.mobile-no-horizontal-scroll {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 .dark-mode .profile-section,
 .dark-mode .bank-details,
 .dark-mode .documents,

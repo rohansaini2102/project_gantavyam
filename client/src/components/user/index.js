@@ -5,3 +5,7 @@ export { default as BookingPanel } from './BookingPanel';
 export { default as VehicleCard } from './VehicleCard';
 export { default as ActiveRideTracker } from './ActiveRideTracker';
 export { default as BottomSheet } from './BottomSheet';
+export { default as RideHistory } from './RideHistory';
+export { default as ResponsiveLayout } from './ResponsiveLayout';
+export { default as MobileTabNavigation } from './MobileTabNavigation';
+export { default as SwipeableCard } from './SwipeableCard';

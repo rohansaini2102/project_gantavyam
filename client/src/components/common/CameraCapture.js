@@ -120,8 +120,8 @@ const CameraCapture = ({ onCapture, label = "Live Photo", required = false }) =>
       )}
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-4 max-w-2xl w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-2 md:p-4">
+          <div className="bg-white rounded-lg p-3 md:p-4 w-full max-w-sm md:max-w-2xl max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-16px)] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">Capture Live Photo</h3>
               <button
@@ -148,7 +148,7 @@ const CameraCapture = ({ onCapture, label = "Live Photo", required = false }) =>
               <div className="space-y-4">
                 {!capturedImage ? (
                   <>
-                    <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                    <div className="relative aspect-[4/3] md:aspect-video bg-black rounded-lg overflow-hidden">
                       <video
                         ref={videoRef}
                         autoPlay
@@ -168,7 +168,7 @@ const CameraCapture = ({ onCapture, label = "Live Photo", required = false }) =>
                         type="button"
                         onClick={capturePhoto}
                         disabled={!isCameraReady}
-                        className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="w-full md:w-auto px-6 py-4 md:py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg md:text-base"
                       >
                         <FiCamera size={20} />
                         Capture Photo
@@ -177,18 +177,18 @@ const CameraCapture = ({ onCapture, label = "Live Photo", required = false }) =>
                   </>
                 ) : (
                   <>
-                    <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                    <div className="relative aspect-[4/3] md:aspect-video bg-black rounded-lg overflow-hidden">
                       <img
                         src={capturedImage}
                         alt="Captured"
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <div className="flex justify-center gap-4">
+                    <div className="flex flex-col md:flex-row justify-center gap-3 md:gap-4">
                       <button
                         type="button"
                         onClick={retakePhoto}
-                        className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center gap-2"
+                        className="w-full md:w-auto px-4 py-3 md:py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center gap-2 text-lg md:text-base"
                       >
                         <FiRefreshCw />
                         Retake
@@ -196,7 +196,7 @@ const CameraCapture = ({ onCapture, label = "Live Photo", required = false }) =>
                       <button
                         type="button"
                         onClick={confirmPhoto}
-                        className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                        className="w-full md:w-auto px-4 py-3 md:py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center justify-center gap-2 text-lg md:text-base"
                       >
                         <FiCheck />
                         Use This Photo

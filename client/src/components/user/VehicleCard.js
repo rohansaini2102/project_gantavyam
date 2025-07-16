@@ -34,7 +34,7 @@ const VehicleCard = ({
       className={`
         relative p-4 rounded-2xl border-2 transition-all duration-200 cursor-pointer
         ${selected 
-          ? 'border-blue-500 bg-blue-50 shadow-md' 
+          ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200' 
           : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
         }
         ${!available ? 'opacity-50 cursor-not-allowed' : ''}

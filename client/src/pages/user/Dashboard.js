@@ -402,12 +402,28 @@ const UserDashboard = () => {
         const metroOnly = locations.filter(loc => loc.type === 'metro');
         setMetroStations(metroOnly);
         
+        // Auto-select fixed pickup location
+        const fixedLocation = "Hauz Khas Metro Gate No 1";
+        const fixedLocationData = locations.find(loc => loc.name === fixedLocation);
+        
+        if (fixedLocationData) {
+          setSelectedStation(fixedLocation);
+          setPickupSearchQuery(fixedLocation);
+          console.log('[UserDashboard] 🎯 Auto-selected fixed pickup location:', fixedLocation);
+        } else {
+          console.warn('[UserDashboard] ⚠️ Fixed location not found in API response:', fixedLocation);
+          // Set it anyway as the backend should handle it
+          setSelectedStation(fixedLocation);
+          setPickupSearchQuery(fixedLocation);
+        }
+        
         console.log('[UserDashboard] Location summary:', {
           total: locations.length,
           metro: byType.metro?.length || 0,
           railway: byType.railway?.length || 0,
           airport: byType.airport?.length || 0,
-          bus_terminal: byType.bus_terminal?.length || 0
+          bus_terminal: byType.bus_terminal?.length || 0,
+          autoSelected: fixedLocation
         });
       } catch (error) {
         console.error('[UserDashboard] Error loading pickup locations:', error);
@@ -568,6 +584,28 @@ const UserDashboard = () => {
           users.getRideHistory(1, 5).then(response => {
             setRideHistory(response.data?.rideHistory || []);
           });
+        },
+        
+        onOTPVerificationSuccess: (data) => {
+          console.log('[UserDashboard] OTP verification success:', data);
+          setBookingError('');
+          
+          // Update ride status based on verification response  
+          const newStatus = data.status || data.rideStatus;
+          if (newStatus === 'ride_started') {
+            setActiveRide(prev => ({ ...prev, status: 'ride_started' }));
+            setShowOTP({ type: 'end', otp: data.endOTP || activeRide?.endOTP });
+            setBookingError('✅ Ride started! Driver is on the way.');
+          } else if (newStatus === 'ride_ended' || newStatus === 'completed') {
+            setActiveRide(prev => ({ ...prev, status: newStatus }));
+            setShowOTP(null);
+            setBookingError('✅ Ride completed! Payment will be processed shortly.');
+          }
+        },
+        
+        onOTPVerificationError: (error) => {
+          console.error('[UserDashboard] OTP verification error:', error);
+          setBookingError(`❌ OTP Error: ${error.message || 'Verification failed'}`);
         }
       });
 
@@ -692,13 +730,36 @@ const UserDashboard = () => {
 
   // Book ride
   const bookRide = async () => {
+    console.log('[UserDashboard] bookRide called', {
+      fareEstimates: !!fareEstimates,
+      vehicleType,
+      selectedStation,
+      dropLocation,
+      dropCoordinates,
+      socketConnected
+    });
+    
     if (!fareEstimates || !vehicleType) {
+      console.log('[UserDashboard] ❌ Missing fare estimates or vehicle type');
       setBookingError('Please calculate fare first and select vehicle type');
+      return;
+    }
+    
+    if (!selectedStation) {
+      console.log('[UserDashboard] ❌ No pickup station selected');
+      setBookingError('Please select pickup station');
+      return;
+    }
+    
+    if (!dropLocation || !dropCoordinates) {
+      console.log('[UserDashboard] ❌ Missing drop location or coordinates');
+      setBookingError('Please select drop location');
       return;
     }
     
     // Check authentication before making API call
     if (!checkAuthBeforeApiCall()) {
+      console.log('[UserDashboard] ❌ Authentication check failed');
       return;
     }
     
@@ -740,17 +801,25 @@ const UserDashboard = () => {
       setDirections(null);
       
     } catch (error) {
-      console.error('[UserDashboard] Error booking ride:', error);
+      console.error('[UserDashboard] Error booking ride:', {
+        error,
+        message: error.message,
+        status: error.status,
+        response: error.response,
+        data: error.response?.data
+      });
       
       // Handle authentication errors specifically
-      if (error.status === 401) {
+      if (error.status === 401 || error.response?.status === 401) {
         console.log('[UserDashboard] 401 error - token invalid, redirecting to login');
         setBookingError('Session expired. Please login again.');
         localStorage.removeItem('userToken');
         localStorage.removeItem('user');
         setTimeout(() => navigate('/user/login'), 2000);
       } else {
-        setBookingError(error.error || 'Failed to book ride. Please try again.');
+        const errorMessage = error.response?.data?.error || error.error || error.message || 'Failed to book ride. Please try again.';
+        console.log('[UserDashboard] Setting booking error:', errorMessage);
+        setBookingError(errorMessage);
       }
     } finally {
       setIsBooking(false);

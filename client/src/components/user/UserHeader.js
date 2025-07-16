@@ -5,6 +5,10 @@ const UserHeader = ({
   user, 
   socketConnected = false,
   onLogout,
+  onViewChange,
+  currentView = 'booking',
+  onMobileMenuToggle,
+  isMobile = false,
   className = ''
 }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -26,6 +30,16 @@ const UserHeader = ({
         <div className="flex items-center justify-between">
           {/* Logo & Brand */}
           <div className="flex items-center space-x-4">
+            {isMobile && onMobileMenuToggle && (
+              <button
+                onClick={onMobileMenuToggle}
+                className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors lg:hidden"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">G</span>
@@ -137,7 +151,9 @@ const UserHeader = ({
                       <button
                         onClick={() => {
                           setShowProfileMenu(false);
-                          // Navigate to ride history
+                          if (onViewChange) {
+                            onViewChange('history');
+                          }
                         }}
                         className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-3"
                       >
@@ -194,6 +210,47 @@ const UserHeader = ({
               )}
             </div>
           </div>
+        </div>
+      </div>
+      
+      {/* Navigation Tabs */}
+      <div className="border-t border-gray-200">
+        <div className="px-6">
+          <nav className="flex space-x-8">
+            <button
+              onClick={() => onViewChange && onViewChange('booking')}
+              className={`
+                py-3 px-1 border-b-2 font-medium text-sm transition-colors
+                ${currentView === 'booking' 
+                  ? 'border-blue-500 text-blue-600' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+              `}
+            >
+              Book Ride
+            </button>
+            <button
+              onClick={() => onViewChange && onViewChange('active')}
+              className={`
+                py-3 px-1 border-b-2 font-medium text-sm transition-colors
+                ${currentView === 'active' 
+                  ? 'border-blue-500 text-blue-600' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+              `}
+            >
+              Active Ride
+            </button>
+            <button
+              onClick={() => onViewChange && onViewChange('history')}
+              className={`
+                py-3 px-1 border-b-2 font-medium text-sm transition-colors
+                ${currentView === 'history' 
+                  ? 'border-blue-500 text-blue-600' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+              `}
+            >
+              Ride History
+            </button>
+          </nav>
         </div>
       </div>
     </header>

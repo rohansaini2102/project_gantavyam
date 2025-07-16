@@ -229,8 +229,10 @@ const DriverSignup = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 py-8">
-      <div className="w-full max-w-2xl bg-white rounded-lg shadow-lg p-8 mb-4">
+    <div className="min-h-screen bg-gray-100 md:flex md:flex-col md:items-center md:justify-center">
+      {/* Mobile: Full width with safe padding, Desktop: Centered */}
+      <div className="w-full md:max-w-2xl bg-white md:rounded-lg md:shadow-lg md:mb-4">
+        <div className="p-4 md:p-8 pb-safe-area-inset-bottom">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-blue-700 mb-2">Welcome to GANTAVYAM</h1>
           <h2 className="text-xl font-semibold text-orange-500">Driver Signup</h2>
@@ -239,12 +241,12 @@ const DriverSignup = () => {
           </p>
         </div>
         {/* Stepper */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-6 md:mb-8 overflow-x-auto">
           {steps.map((step, idx) => (
-            <div key={step.key} className="flex-1 flex flex-col items-center">
-              <div className={`flex items-center justify-center w-10 h-10 rounded-full text-2xl mb-1 border-2 ${activeSection === step.key ? 'bg-sky-400 text-white border-sky-400' : 'bg-gray-200 text-gray-400 border-gray-300'}`}>{step.icon}</div>
-              <span className={`text-xs font-semibold ${activeSection === step.key ? 'text-sky-600' : 'text-gray-400'}`}>{step.label}</span>
-              {idx < steps.length - 1 && <div className="w-full h-1 bg-gray-200 mt-2" />}
+            <div key={step.key} className="flex-1 flex flex-col items-center min-w-0 px-1">
+              <div className={`flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full text-lg md:text-2xl mb-1 border-2 ${activeSection === step.key ? 'bg-sky-400 text-white border-sky-400' : 'bg-gray-200 text-gray-400 border-gray-300'}`}>{step.icon}</div>
+              <span className={`text-xs font-semibold text-center ${activeSection === step.key ? 'text-sky-600' : 'text-gray-400'}`}>{step.label}</span>
+              {idx < steps.length - 1 && <div className="hidden md:block w-full h-1 bg-gray-200 mt-2" />}
             </div>
           ))}
         </div>
@@ -312,7 +314,7 @@ const DriverSignup = () => {
               />
             </div>
             <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('bank')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Next</button>
+              <button type="button" onClick={() => changeSection('bank')} className="w-full md:w-auto px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Next</button>
             </div>
           </div>
           {/* Bank Details Section */}
@@ -336,9 +338,9 @@ const DriverSignup = () => {
                 <input type="text" name="accountHolderName" value={formData.accountHolderName} onChange={handleChange} required placeholder="Enter account holder name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 text-lg" />
               </div>
             </div>
-            <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('personal')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
-              <button type="button" onClick={() => changeSection('license')} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition">Next</button>
+            <div className="flex flex-col md:flex-row justify-center gap-4 mt-6">
+              <button type="button" onClick={() => changeSection('personal')} className="w-full md:w-auto px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
+              <button type="button" onClick={() => changeSection('license')} className="w-full md:w-auto px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition">Next</button>
             </div>
           </div>
           {/* License and Certificates Section */}
@@ -394,9 +396,9 @@ const DriverSignup = () => {
                 required={false}
               />
             </div>
-            <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('bank')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
-              <button type="button" onClick={() => changeSection('security')} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition">Next</button>
+            <div className="flex flex-col md:flex-row justify-center gap-4 mt-6">
+              <button type="button" onClick={() => changeSection('bank')} className="w-full md:w-auto px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
+              <button type="button" onClick={() => changeSection('security')} className="w-full md:w-auto px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition">Next</button>
             </div>
           </div>
           {/* Security Section */}
@@ -452,16 +454,17 @@ const DriverSignup = () => {
                 </div>
               </div>
             )}
-            <div className="flex justify-center gap-4 mt-6">
-              <button type="button" onClick={() => changeSection('license')} className="px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
-              <button type="submit" disabled={loading || compressing} className="px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition disabled:bg-gray-400 disabled:cursor-not-allowed">
+            <div className="flex flex-col md:flex-row justify-center gap-4 mt-6">
+              <button type="button" onClick={() => changeSection('license')} className="w-full md:w-auto px-8 py-3 bg-sky-400 text-black rounded-lg hover:bg-black hover:text-white font-semibold text-lg transition">Back</button>
+              <button type="submit" disabled={loading || compressing} className="w-full md:w-auto px-8 py-3 bg-black text-white rounded-lg hover:bg-sky-400 hover:text-black font-semibold text-lg transition disabled:bg-gray-400 disabled:cursor-not-allowed">
                 {compressing ? `Compressing... (${compressionProgress}%)` : loading ? `Uploading... (${uploadProgress}%)` : 'Sign Up'}
               </button>
             </div>
           </div>
         </form>
+        </div>
       </div>
-      <div className="text-center text-gray-500 text-xs mt-2">&copy; 2025 GANTAVYAM. All rights reserved.</div>
+      <div className="text-center text-gray-500 text-xs p-4 md:mt-2">&copy; 2025 GANTAVYAM. All rights reserved.</div>
     </div>
   );
 };

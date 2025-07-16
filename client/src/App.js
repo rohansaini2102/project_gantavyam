@@ -17,6 +17,7 @@ import RideManagement from './pages/admin/RideManagement';
 import BoothManagement from './pages/admin/BoothManagement';
 // Driver
 import DriverDashboard from './pages/driver/Dashboard';
+import NewDriverDashboard from './pages/driver/NewDashboard';
 import DriverLogin from './pages/driver/Login';
 import DriverSignup from './pages/driver/Signup';
 import DriverProfile from './pages/driver/Profile';
@@ -69,7 +70,8 @@ function App() {
         <Route path="/user/login" element={<UserLogin />} />
         <Route path="/user/dashboard" element={<NewUserDashboard />} />
         <Route path="/user/dashboard-old" element={<UserDashboard />} />
-        <Route path="/driver/dashboard" element={<DriverDashboard />} />
+        <Route path="/driver/dashboard" element={<NewDriverDashboard />} />
+        <Route path="/driver/dashboard-old" element={<DriverDashboard />} />
         <Route path="/driver/profile/:id" element={<DriverProfile />} />
         <Route path="/user/forgot-password" element={<ForgotPassword />} />
         <Route path="/driver/pending" element={<PendingApproval />} />

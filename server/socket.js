@@ -142,10 +142,13 @@ const initializeSocket = (server) => {
       try {
         const { metroBooth, location, vehicleType } = data;
         
+        // Use fixed pickup location if not provided
+        const fixedMetroBooth = metroBooth || "Hauz Khas Metro Gate No 1";
+        
         // Update driver status
         await Driver.findByIdAndUpdate(socket.user._id, {
           isOnline: true,
-          currentMetroBooth: metroBooth,
+          currentMetroBooth: fixedMetroBooth,
           location: {
             type: 'Point',
             coordinates: [location.lng, location.lat],
@@ -156,7 +159,7 @@ const initializeSocket = (server) => {
         });
         
         // Update metro station online drivers count
-        const metroStation = await MetroStation.findOne({ name: metroBooth });
+        const metroStation = await MetroStation.findOne({ name: fixedMetroBooth });
         if (metroStation) {
           await metroStation.incrementOnlineDrivers();
         }
@@ -167,7 +170,7 @@ const initializeSocket = (server) => {
         const driverSpecificRoom = `driver_${socket.user._id}`;
         const inDriverSpecificRoom = rooms.includes(driverSpecificRoom);
         
-        console.log(`✅ Driver ${socket.user._id} is now online at ${metroBooth} with ${vehicleType}`);
+        console.log(`✅ Driver ${socket.user._id} is now online at ${fixedMetroBooth} with ${vehicleType}`);
         console.log(`🔍 Driver socket room status:`);
         console.log(`  - Driver ID: ${socket.user._id}`);
         console.log(`  - Socket rooms: ${rooms.join(', ')}`);
@@ -175,7 +178,7 @@ const initializeSocket = (server) => {
         console.log(`  - In '${driverSpecificRoom}' room: ${inDriverSpecificRoom}`);
         
         logRideEvent(`DRIVER-${socket.user._id}`, 'driver_online', {
-          metroBooth,
+          metroBooth: fixedMetroBooth,
           vehicleType,
           location,
           roomStatus: { inDriversRoom, inDriverSpecificRoom, allRooms: rooms }
@@ -185,7 +188,7 @@ const initializeSocket = (server) => {
         notifyAdmins('driverOnline', {
           driverId: socket.user._id,
           driverName: `Driver ${socket.user._id}`,
-          metroBooth,
+          metroBooth: fixedMetroBooth,
           vehicleType,
           location,
           timestamp: new Date().toISOString()
@@ -193,7 +196,7 @@ const initializeSocket = (server) => {
         
         socket.emit('driverOnlineConfirmed', { 
           success: true,
-          metroBooth,
+          metroBooth: fixedMetroBooth,
           vehicleType,
           message: 'You are now online and ready to accept rides',
           roomStatus: {
@@ -270,44 +273,23 @@ const initializeSocket = (server) => {
           return;
         }
         
-        // Find online drivers with matching vehicle type at the pickup metro station
+        // Find ALL online drivers (no vehicle type filtering)
         const matchingDrivers = await Driver.find({
-          isOnline: true,
-          vehicleType: data.vehicleType,
-          currentMetroBooth: data.pickupStation
+          isOnline: true
         });
         
-        console.log(`🚗 Found ${matchingDrivers.length} online ${data.vehicleType} drivers at ${data.pickupStation}`);
+        console.log(`🚗 Found ${matchingDrivers.length} online drivers (all vehicle types)`);
         
         if (matchingDrivers.length === 0) {
-          console.log('⚠️ No matching drivers found - broadcasting to all online drivers with vehicle type');
-          // Fallback: broadcast to all online drivers with matching vehicle type
-          const fallbackDrivers = await Driver.find({
-            isOnline: true,
-            vehicleType: data.vehicleType
-          });
-          
-          fallbackDrivers.forEach(driver => {
-            const driverSocketId = `driver_${driver._id}`;
-            io.to(driverSocketId).emit('newRideRequest', {
-              _id: rideRequest._id.toString(),
-              rideId: rideRequest.rideId,
-              userId: rideRequest.userId,
-              userName: rideRequest.userName,
-              userPhone: rideRequest.userPhone,
-              pickupLocation: rideRequest.pickupLocation,
-              dropLocation: rideRequest.dropLocation,
-              vehicleType: rideRequest.vehicleType,
-              fare: rideRequest.estimatedFare,
-              distance: rideRequest.distance,
-              status: 'pending',
-              timestamp: rideRequest.timestamp.toISOString()
-            });
-          });
-          
-          console.log(`📢 Fallback: Broadcasted to ${fallbackDrivers.length} drivers`);
+          console.log('⚠️ No online drivers found');
           return;
         }
+        
+        // Since we removed vehicle type filtering, fallback logic is no longer needed
+        // All online drivers will receive ride requests regardless of vehicle type
+        const fallbackDrivers = matchingDrivers;
+          
+          // This fallback is no longer needed as we broadcast to all drivers by default
         
         // Prepare the data to send to matching drivers
         const rideRequestData = {
@@ -508,10 +490,27 @@ const initializeSocket = (server) => {
           console.log('📋 Queue notifications sent:', rideRequest.queueNumber);
         }
         
-        // Notify other drivers that this ride is taken
-        socket.broadcast.to('drivers').emit('rideRequestClosed', {
+        // Notify ALL drivers that this ride is taken (including the one who accepted)
+        const rideClosedData = {
           rideId: rideRequest._id.toString(),
-          uniqueRideId: rideRequest.rideId
+          uniqueRideId: rideRequest.rideId,
+          acceptedBy: driverId,
+          reason: 'accepted'
+        };
+        
+        console.log('📢 Broadcasting rideRequestClosed to all drivers:', rideClosedData);
+        
+        // Broadcast to the general drivers room
+        io.to('drivers').emit('rideRequestClosed', rideClosedData);
+        
+        // Also broadcast to individual driver rooms to ensure delivery
+        const onlineDrivers = await Driver.find({ isOnline: true });
+        console.log(`📢 Sending rideRequestClosed to ${onlineDrivers.length} individual driver rooms`);
+        
+        onlineDrivers.forEach(driver => {
+          const driverSocketId = `driver_${driver._id}`;
+          io.to(driverSocketId).emit('rideRequestClosed', rideClosedData);
+          console.log(`  ✅ Sent rideRequestClosed to ${driverSocketId}`);
         });
         
         // Notify admins of ride acceptance
@@ -1332,24 +1331,23 @@ const broadcastRideRequest = async (data) => {
       estimatedFare: rideRequest.estimatedFare
     });
     
-    // Step 1: Find online drivers with matching vehicle type at the pickup metro station
-    // Use flexible matching to handle partial names and case insensitivity
+    // Step 1: Find ALL online drivers (no vehicle type filtering)
     const pickupStation = data.pickupStation.toLowerCase();
     
-    // First, check if there are ANY online drivers
+    // Get all online drivers regardless of vehicle type
     const totalOnlineDrivers = await Driver.countDocuments({ isOnline: true });
     console.log(`📊 Total online drivers: ${totalOnlineDrivers}`);
     
     const allDriversWithVehicleType = await Driver.find({
-      isOnline: true,
-      vehicleType: data.vehicleType
+      isOnline: true
+      // Removed vehicle type filtering - all drivers can see all requests
     });
     
-    console.log(`📊 Online drivers with vehicle type '${data.vehicleType}': ${allDriversWithVehicleType.length}`);
+    console.log(`📊 All online drivers: ${allDriversWithVehicleType.length}`);
     
     if (allDriversWithVehicleType.length === 0) {
-      console.log('❌ No online drivers found with matching vehicle type');
-      return { success: false, error: `No online drivers with vehicle type '${data.vehicleType}'` };
+      console.log('❌ No online drivers found');
+      return { success: false, error: 'No online drivers available' };
     }
     
     // Log available drivers and their booths
@@ -1400,18 +1398,16 @@ const broadcastRideRequest = async (data) => {
       return false;
     });
     
-    console.log(`🚗 Found ${matchingDrivers.length} online ${data.vehicleType} drivers matching station "${data.pickupStation}"`);
+    console.log(`🚗 Found ${matchingDrivers.length} drivers matching station "${data.pickupStation}"`);
     console.log('📍 Driver booth matching details:');
     allDriversWithVehicleType.forEach(driver => {
       const isMatch = matchingDrivers.includes(driver);
       console.log(`  ${isMatch ? '✅' : '❌'} Driver ${driver._id}: booth="${driver.currentMetroBooth}" ${isMatch ? '(MATCHED)' : ''}`);
     });
     
-    // Step 2: Check all online drivers to understand the issue
-    const allOnlineDrivers = await Driver.find({ isOnline: true });
-    console.log(`📊 Total online drivers: ${allOnlineDrivers.length}`);
-    
-    allOnlineDrivers.forEach(driver => {
+    // Note: We no longer filter by vehicle type - all drivers get all requests
+    console.log('📊 All online drivers will receive this request regardless of vehicle type');
+    allDriversWithVehicleType.forEach(driver => {
       console.log(`  Driver ${driver._id}: ${driver.fullName}, Vehicle: ${driver.vehicleType}, Metro: ${driver.currentMetroBooth}`);
     });
     
@@ -1419,32 +1415,12 @@ const broadcastRideRequest = async (data) => {
     const socketDriversRoom = io.sockets.adapter.rooms.get('drivers');
     console.log(`🔌 Drivers in socket room: ${socketDriversRoom ? socketDriversRoom.size : 0}`);
     
-    let targetDrivers = [];
-    let broadcastMethod = '';
+    // Always broadcast to ALL online drivers (no filtering by vehicle type or location)
+    let targetDrivers = allDriversWithVehicleType; // This now contains all online drivers
+    let broadcastMethod = 'all_drivers';
     
-    if (matchingDrivers.length > 0) {
-      // Preferred: Send to drivers at the specific metro station with matching vehicle type
-      targetDrivers = matchingDrivers;
-      broadcastMethod = 'exact_match';
-      console.log('✅ Using exact match (station + vehicle type)');
-    } else {
-      // Fallback 1: broadcast to all online drivers with matching vehicle type
-      const fallbackDrivers = await Driver.find({
-        isOnline: true,
-        vehicleType: data.vehicleType
-      });
-      
-      if (fallbackDrivers.length > 0) {
-        targetDrivers = fallbackDrivers;
-        broadcastMethod = 'vehicle_match';
-        console.log('⚠️ Using vehicle type fallback');
-      } else {
-        // Fallback 2: broadcast to ALL online drivers
-        targetDrivers = allOnlineDrivers;
-        broadcastMethod = 'all_online';
-        console.log('⚠️⚠️ Using all online drivers fallback');
-      }
-    }
+    console.log('✅ Broadcasting to ALL online drivers (no vehicle type filtering)');
+    console.log(`📢 Will broadcast to ${targetDrivers.length} drivers`);
     
     // Prepare the ride request data
     const rideRequestData = {

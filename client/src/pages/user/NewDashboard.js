@@ -11,6 +11,8 @@ import UserHeader from '../../components/user/UserHeader';
 import BookingPanel from '../../components/user/BookingPanel';
 import ActiveRideTracker from '../../components/user/ActiveRideTracker';
 import BottomSheet from '../../components/user/BottomSheet';
+import RideHistory from '../../components/user/RideHistory';
+import ResponsiveLayout from '../../components/user/ResponsiveLayout';
 
 // Utility function to check if token is valid
 const isTokenValid = (token, onExpiringSoon = null) => {
@@ -81,10 +83,19 @@ const NewUserDashboard = () => {
   const [isCancelling, setIsCancelling] = useState(false);
 
   // UI state
-  const [currentView, setCurrentView] = useState('booking'); // booking, active, history
+  const [currentView, setCurrentView] = useState('booking'); // booking, active, history, profile
   const [showMobileBottomSheet, setShowMobileBottomSheet] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [bookingStep, setBookingStep] = useState(1); // Track current booking step for mobile layout
 
   console.log('[NewUserDashboard] Component mounted');
+
+  // Window resize listener
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Authentication check
   useEffect(() => {
@@ -476,6 +487,11 @@ const NewUserDashboard = () => {
     setVehicleType('');
     setFareEstimates(null);
   };
+  
+  const handleViewChange = (view) => {
+    console.log('[NewUserDashboard] Changing view to:', view);
+    setCurrentView(view);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('userToken');
@@ -498,6 +514,8 @@ const NewUserDashboard = () => {
   const renderSidebarContent = () => {
     console.log('[NewUserDashboard] Rendering sidebar - currentView:', currentView, 'activeRide:', !!activeRide);
     
+    const isMobile = windowWidth < 768;
+    
     if (currentView === 'active' && activeRide) {
       return (
         <ActiveRideTracker
@@ -506,6 +524,15 @@ const NewUserDashboard = () => {
           onCancelRide={handleCancelRide}
           canCancelRide={canCancelRide}
           onReturnToBooking={handleReturnToBooking}
+        />
+      );
+    }
+    
+    if (currentView === 'history') {
+      return (
+        <RideHistory 
+          isMobile={isMobile} 
+          onViewChange={handleViewChange}
         />
       );
     }
@@ -524,6 +551,7 @@ const NewUserDashboard = () => {
         onBookRide={handleBookRide}
         isBooking={isBooking}
         socketConnected={socketConnected}
+        onStepChange={setBookingStep}
       />
     );
   };
@@ -603,9 +631,14 @@ const NewUserDashboard = () => {
   }
 
   return (
-    <UserLayout
+    <ResponsiveLayout
       sidebar={renderSidebarContent()}
       map={renderMap()}
+      currentView={currentView}
+      onViewChange={handleViewChange}
+      activeRide={activeRide}
+      user={user}
+      bookingStep={bookingStep}
     >
       {/* Error Messages */}
       {bookingError && (
@@ -666,7 +699,7 @@ const NewUserDashboard = () => {
           </div>
         </div>
       )}
-    </UserLayout>
+    </ResponsiveLayout>
   );
 };
 
