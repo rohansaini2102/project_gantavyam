@@ -62,16 +62,16 @@ const DriverStatsCards = ({
   ];
 
   return (
-    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${className}`}>
+    <div className={`grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4 ${className}`}>
       {stats.map((stat, index) => (
-        <div key={index} className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <h4 className="text-sm font-medium text-gray-600 mb-2">{stat.title}</h4>
-              <p className={`text-2xl font-bold ${stat.textColor}`}>{stat.value}</p>
-            </div>
-            <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-white`}>
+        <div key={index} className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4">
+          <div className="flex flex-col items-center text-center space-y-2">
+            <div className={`w-10 h-10 sm:w-12 sm:h-12 ${stat.color} rounded-xl flex items-center justify-center text-white`}>
               {stat.icon}
+            </div>
+            <div className="flex-1">
+              <h4 className="text-xs sm:text-sm font-semibold text-gray-600 mb-1">{stat.title}</h4>
+              <p className={`text-lg sm:text-xl font-bold ${stat.textColor} truncate`}>{stat.value}</p>
             </div>
           </div>
         </div>

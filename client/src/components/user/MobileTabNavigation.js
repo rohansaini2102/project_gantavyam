@@ -62,7 +62,7 @@ const MobileTabNavigation = ({
     style={{
       paddingBottom: 'env(safe-area-inset-bottom, 0px)'
     }}>
-      <div className="flex items-center justify-around px-2 py-3">
+      <div className="flex items-center justify-around px-4 py-3">
         {tabs.map((tab) => {
           const isActive = currentView === tab.id;
           
@@ -105,7 +105,7 @@ const MobileTabNavigation = ({
               
               {/* Active indicator */}
               {isActive && (
-                <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-current rounded-full" />
+                <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-0.5 bg-current rounded-full" />
               )}
             </button>
           );

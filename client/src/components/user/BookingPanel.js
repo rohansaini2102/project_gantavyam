@@ -197,10 +197,10 @@ const BookingPanel = ({
         </div>
       </div>
 
-      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <div className="p-0 md:p-6 space-y-4 md:space-y-6">
         {/* Step 1: Locations */}
         {currentStep === 1 && (
-          <div className="space-y-4">
+          <div className="space-y-4 p-4 md:p-0 pb-24 md:pb-0">
             {/* Pickup Location */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -284,27 +284,29 @@ const BookingPanel = ({
             </div>
 
             {/* Continue Button */}
-            <button
-              onClick={() => canProceedToVehicles && setCurrentStep(2)}
-              disabled={!canProceedToVehicles}
-              className={`
-                w-full py-3 rounded-lg font-medium transition-colors
-                ${canProceedToVehicles
-                  ? 'bg-blue-500 text-white hover:bg-blue-600'
-                  : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                }
-              `}
-            >
-              {!selectedPickup ? 'Select pickup location' :
-               !dropLocation ? 'Enter drop location' :
-               'Continue to Vehicle Selection'}
-            </button>
+            <div className="mt-6">
+              <button
+                onClick={() => canProceedToVehicles && setCurrentStep(2)}
+                disabled={!canProceedToVehicles}
+                className={`
+                  w-full py-4 rounded-lg font-semibold transition-colors text-lg
+                  ${canProceedToVehicles
+                    ? 'bg-black text-white hover:bg-gray-800 shadow-lg'
+                    : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  }
+                `}
+              >
+                {!selectedPickup ? 'Select pickup location' :
+                 !dropLocation ? 'Enter drop location' :
+                 'Choose Vehicle'}
+              </button>
+            </div>
           </div>
         )}
 
         {/* Step 2: Vehicle Selection */}
         {currentStep === 2 && (
-          <div className="space-y-4">
+          <div className="space-y-4 p-4 md:p-0 pb-24 md:pb-0">
             <h3 className="text-lg font-semibold text-gray-900">Choose a Vehicle</h3>
             
             <div className="space-y-3">
@@ -321,33 +323,36 @@ const BookingPanel = ({
               ))}
             </div>
 
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setCurrentStep(1)}
-                className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-              >
-                Back
-              </button>
-              <button
-                onClick={() => vehicleType && setCurrentStep(3)}
-                disabled={!vehicleType}
-                className={`
-                  flex-1 py-3 rounded-lg font-medium transition-colors
-                  ${vehicleType
-                    ? 'bg-blue-500 text-white hover:bg-blue-600'
-                    : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                  }
-                `}
-              >
-                {!vehicleType ? 'Select a vehicle' : 'Continue to Booking'}
-              </button>
+            {/* Navigation Buttons */}
+            <div className="mt-6">
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setCurrentStep(1)}
+                  className="flex-1 py-4 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => vehicleType && setCurrentStep(3)}
+                  disabled={!vehicleType}
+                  className={`
+                    flex-1 py-4 rounded-lg font-semibold transition-colors text-lg
+                    ${vehicleType
+                      ? 'bg-black text-white hover:bg-gray-800 shadow-lg'
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    }
+                  `}
+                >
+                  {!vehicleType ? 'Select a vehicle' : 'Continue'}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
         {/* Step 3: Confirm Booking */}
         {currentStep === 3 && (
-          <div className="space-y-6">
+          <div className="space-y-6 p-4 md:p-0 pb-24 md:pb-0">
             <h3 className="text-lg font-semibold text-gray-900">Confirm Your Booking</h3>
 
             {/* Trip Summary */}
@@ -415,30 +420,32 @@ const BookingPanel = ({
             )}
 
             {/* Book Button */}
-            <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-3 pb-6 md:pb-0">
-              <button
-                onClick={() => setCurrentStep(2)}
-                className="w-full md:flex-1 py-4 md:py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-              >
-                Back
-              </button>
-              <button
-                onClick={onBookRide}
-                disabled={!canBookRide || isBooking}
-                className={`
-                  w-full md:flex-1 py-4 md:py-3 rounded-lg font-medium transition-colors text-lg md:text-base
-                  ${canBookRide && !isBooking
-                    ? socketConnected 
-                      ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg'
-                      : 'bg-orange-500 text-white hover:bg-orange-600 shadow-lg'
-                    : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                  }
-                `}
-              >
-                {isBooking ? 'Booking...' : 
-                 !socketConnected ? 'Book Ride (Offline Mode)' :
-                 'Book Ride'}
-              </button>
+            <div className="mt-6">
+              <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-3">
+                <button
+                  onClick={() => setCurrentStep(2)}
+                  className="w-full md:flex-1 py-4 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={onBookRide}
+                  disabled={!canBookRide || isBooking}
+                  className={`
+                    w-full md:flex-1 py-4 rounded-lg font-semibold transition-colors text-lg
+                    ${canBookRide && !isBooking
+                      ? socketConnected 
+                        ? 'bg-black text-white hover:bg-gray-800 shadow-lg'
+                        : 'bg-orange-500 text-white hover:bg-orange-600 shadow-lg'
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    }
+                  `}
+                >
+                  {isBooking ? 'Booking...' : 
+                   !socketConnected ? 'Book Ride (Offline Mode)' :
+                   'Request Ride'}
+                </button>
+              </div>
             </div>
           </div>
         )}

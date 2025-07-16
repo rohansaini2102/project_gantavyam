@@ -876,145 +876,105 @@ Check console for detailed information.`);
   }
 
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      backgroundColor: '#f5f5f5', 
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' 
-    }}>
-      {/* Header */}
-      <header style={{
-        backgroundColor: '#000',
-        color: '#fff',
-        padding: '1rem 2rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Driver Dashboard</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span>Welcome, {driver.fullName || driver.name}</span>
-          <div style={{ 
-            padding: '0.25rem 0.5rem', 
-            borderRadius: '4px', 
-            fontSize: '0.8rem',
-            backgroundColor: socketConnected ? '#28a745' : '#dc3545'
-          }}>
-            {socketConnected ? '🟢 Connected' : '🔴 Disconnected'}
+    <div className="min-h-screen bg-gray-50 font-sans">
+      {/* Mobile Header */}
+      <header className="bg-black text-white">
+        <div className="px-4 py-3 flex items-center justify-between lg:px-6">
+          <div className="flex items-center space-x-3">
+            <h1 className="text-lg font-bold lg:text-xl">Driver Dashboard</h1>
+            <div className={`px-2 py-1 rounded text-xs font-medium ${
+              socketConnected ? 'bg-green-500' : 'bg-red-500'
+            }`}>
+              {socketConnected ? '🟢 Connected' : '🔴 Disconnected'}
+            </div>
           </div>
-          <button
-            onClick={toggleOnlineStatus}
-            disabled={!socketConnected}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: !socketConnected ? '#6c757d' : isOnline ? '#28a745' : '#6c757d',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: !socketConnected ? 'not-allowed' : 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            {isOnline ? 'ONLINE' : 'OFFLINE'}
-          </button>
-          <button 
-            onClick={handleDebugStatus}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: '#17a2b8',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              marginRight: '0.5rem'
-            }}
-          >
-            Debug
-          </button>
-          <button 
-            onClick={handleLogout}
-            style={{
-              padding: '0.5rem 1rem',
-              backgroundColor: '#ff4444',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Logout
-          </button>
+          
+          {/* Mobile Menu Button */}
+          <div className="flex items-center space-x-2 lg:hidden">
+            <button
+              onClick={toggleOnlineStatus}
+              disabled={!socketConnected}
+              className={`px-3 py-1 rounded text-sm font-bold transition-colors ${
+                !socketConnected ? 'bg-gray-500 cursor-not-allowed' : 
+                isOnline ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-600 hover:bg-gray-700'
+              }`}
+            >
+              {isOnline ? 'ONLINE' : 'OFFLINE'}
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="px-3 py-1 bg-red-500 hover:bg-red-600 rounded text-sm font-bold transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+          
+          {/* Desktop Header Controls */}
+          <div className="hidden lg:flex items-center space-x-4">
+            <span className="text-sm">Welcome, {driver.fullName || driver.name}</span>
+            <button
+              onClick={toggleOnlineStatus}
+              disabled={!socketConnected}
+              className={`px-4 py-2 rounded font-bold transition-colors ${
+                !socketConnected ? 'bg-gray-500 cursor-not-allowed' : 
+                isOnline ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-600 hover:bg-gray-700'
+              }`}
+            >
+              {isOnline ? 'ONLINE' : 'OFFLINE'}
+            </button>
+            <button 
+              onClick={handleDebugStatus}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded font-bold transition-colors"
+            >
+              Debug
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded font-bold transition-colors"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+      <main className="p-4 lg:p-6 max-w-7xl mx-auto">
         
         {/* Error Displays */}
         {statusError && (
-          <div style={{
-            backgroundColor: '#f8d7da',
-            color: '#721c24',
-            padding: '1rem',
-            borderRadius: '4px',
-            marginBottom: '2rem',
-            border: '1px solid #f5c6cb'
-          }}>
-            Status Error: {statusError}
+          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-4">
+            <strong>Status Error:</strong> {statusError}
           </div>
         )}
         
         {rideError && (
-          <div style={{
-            backgroundColor: '#f8d7da',
-            color: '#721c24',
-            padding: '1rem',
-            borderRadius: '4px',
-            marginBottom: '2rem',
-            border: '1px solid #f5c6cb'
-          }}>
-            Ride Error: {rideError}
+          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-4">
+            <strong>Ride Error:</strong> {rideError}
           </div>
         )}
 
         {/* Tab Navigation */}
-        <div style={{ 
-          display: 'flex', 
-          borderBottom: '2px solid #dee2e6', 
-          marginBottom: '2rem',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '8px 8px 0 0'
-        }}>
+        <div className="flex bg-gray-100 rounded-t-lg border-b-2 border-gray-200 mb-4 overflow-x-auto">
           <button
             onClick={() => handleTabChange('dashboard')}
-            style={{
-              padding: '1rem 2rem',
-              backgroundColor: activeTab === 'dashboard' ? '#007bff' : 'transparent',
-              color: activeTab === 'dashboard' ? '#fff' : '#007bff',
-              border: 'none',
-              borderRadius: '8px 0 0 0',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '1rem',
-              transition: 'all 0.3s ease'
-            }}
+            className={`flex-1 px-4 py-3 text-center font-bold transition-all duration-300 rounded-tl-lg ${
+              activeTab === 'dashboard' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-transparent text-blue-500 hover:bg-blue-50'
+            }`}
           >
-            🚗 Active Dashboard
+            <span className="text-sm lg:text-base">🚗 Active Dashboard</span>
           </button>
           <button
             onClick={() => handleTabChange('history')}
-            style={{
-              padding: '1rem 2rem',
-              backgroundColor: activeTab === 'history' ? '#007bff' : 'transparent',
-              color: activeTab === 'history' ? '#fff' : '#007bff',
-              border: 'none',
-              borderRadius: '0 8px 0 0',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '1rem',
-              transition: 'all 0.3s ease'
-            }}
+            className={`flex-1 px-4 py-3 text-center font-bold transition-all duration-300 rounded-tr-lg ${
+              activeTab === 'history' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-transparent text-blue-500 hover:bg-blue-50'
+            }`}
           >
-            📊 Ride History
+            <span className="text-sm lg:text-base">📊 Ride History</span>
           </button>
         </div>
 
@@ -1022,58 +982,47 @@ Check console for detailed information.`);
         {activeTab === 'dashboard' && (
           <>
             {/* Status Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '2rem' }}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
           
           {/* Driver Status & Configuration */}
-          <div style={{
-            backgroundColor: '#fff',
-            padding: '2rem',
-            borderRadius: '8px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
-          }}>
-            <h3 style={{ marginTop: 0, color: '#333' }}>Driver Status</h3>
+          <div className="bg-white p-4 lg:p-6 rounded-lg shadow-md col-span-1 lg:col-span-2 xl:col-span-1">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Driver Status</h3>
             
             {/* Current Status */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                <span style={{ 
-                  fontSize: '1.5rem', 
-                  fontWeight: 'bold',
-                  color: isOnline ? '#28a745' : '#6c757d'
-                }}>
+            <div className="mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
+                <span className={`text-xl font-bold ${
+                  isOnline ? 'text-green-500' : 'text-gray-500'
+                }`}>
                   {isOnline ? 'ONLINE' : 'OFFLINE'}
                 </span>
                 <button
                   onClick={toggleOnlineStatus}
                   disabled={!socketConnected}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: !socketConnected ? '#6c757d' : isOnline ? '#dc3545' : '#28a745',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: !socketConnected ? 'not-allowed' : 'pointer'
-                  }}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    !socketConnected ? 'bg-gray-500 cursor-not-allowed' : 
+                    isOnline ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+                  } text-white`}
                 >
                   {isOnline ? 'Go Offline' : 'Go Online'}
                 </button>
               </div>
               
               {driverLocation && (
-                <p style={{ color: '#666', fontSize: '0.9rem' }}>
+                <p className="text-gray-600 text-sm">
                   📍 Location: {driverLocation.lat.toFixed(4)}, {driverLocation.lng.toFixed(4)}
                 </p>
               )}
             </div>
 
             {/* Pickup Location Selection */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
                 Pickup Location:
               </label>
               
               {/* Location Type Filter */}
-              <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div className="flex flex-wrap gap-2 mb-3">
                 {[
                   { value: 'all', label: 'All Types', icon: '📍' },
                   { value: 'metro', label: 'Metro', icon: '🚇' },
@@ -1085,16 +1034,11 @@ Check console for detailed information.`);
                     key={filter.value}
                     onClick={() => setSelectedLocationFilter(filter.value)}
                     disabled={isOnline}
-                    style={{
-                      padding: '0.4rem 0.75rem',
-                      fontSize: '0.8rem',
-                      border: selectedLocationFilter === filter.value ? '2px solid #007bff' : '1px solid #ddd',
-                      borderRadius: '20px',
-                      backgroundColor: selectedLocationFilter === filter.value ? '#e3f2fd' : '#fff',
-                      color: selectedLocationFilter === filter.value ? '#1976d2' : '#666',
-                      cursor: isOnline ? 'not-allowed' : 'pointer',
-                      fontWeight: selectedLocationFilter === filter.value ? 'bold' : 'normal'
-                    }}
+                    className={`px-3 py-2 text-xs rounded-full font-medium transition-colors ${
+                      selectedLocationFilter === filter.value 
+                        ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
+                        : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                    } ${isOnline ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                   >
                     {filter.icon} {filter.label}
                   </button>
@@ -1102,41 +1046,18 @@ Check console for detailed information.`);
               </div>
 
               {pickupLocationsLoading && (
-                <div style={{
-                  padding: '0.75rem',
-                  border: '1px solid #bee5eb',
-                  borderRadius: '4px',
-                  backgroundColor: '#d1ecf1',
-                  color: '#0c5460',
-                  marginBottom: '0.5rem'
-                }}>
+                <div className="bg-blue-50 border border-blue-200 text-blue-800 px-3 py-2 rounded-lg mb-2">
                   🔄 Loading pickup locations...
                 </div>
               )}
               
               {pickupLocationsError && (
-                <div style={{
-                  padding: '0.75rem',
-                  border: '1px solid #f5c6cb',
-                  borderRadius: '4px',
-                  backgroundColor: '#f8d7da',
-                  color: '#721c24',
-                  marginBottom: '0.5rem'
-                }}>
+                <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg mb-2">
                   ⚠️ {pickupLocationsError}
                   {pickupLocationsError.includes('Failed') && (
                     <button
                       onClick={() => loadPickupLocations()}
-                      style={{
-                        marginLeft: '1rem',
-                        padding: '0.25rem 0.5rem',
-                        backgroundColor: '#007bff',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '0.8rem'
-                      }}
+                      className="ml-2 px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 transition-colors"
                     >
                       Retry
                     </button>
@@ -1145,7 +1066,7 @@ Check console for detailed information.`);
               )}
               
               {/* Searchable Pickup Location Input */}
-              <div style={{ position: 'relative' }}>
+              <div className="relative">
                 <input
                   type="text"
                   value={pickupSearchQuery}
@@ -1165,39 +1086,21 @@ Check console for detailed information.`);
                   }}
                   disabled={isOnline || pickupLocationsLoading}
                   placeholder={pickupLocationsLoading ? 'Loading locations...' : 'Search pickup location...'}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    fontSize: '1rem',
-                    backgroundColor: (isOnline || pickupLocationsLoading) ? '#f8f9fa' : '#fff'
-                  }}
+                  className={`w-full p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                    (isOnline || pickupLocationsLoading) ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'
+                  } border-gray-300`}
                 />
 
                 {/* Search Results Dropdown */}
                 {showPickupResults && pickupSearchQuery.trim() && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    backgroundColor: '#fff',
-                    border: '1px solid #ddd',
-                    borderTop: 'none',
-                    borderRadius: '0 0 4px 4px',
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                    zIndex: 9999,
-                    maxHeight: '300px',
-                    overflowY: 'auto'
-                  }}>
+                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 border-t-0 rounded-b-lg shadow-lg z-50 max-h-80 overflow-y-auto">
                     {(() => {
                       const results = searchPickupLocations(pickupSearchQuery);
                       const displayResults = results.slice(0, maxPickupResults);
                       
                       if (displayResults.length === 0) {
                         return (
-                          <div style={{ padding: '0.75rem', color: '#666', fontStyle: 'italic' }}>
+                          <div className="p-3 text-gray-500 italic text-sm">
                             No locations found
                           </div>
                         );
@@ -1209,31 +1112,25 @@ Check console for detailed information.`);
                             <div
                               key={location.id}
                               onClick={() => handlePickupSelect(location)}
-                              style={{
-                                padding: '0.75rem',
-                                borderBottom: index < displayResults.length - 1 ? '1px solid #eee' : 'none',
-                                backgroundColor: index === selectedPickupIndex ? '#f8f9fa' : '#fff',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
-                              }}
+                              className={`p-3 cursor-pointer flex items-center gap-2 hover:bg-gray-50 transition-colors ${
+                                index === selectedPickupIndex ? 'bg-gray-100' : 'bg-white'
+                              } ${index < displayResults.length - 1 ? 'border-b border-gray-200' : ''}`}
                               onMouseEnter={() => setSelectedPickupIndex(index)}
                             >
-                              <span style={{ fontSize: '1.2rem' }}>{getLocationIcon(location.type)}</span>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>
+                              <span className="text-lg">{getLocationIcon(location.type)}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-sm mb-1 truncate">
                                   {highlightText(location.name, pickupSearchQuery)}
                                 </div>
-                                <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                                <div className="text-xs text-gray-600 truncate">
                                   {highlightText(location.address || '', pickupSearchQuery)}
                                   {location.line && (
-                                    <span style={{ color: '#007bff', marginLeft: '0.5rem' }}>
+                                    <span className="text-blue-600 ml-2">
                                       {highlightText(location.line, pickupSearchQuery)} Line
                                     </span>
                                   )}
                                 </div>
-                                <div style={{ fontSize: '0.7rem', color: '#999', marginTop: '0.2rem' }}>
+                                <div className="text-xs text-gray-500 mt-1">
                                   {getLocationTypeLabel(location.type)}
                                 </div>
                               </div>
@@ -1241,26 +1138,11 @@ Check console for detailed information.`);
                           ))}
                           
                           {results.length > maxPickupResults && (
-                            <div style={{
-                              padding: '0.5rem 0.75rem',
-                              backgroundColor: '#f8f9fa',
-                              borderTop: '1px solid #eee',
-                              fontSize: '0.8rem',
-                              color: '#666',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center'
-                            }}>
+                            <div className="p-2 bg-gray-50 border-t border-gray-200 flex justify-between items-center text-xs text-gray-600">
                               <span>Showing {maxPickupResults} of {results.length} results</span>
                               <button
                                 onClick={() => setMaxPickupResults(prev => prev + 8)}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#007bff',
-                                  cursor: 'pointer',
-                                  fontSize: '0.8rem'
-                                }}
+                                className="text-blue-600 hover:text-blue-800 cursor-pointer"
                               >
                                 Show more
                               </button>
@@ -1275,7 +1157,7 @@ Check console for detailed information.`);
               
               {/* Location Stats */}
               {pickupLocations.length > 0 && !pickupLocationsLoading && (
-                <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>
+                <div className="text-xs text-gray-500 mt-2">
                   {pickupLocations.length} pickup locations available
                   {selectedLocationFilter !== 'all' && locationsByType[selectedLocationFilter] && (
                     <span> • {locationsByType[selectedLocationFilter].length} {selectedLocationFilter} locations</span>
@@ -1285,13 +1167,15 @@ Check console for detailed information.`);
             </div>
 
             {/* Vehicle Type Selection */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
                 Vehicle Type:
               </label>
-              <div style={{ display: 'flex', gap: '1rem' }}>
+              <div className="flex flex-wrap gap-3">
                 {['bike', 'auto', 'car'].map(type => (
-                  <label key={type} style={{ display: 'flex', alignItems: 'center', cursor: isOnline ? 'not-allowed' : 'pointer' }}>
+                  <label key={type} className={`flex items-center gap-2 ${
+                    isOnline ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                  }`}>
                     <input
                       type="radio"
                       name="vehicleType"
@@ -1299,9 +1183,11 @@ Check console for detailed information.`);
                       checked={vehicleType === type}
                       onChange={(e) => setVehicleType(e.target.value)}
                       disabled={isOnline}
-                      style={{ marginRight: '0.5rem' }}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500"
                     />
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                    <span className="text-sm font-medium text-gray-700">
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -1310,25 +1196,10 @@ Check console for detailed information.`);
 
           {/* Active Ride */}
           {activeRide && (
-            <div style={{
-              backgroundColor: '#e8f5e9',
-              padding: '2rem',
-              borderRadius: '8px',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-              borderLeft: '4px solid #28a745'
-            }}>
+            <div className="bg-green-50 border-l-4 border-green-500 p-4 lg:p-6 rounded-lg shadow-md col-span-1 lg:col-span-2">
               {/* Booth Ride Number - Prominent Display */}
               {activeRide.boothRideNumber && (
-                <div style={{
-                  backgroundColor: '#ffc107',
-                  color: '#000',
-                  padding: '1rem',
-                  borderRadius: '4px',
-                  textAlign: 'center',
-                  marginBottom: '1rem',
-                  fontSize: '1.2rem',
-                  fontWeight: 'bold'
-                }}>
+                <div className="bg-yellow-400 text-black px-4 py-3 rounded-lg text-center mb-4 text-lg font-bold">
                   Ride #{activeRide.boothRideNumber}
                 </div>
               )}

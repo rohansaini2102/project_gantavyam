@@ -699,9 +699,20 @@ const NewDriverDashboard = () => {
             showOTPInput={showOTPInput}
             rideError={rideError}
             onOTPInputChange={setOtpInput}
-            onStartRide={() => setShowOTPInput({ type: 'start', label: 'Ask user for Start OTP' })}
+            onStartRide={() => {
+              console.log('🎯 [NewDashboard] onStartRide called, setting showOTPInput');
+              setShowOTPInput({ type: 'start', label: 'Ask user for Start OTP' });
+              console.log('✅ [NewDashboard] showOTPInput set to start type');
+            }}
             onEndRide={() => setShowOTPInput({ type: 'end', label: 'Ask user for End OTP' })}
-            onOTPVerification={handleOTPVerification}
+            onOTPVerification={() => {
+              console.log('🔐 [NewDashboard] OTP Verification clicked', {
+                otpInput: otpInput,
+                showOTPInput: showOTPInput,
+                activeRide: activeRide
+              });
+              handleOTPVerification();
+            }}
             onCancelOTP={() => {
               setShowOTPInput(null);
               setOtpInput('');
@@ -757,7 +768,7 @@ const NewDriverDashboard = () => {
                   </div>
                   <button
                     onClick={() => setCurrentView('requests')}
-                    className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition-colors animate-bounce"
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors animate-bounce"
                   >
                     View Requests
                   </button>
@@ -767,15 +778,15 @@ const NewDriverDashboard = () => {
             
             {/* Ready to Go Online Indicator */}
             {!isOnline && !isGoingOnline && selectedPickupLocation && vehicleType && socketConnected && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                 <div className="text-center">
-                  <h3 className="text-lg font-semibold text-green-800 mb-1">
+                  <h3 className="text-lg font-semibold text-blue-800 mb-1">
                     🚀 Ready to Go Online!
                   </h3>
-                  <p className="text-green-700 text-sm">
+                  <p className="text-blue-700 text-sm">
                     All settings configured. Click "Go Online" to start receiving ride requests.
                   </p>
-                  <p className="text-green-600 text-xs mt-2">
+                  <p className="text-blue-600 text-xs mt-2">
                     Location: {selectedPickupLocation} | Vehicle: {vehicleType} | Socket: ✅ Connected
                   </p>
                 </div>

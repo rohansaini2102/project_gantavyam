@@ -34,26 +34,26 @@ const ResponsiveLayout = ({
   // Account for navigation height (~80px) and safe areas
   const getMobileHeightClasses = () => {
     if (currentView === 'history') {
-      return 'max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-160px)] min-h-[65vh]';
+      return 'h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-160px)] min-h-[65vh]';
     }
     if (currentView === 'active') {
-      return 'max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-200px)] min-h-[45vh]';
+      return 'h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-200px)] min-h-[45vh]';
     }
     // Booking view - adjust height based on step, accounting for navigation
     if (currentView === 'booking') {
       if (bookingStep === 3) {
-        // Step 3 (confirmation) needs more height for booking button, but leave space for navigation
-        return 'max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-140px)] min-h-[70vh]';
+        // Step 3 (confirmation) needs more height for content
+        return 'h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-160px)] min-h-[75vh]';
       }
       if (bookingStep === 2) {
         // Step 2 (vehicle selection) needs medium height
-        return 'max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-180px)] min-h-[60vh]';
+        return 'h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-160px)] min-h-[65vh]';
       }
       // Step 1 (locations) can use standard height
-      return 'max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-220px)] min-h-[50vh]';
+      return 'h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-160px)] min-h-[55vh]';
     }
     // Default fallback - account for navigation
-    return 'max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-180px)] min-h-[60vh]';
+    return 'h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-180px)] min-h-[60vh]';
   };
 
   // Mobile Layout (< 768px) - Full screen with bottom tabs
@@ -79,18 +79,17 @@ const ResponsiveLayout = ({
               transition-all duration-300 ease-in-out
               ${getMobileHeightClasses()}
               flex flex-col
+              pb-20
             `}>
               {/* Handle */}
               <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mt-4 mb-2 flex-shrink-0" />
               
-              {/* Content */}
+              {/* Content - with proper padding for scrolling */}
               <div className="flex-1 overflow-y-auto overscroll-contain" style={{
                 WebkitOverflowScrolling: 'touch',
                 scrollBehavior: 'smooth'
               }}>
-                <div className="pb-24">
-                  {sidebar}
-                </div>
+                {sidebar}
               </div>
             </div>
 
@@ -199,9 +198,11 @@ const ResponsiveLayout = ({
             </div>
           </div>
 
-          {/* Content */}
+          {/* Content with proper scrolling */}
           <div className="flex-1 overflow-y-auto">
-            {sidebar}
+            <div className="pb-4">
+              {sidebar}
+            </div>
           </div>
 
           {/* Profile Section */}
