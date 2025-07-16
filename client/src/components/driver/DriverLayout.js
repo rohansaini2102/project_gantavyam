@@ -47,7 +47,7 @@ const DriverLayout = ({
       return `max-h-[calc(100vh-${navHeight + safeAreaBuffer}px)] min-h-[70vh]`;
     }
     if (currentView === 'active') {
-      return `max-h-[calc(100vh-${navHeight + safeAreaBuffer}px)] min-h-[65vh]`;
+      return `max-h-[calc(100vh-${navHeight + safeAreaBuffer}px)] min-h-[60vh]`;
     }
     if (currentView === 'requests') {
       return `max-h-[calc(100vh-${navHeight + safeAreaBuffer}px)] min-h-[65vh]`;

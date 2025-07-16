@@ -29,7 +29,10 @@ const initializeSocket = (server) => {
         "https://gantavyam.site",
         "https://www.gantavyam.site",
         "https://gt2-evx6vat1j-rohan-sainis-projects.vercel.app",
-        "https://gt2-2.onrender.com"
+        "https://gt2-2.onrender.com",
+        "https://gt3-nkqc.onrender.com",
+        "https://gt3-nine.vercel.app",
+        "https://project-gantavyam.onrender.com" // Render backend URL
       ],
       methods: ["GET", "POST"],
       credentials: true

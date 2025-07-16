@@ -985,8 +985,8 @@ const RideManagement = () => {
 
       {/* Rides Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        <div className="table-responsive">
+          <table className="table-desktop min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1147,6 +1147,119 @@ const RideManagement = () => {
               }).filter(Boolean)}
             </tbody>
           </table>
+          
+          {/* Mobile Card Layout */}
+          <div className="table-mobile">
+            <div className="p-4 space-y-4">
+              {Array.isArray(rides) && rides.map((ride, index) => {
+                if (!ride || !ride._id) {
+                  console.warn('🔍 [Ride Management] Invalid ride data at index:', index, ride);
+                  return null;
+                }
+                
+                // Safe data extraction
+                const rideId = ride.rideId || ride._id?.slice(-8) || 'Unknown';
+                const destination = ride.destination || 'No destination';
+                const pickupLocation = ride.pickupLocation;
+                const locationName = typeof pickupLocation === 'object' 
+                  ? (pickupLocation?.boothName || 'Unknown') 
+                  : (pickupLocation || 'Unknown');
+                const userName = ride.userId?.name || ride.user?.name || 'Unknown User';
+                const userPhone = ride.userId?.phone || ride.user?.phone || '';
+                const driverName = ride.driverId?.name || ride.driverId?.fullName || ride.driver?.name || ride.driverName || '';
+                const vehicleNumber = ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driver?.vehicleNumber || ride.driverVehicleNo || '';
+                const status = ride.status || 'unknown';
+                const queueNumber = ride.queueNumber || '';
+                const queuePosition = ride.queuePosition || '';
+                const createdAt = ride.createdAt || ride.bookingTime || null;
+                
+                return (
+                  <div key={ride._id || ride.rideId || `ride-${index}`} className="table-card">
+                    <div className="table-card-header">
+                      <div>
+                        <div className="table-card-title">#{rideId}</div>
+                        <div className="table-card-subtitle">To: {destination}</div>
+                        <div className="flex items-center gap-2 mt-2">
+                          {ride.estimatedFare && (
+                            <span className="text-xs font-semibold text-green-600">
+                              ₹{ride.estimatedFare}
+                            </span>
+                          )}
+                          {ride.vehicleType && (
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                              {ride.vehicleType.charAt(0).toUpperCase() + ride.vehicleType.slice(1)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {getStatusBadge(status)}
+                      </div>
+                    </div>
+                    
+                    <div className="table-card-body">
+                      <div className="table-card-row">
+                        <span className="table-card-label">Pickup</span>
+                        <span className="table-card-value">{locationName}</span>
+                      </div>
+                      
+                      <div className="table-card-row">
+                        <span className="table-card-label">User</span>
+                        <div className="table-card-value text-right">
+                          <div className="font-medium">{userName}</div>
+                          {userPhone && <div className="text-xs text-gray-500">{userPhone}</div>}
+                        </div>
+                      </div>
+                      
+                      <div className="table-card-row">
+                        <span className="table-card-label">Driver</span>
+                        <div className="table-card-value text-right">
+                          {driverName ? (
+                            <div>
+                              <div className="font-medium">{driverName}</div>
+                              {vehicleNumber && <div className="text-xs text-gray-500">{vehicleNumber}</div>}
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end">
+                              <div className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse"></div>
+                              <span className="text-xs text-orange-600">Searching...</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {queueNumber && (
+                        <div className="table-card-row">
+                          <span className="table-card-label">Queue</span>
+                          <div className="table-card-value text-right">
+                            <div className="font-medium">{queueNumber}</div>
+                            {queuePosition && <div className="text-xs text-gray-500">Pos: #{queuePosition}</div>}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="table-card-row">
+                        <span className="table-card-label">Created</span>
+                        <span className="table-card-value text-xs">
+                          {createdAt ? formatDateTime(createdAt) : 'No date'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="table-card-actions">
+                      <button
+                        onClick={() => viewRideDetails(ride._id)}
+                        className="table-card-action-btn bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        <FaEye className="inline mr-2" />
+                        View Details
+                      </button>
+                    </div>
+                  </div>
+                );
+              }).filter(Boolean)}
+            </div>
+          </div>
         </div>
 
         {/* Load More Button */}

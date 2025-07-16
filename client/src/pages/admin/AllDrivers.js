@@ -183,8 +183,8 @@ const AllDrivers = () => {
 
       {/* Drivers Table */}
       <ModernCard>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        <div className="table-responsive">
+          <table className="table-desktop min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Photo</th>
@@ -305,6 +305,123 @@ const AllDrivers = () => {
               ))}
             </tbody>
           </table>
+          
+          {/* Mobile Card Layout */}
+          <div className="table-mobile">
+            <div className="p-4 space-y-4">
+              {loading ? (
+                <div className="flex items-center justify-center space-x-2 py-12">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                  <span className="text-gray-500">Loading drivers...</span>
+                </div>
+              ) : filteredDrivers.length === 0 ? (
+                <div className="flex flex-col items-center space-y-3 py-12">
+                  <FiUser className="h-12 w-12 text-gray-400" />
+                  <div className="text-center">
+                    <p className="text-lg font-medium text-gray-900">No drivers found</p>
+                    <p className="text-gray-500">
+                      {searchTerm ? 'Try adjusting your search terms' : 'Get started by adding your first driver'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                filteredDrivers.map(driver => (
+                  <div key={driver._id} className="table-card">
+                    <div className="table-card-header">
+                      <div className="flex items-center space-x-3">
+                        {driver.driverSelfie ? (
+                          <img 
+                            src={getImageUrl(driver.driverSelfie)} 
+                            alt={driver.fullName} 
+                            className="w-12 h-12 rounded-full object-cover border-2 border-gray-200 cursor-pointer"
+                            onClick={() => { setSelectedDriver(driver); setShowDetails(true); }}
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                            <FiUser className="text-gray-400" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="table-card-title">{driver.fullName}</div>
+                          <div className="table-card-subtitle">ID: {driver._id.slice(-8)}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {driver.isVerified ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <FiCheckCircle className="mr-1" /> Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <FiClock className="mr-1" /> Pending
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="table-card-body">
+                      <div className="table-card-row">
+                        <span className="table-card-label">Contact</span>
+                        <span className="table-card-value">{driver.mobileNo}</span>
+                      </div>
+                      
+                      <div className="table-card-row">
+                        <span className="table-card-label">Vehicle</span>
+                        <span className="table-card-value">{driver.vehicleNo}</span>
+                      </div>
+                      
+                      <div className="table-card-row">
+                        <span className="table-card-label">Registered</span>
+                        <span className="table-card-value text-xs">
+                          {driver.registrationDate ? new Date(driver.registrationDate).toLocaleDateString() : '-'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="table-card-actions">
+                      <button 
+                        className="table-card-action-btn bg-blue-600 text-white hover:bg-blue-700" 
+                        onClick={() => { setSelectedDriver(driver); setShowDetails(true); }}
+                      >
+                        <FiEye className="inline mr-2" />
+                        View Details
+                      </button>
+                      {!driver.isVerified && (
+                        <>
+                          <button 
+                            disabled={actionLoading === driver._id + '-approve'} 
+                            onClick={() => handleApprove(driver._id)} 
+                            className="table-card-action-btn bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                          >
+                            <FiCheckCircle className="inline mr-2" />
+                            Approve
+                          </button>
+                          <button 
+                            disabled={actionLoading === driver._id + '-reject'} 
+                            onClick={() => handleReject(driver._id)} 
+                            className="table-card-action-btn bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
+                          >
+                            <FiXCircle className="inline mr-2" />
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {driver.isVerified && (
+                        <button 
+                          disabled={actionLoading === driver._id + '-delete'} 
+                          onClick={() => handleDelete(driver._id)} 
+                          className="table-card-action-btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          <FiTrash2 className="inline mr-2" />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </ModernCard>
       {showDetails && selectedDriver && (

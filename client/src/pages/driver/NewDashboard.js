@@ -25,7 +25,6 @@ import {
   DriverStatsCards
 } from '../../components/driver';
 
-const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
 
 const NewDriverDashboard = () => {
   const navigate = useNavigate();
@@ -43,7 +42,6 @@ const NewDriverDashboard = () => {
   
   // Pickup locations
   const [pickupLocations, setPickupLocations] = useState([]);
-  const [locationsByType, setLocationsByType] = useState({});
   const [pickupLocationsLoading, setPickupLocationsLoading] = useState(false);
   const [pickupLocationsError, setPickupLocationsError] = useState('');
   
@@ -73,7 +71,7 @@ const NewDriverDashboard = () => {
 
   // UI state
   const [currentView, setCurrentView] = useState('dashboard'); // dashboard, requests, active, history, profile
-  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [, setWindowWidth] = useState(window.innerWidth);
 
   console.log('[NewDriverDashboard] Component mounted');
 
@@ -156,13 +154,12 @@ const NewDriverDashboard = () => {
         const locations = response.data.locations;
         setPickupLocations(locations);
         
-        // Group by type
+        // Group by type (for future use if needed)
         const grouped = locations.reduce((acc, location) => {
           if (!acc[location.type]) acc[location.type] = [];
           acc[location.type].push(location);
           return acc;
         }, {});
-        setLocationsByType(grouped);
         
         // Always use fixed pickup location
         const fixedLocation = "Hauz Khas Metro Gate No 1";
@@ -675,7 +672,6 @@ const NewDriverDashboard = () => {
   const renderSidebarContent = () => {
     console.log('[NewDriverDashboard] Rendering sidebar - currentView:', currentView);
     
-    const isMobile = windowWidth < 768;
     
     switch (currentView) {
       case 'requests':
@@ -701,8 +697,15 @@ const NewDriverDashboard = () => {
             onOTPInputChange={setOtpInput}
             onStartRide={() => {
               console.log('🎯 [NewDashboard] onStartRide called, setting showOTPInput');
-              setShowOTPInput({ type: 'start', label: 'Ask user for Start OTP' });
-              console.log('✅ [NewDashboard] showOTPInput set to start type');
+              const otpConfig = { type: 'start', label: 'Ask user for Start OTP' };
+              console.log('📝 [NewDashboard] Setting showOTPInput to:', otpConfig);
+              setShowOTPInput(otpConfig);
+              console.log('✅ [NewDashboard] showOTPInput state update triggered');
+              
+              // Force a re-render check after state update
+              setTimeout(() => {
+                console.log('🔍 [NewDashboard] Checking showOTPInput after state update (should be visible now)');
+              }, 100);
             }}
             onEndRide={() => setShowOTPInput({ type: 'end', label: 'Ask user for End OTP' })}
             onOTPVerification={() => {
@@ -716,6 +719,12 @@ const NewDriverDashboard = () => {
             onCancelOTP={() => {
               setShowOTPInput(null);
               setOtpInput('');
+            }}
+            onCollectPayment={() => {
+              console.log('💰 [NewDashboard] Collect Payment clicked');
+              // TODO: Implement payment collection logic
+              setActiveRide(prev => ({ ...prev, status: 'completed' }));
+              setCurrentView('dashboard');
             }}
           />
         );

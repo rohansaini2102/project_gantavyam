@@ -417,4 +417,68 @@ button:hover {
     text-overflow: ellipsis;
     max-width: 100%;
   }
+  
+  /* Responsive table utilities */
+  .table-responsive {
+    display: block;
+  }
+  
+  .table-responsive .table-desktop {
+    display: none;
+  }
+  
+  .table-responsive .table-mobile {
+    display: block;
+  }
+  
+  .table-card {
+    @apply bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm;
+  }
+  
+  .table-card-header {
+    @apply flex justify-between items-start mb-3 pb-3 border-b border-gray-100;
+  }
+  
+  .table-card-title {
+    @apply font-semibold text-gray-900 text-sm;
+  }
+  
+  .table-card-subtitle {
+    @apply text-gray-500 text-xs mt-1;
+  }
+  
+  .table-card-body {
+    @apply space-y-3;
+  }
+  
+  .table-card-row {
+    @apply flex justify-between items-center;
+  }
+  
+  .table-card-label {
+    @apply text-gray-500 text-sm font-medium;
+  }
+  
+  .table-card-value {
+    @apply text-gray-900 text-sm text-right;
+  }
+  
+  .table-card-actions {
+    @apply flex gap-2 mt-4 pt-3 border-t border-gray-100;
+  }
+  
+  .table-card-action-btn {
+    @apply flex-1 px-3 py-2 text-sm rounded-md text-center transition-colors;
+  }
+}
+
+/* Desktop table view */
+@media (min-width: 768px) {
+  .table-responsive .table-desktop {
+    display: table;
+  }
+  
+  .table-responsive .table-mobile {
+    display: none;
+  }
 }
