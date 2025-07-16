@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminLogin } from '../../services/api';
+import { API_URL } from '../../config';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -13,10 +14,11 @@ const AdminLogin = () => {
     setError('');
     try {
       console.log('🔐 [Admin Login] Attempting login with:', { email });
+      console.log('🔐 [Admin Login] Using API URL:', API_URL);
       
-      // Test connectivity first
+      // Test connectivity first using the proper API URL
       try {
-        const testResponse = await fetch('http://localhost:5000/api/admin/login', {
+        const testResponse = await fetch(`${API_URL}/admin/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: 'test', password: 'test' })
@@ -24,7 +26,8 @@ const AdminLogin = () => {
         console.log('🔐 [Admin Login] Connectivity test:', testResponse.status);
       } catch (connectError) {
         console.error('🔐 [Admin Login] Connectivity test failed:', connectError);
-        setError('Cannot connect to server. Please check if the backend is running.');
+        console.log('🔐 [Admin Login] Failed API URL was:', API_URL);
+        setError(`Cannot connect to server at ${API_URL}. Please check your internet connection.`);
         return;
       }
       

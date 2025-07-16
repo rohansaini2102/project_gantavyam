@@ -1,3 +1,5 @@
+import { SOCKET_URL } from '../config';
+
 // Utility function to get the correct image URL
 export const getImageUrl = (imagePath) => {
   // If it's already a full URL (Cloudinary or other external URL), return as is
@@ -7,8 +9,7 @@ export const getImageUrl = (imagePath) => {
   
   // If it's a relative path, prepend the backend URL
   if (imagePath) {
-    const backendUrl = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
-    return `${backendUrl}/${imagePath}`;
+    return `${SOCKET_URL}/${imagePath}`;
   }
   
   // Return null if no image path
