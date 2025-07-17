@@ -163,6 +163,14 @@ const DriverSchema = new mongoose.Schema({
   lastActiveTime: {
     type: Date,
     default: Date.now
+  },
+  queuePosition: {
+    type: Number,
+    default: null
+  },
+  queueEntryTime: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true

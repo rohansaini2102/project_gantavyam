@@ -857,10 +857,10 @@ const RideManagement = () => {
   });
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <div className="p-4 bg-gray-50 min-h-screen max-w-full overflow-hidden">
       {/* Header */}
-      <div className="mb-6">
-        <div className="flex justify-between items-center mb-4">
+      <div className="mb-4">
+        <div className="flex justify-between items-center mb-3">
           <div className="flex items-center space-x-4">
             <h1 className="text-3xl font-bold text-gray-900">Ride Management</h1>
             <div className="flex items-center space-x-2">
@@ -894,49 +894,49 @@ const RideManagement = () => {
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg shadow relative">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <div className="bg-white p-3 rounded-lg shadow relative">
             {statsLoading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></div>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-900"></div>
               </div>
             )}
-            <div className="text-2xl font-bold text-gray-900">{rideStats.total}</div>
-            <div className="text-sm text-gray-600">Total Rides</div>
+            <div className="text-xl font-bold text-gray-900">{rideStats.total}</div>
+            <div className="text-xs text-gray-600">Total Rides</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow relative">
+          <div className="bg-white p-3 rounded-lg shadow relative">
             {statsLoading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
               </div>
             )}
-            <div className="text-2xl font-bold text-green-600">{rideStats.completed}</div>
-            <div className="text-sm text-gray-600">Completed</div>
+            <div className="text-xl font-bold text-green-600">{rideStats.completed}</div>
+            <div className="text-xs text-gray-600">Completed</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow relative">
+          <div className="bg-white p-3 rounded-lg shadow relative">
             {statsLoading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
               </div>
             )}
-            <div className="text-2xl font-bold text-blue-600">{rideStats.active}</div>
-            <div className="text-sm text-gray-600">Active</div>
+            <div className="text-xl font-bold text-blue-600">{rideStats.active}</div>
+            <div className="text-xs text-gray-600">Active</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow relative">
+          <div className="bg-white p-3 rounded-lg shadow relative">
             {statsLoading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-600"></div>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-600"></div>
               </div>
             )}
-            <div className="text-2xl font-bold text-red-600">{rideStats.cancelled}</div>
-            <div className="text-sm text-gray-600">Cancelled</div>
+            <div className="text-xl font-bold text-red-600">{rideStats.cancelled}</div>
+            <div className="text-xs text-gray-600">Cancelled</div>
           </div>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="bg-white p-3 rounded-lg shadow mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {/* Booth Filter */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Booth</label>
@@ -1007,32 +1007,26 @@ const RideManagement = () => {
 
       {/* Rides Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="table-responsive">
-          <table className="table-desktop min-w-full divide-y divide-gray-200">
+        <div className="table-responsive overflow-x-auto">
+          <table className="table-desktop w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">
                   Ride Details
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Pickup Location
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                   User
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                   Driver
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Queue
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Created
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Actions
                 </th>
               </tr>
@@ -1062,11 +1056,11 @@ const RideManagement = () => {
                 
                 return (
                 <tr key={ride._id || ride.rideId || `ride-${index}`} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
+                  <td className="px-3 py-3">
+                    <div className="text-sm font-medium text-gray-900 truncate">
                       #{rideId}
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-500 truncate max-w-xs">
                       To: {destination}
                     </div>
                     <div className="flex items-center space-x-2 mt-1">
@@ -1081,81 +1075,53 @@ const RideManagement = () => {
                         </span>
                       )}
                     </div>
-                    {createdAt && (
-                      <div className="text-xs text-gray-400 mt-1">
-                        {formatDateTime(createdAt)}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <FaMapMarkerAlt className="text-red-500 mr-2" />
-                      <div className="text-sm text-gray-900">
-                        {locationName}
-                      </div>
+                    <div className="text-xs text-gray-400 mt-1 truncate">
+                      From: {locationName}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3">
                     <div className="flex items-center">
-                      <FaUser className="text-blue-500 mr-2" />
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
+                      <FaUser className="text-blue-500 mr-2 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-900 truncate">
                           {userName}
                         </div>
-                        {userPhone && (
-                          <div className="text-sm text-gray-500">
-                            {userPhone}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3">
                     {driverName ? (
                       <div className="flex items-center">
-                        <FaCar className="text-green-500 mr-2" />
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
+                        <FaCar className="text-green-500 mr-2 flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-900 truncate">
                             {driverName}
                           </div>
-                          {vehicleNumber && (
-                            <div className="text-sm text-gray-500">
-                              {vehicleNumber}
-                            </div>
-                          )}
                         </div>
                       </div>
                     ) : (
                       <div className="flex items-center">
-                        <div className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse"></div>
-                        <span className="text-sm text-orange-600 font-medium">Searching driver...</span>
+                        <div className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse flex-shrink-0"></div>
+                        <span className="text-sm text-orange-600 font-medium truncate">Searching...</span>
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3">
                     {getStatusBadge(status)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3">
                     {queueNumber ? (
                       <div className="text-sm">
                         <div className="font-medium text-gray-900">{queueNumber}</div>
                         {queuePosition && (
-                          <div className="text-gray-500">Pos: #{queuePosition}</div>
+                          <div className="text-gray-500 text-xs">#{queuePosition}</div>
                         )}
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-500">No queue</span>
+                      <span className="text-sm text-gray-500">-</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <FaClock className="text-gray-400 mr-2" />
-                      <div className="text-sm text-gray-900">
-                        {createdAt ? formatDateTime(createdAt) : 'No date'}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <td className="px-3 py-3 text-sm font-medium">
                     <button
                       onClick={() => viewRideDetails(ride._id)}
                       className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
@@ -1221,7 +1187,7 @@ const RideManagement = () => {
                     
                     <div className="table-card-body">
                       <div className="table-card-row">
-                        <span className="table-card-label">Pickup</span>
+                        <span className="table-card-label">From</span>
                         <span className="table-card-value">{locationName}</span>
                       </div>
                       
@@ -1229,7 +1195,6 @@ const RideManagement = () => {
                         <span className="table-card-label">User</span>
                         <div className="table-card-value text-right">
                           <div className="font-medium">{userName}</div>
-                          {userPhone && <div className="text-xs text-gray-500">{userPhone}</div>}
                         </div>
                       </div>
                       
@@ -1239,7 +1204,6 @@ const RideManagement = () => {
                           {driverName ? (
                             <div>
                               <div className="font-medium">{driverName}</div>
-                              {vehicleNumber && <div className="text-xs text-gray-500">{vehicleNumber}</div>}
                             </div>
                           ) : (
                             <div className="flex items-center justify-end">
@@ -1255,17 +1219,10 @@ const RideManagement = () => {
                           <span className="table-card-label">Queue</span>
                           <div className="table-card-value text-right">
                             <div className="font-medium">{queueNumber}</div>
-                            {queuePosition && <div className="text-xs text-gray-500">Pos: #{queuePosition}</div>}
+                            {queuePosition && <div className="text-xs text-gray-500">#{queuePosition}</div>}
                           </div>
                         </div>
                       )}
-                      
-                      <div className="table-card-row">
-                        <span className="table-card-label">Created</span>
-                        <span className="table-card-value text-xs">
-                          {createdAt ? formatDateTime(createdAt) : 'No date'}
-                        </span>
-                      </div>
                     </div>
                     
                     <div className="table-card-actions">
@@ -1359,7 +1316,7 @@ const RideManagement = () => {
             
             <div className="space-y-4">
               {/* Basic Info */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="text-sm font-medium text-gray-700">Status</label>
                   <div className="mt-1">{getStatusBadge(selectedRide.status)}</div>
@@ -1374,6 +1331,25 @@ const RideManagement = () => {
                   <label className="text-sm font-medium text-gray-700">Created</label>
                   <div className="mt-1 text-sm text-gray-900">
                     {formatDateTime(selectedRide.createdAt)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Summary */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">Ride Summary</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Ride ID</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      #{selectedRide.rideId || selectedRide._id?.slice(-8)}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Booking Time</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {formatDateTime(selectedRide.createdAt || selectedRide.bookingTime)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1420,20 +1396,31 @@ const RideManagement = () => {
               </div>
 
               {/* Location Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Pickup Location</label>
-                  <div className="mt-1 text-sm text-gray-900">
-                    {typeof selectedRide.pickupLocation === 'object' 
-                      ? selectedRide.pickupLocation.boothName || 'Unknown' 
-                      : selectedRide.pickupLocation || 'Unknown'}
+              <div className="bg-red-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">Location Details</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">📍 Pickup Location</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {typeof selectedRide.pickupLocation === 'object' 
+                        ? selectedRide.pickupLocation.boothName || 'Unknown' 
+                        : selectedRide.pickupLocation || 'Unknown'}
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Destination</label>
-                  <div className="mt-1 text-sm text-gray-900">
-                    {selectedRide.destination || 'Not specified'}
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">🎯 Destination</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {selectedRide.destination || 'Not specified'}
+                    </div>
                   </div>
+                  {selectedRide.distance && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">📏 Distance</label>
+                      <div className="mt-1 text-sm text-gray-900">
+                        {selectedRide.distance} km
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1476,14 +1463,16 @@ const RideManagement = () => {
               )}
 
               {/* User & Driver Info */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-green-50 p-4 rounded-lg">
                   <h4 className="font-medium text-gray-900 mb-2">User Information</h4>
                   {selectedRide.userId ? (
-                    <div>
+                    <div className="space-y-1">
                       <div className="text-sm font-medium">{selectedRide.userId.name}</div>
-                      <div className="text-sm text-gray-600">{selectedRide.userId.phone}</div>
-                      <div className="text-sm text-gray-600">{selectedRide.userId.email}</div>
+                      <div className="text-sm text-gray-600">📞 {selectedRide.userId.phone}</div>
+                      {selectedRide.userId.email && (
+                        <div className="text-sm text-gray-600">📧 {selectedRide.userId.email}</div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500">User information not available</div>
@@ -1493,10 +1482,12 @@ const RideManagement = () => {
                 <div className="bg-yellow-50 p-4 rounded-lg">
                   <h4 className="font-medium text-gray-900 mb-2">Driver Information</h4>
                   {selectedRide.driverId ? (
-                    <div>
-                      <div className="text-sm font-medium">{selectedRide.driverId.name}</div>
-                      <div className="text-sm text-gray-600">{selectedRide.driverId.vehicleNumber || selectedRide.driverId.vehicleNo}</div>
-                      <div className="text-sm text-gray-600">{selectedRide.driverId.phone}</div>
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">{selectedRide.driverId.name || selectedRide.driverId.fullName}</div>
+                      <div className="text-sm text-gray-600">🚗 {selectedRide.driverId.vehicleNumber || selectedRide.driverId.vehicleNo}</div>
+                      {selectedRide.driverId.phone && (
+                        <div className="text-sm text-gray-600">📞 {selectedRide.driverId.phone}</div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500">No driver assigned</div>

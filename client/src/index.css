@@ -476,9 +476,58 @@ button:hover {
 @media (min-width: 768px) {
   .table-responsive .table-desktop {
     display: table;
+    table-layout: fixed;
   }
   
   .table-responsive .table-mobile {
     display: none;
+  }
+  
+  /* Admin table specific styles */
+  .table-desktop th,
+  .table-desktop td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .table-desktop .w-1\/4 {
+    width: 25% !important;
+  }
+  
+  .table-desktop .w-1\/6 {
+    width: 16.666667% !important;
+  }
+  
+  .table-desktop .w-1\/8 {
+    width: 12.5% !important;
+  }
+  
+  /* Ensure admin layout doesn't overflow */
+  .admin-container {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  
+  /* Responsive text truncation */
+  .truncate-responsive {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  
+  /* Small screen adjustments */
+  @media (max-width: 1280px) {
+    .table-desktop .w-1\/4 {
+      width: 30% !important;
+    }
+    
+    .table-desktop .w-1\/6 {
+      width: 15% !important;
+    }
+    
+    .table-desktop .w-1\/8 {
+      width: 10% !important;
+    }
   }
 }

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { admin as adminAPI } from '../../services/api';
-import { FiCheckCircle, FiXCircle, FiUser, FiEye, FiTrash2, FiClock, FiPlus, FiSearch, FiFilter, FiDownload } from 'react-icons/fi';
+import { FiCheckCircle, FiXCircle, FiUser, FiEye, FiTrash2, FiClock, FiPlus, FiSearch, FiFilter, FiDownload, FiWifi, FiWifiOff } from 'react-icons/fi';
 import { getImageUrl } from '../../utils/imageUtils';
 import ModernCard from '../../components/admin/ModernCard';
 import { useNavigate } from 'react-router-dom';
+import { initializeSocket, getSocket } from '../../services/socket';
 
 const statusColors = {
   approved: 'text-green-600',
@@ -27,6 +28,35 @@ const AllDrivers = () => {
     const token = localStorage.getItem('adminToken');
     if (!token) {
       window.location.href = '/admin/login';
+    } else {
+      // Initialize socket for real-time updates
+      const initializeSocketAsync = async () => {
+        try {
+          const socketResult = initializeSocket(token);
+          
+          // Handle different return types from initializeSocket
+          if (socketResult && typeof socketResult.then === 'function') {
+            // It's a Promise
+            const socket = await socketResult;
+            if (socket) {
+              console.log('[AllDrivers] Socket initialized successfully (Promise), setting up listeners');
+              setupSocketListeners();
+            } else {
+              console.error('[AllDrivers] Failed to initialize socket (Promise returned null)');
+            }
+          } else if (socketResult) {
+            // It's a direct socket object
+            console.log('[AllDrivers] Socket initialized successfully (direct), setting up listeners');
+            setupSocketListeners();
+          } else {
+            console.error('[AllDrivers] Failed to initialize socket (returned null)');
+          }
+        } catch (error) {
+          console.error('[AllDrivers] Error initializing socket:', error);
+        }
+      };
+      
+      initializeSocketAsync();
     }
   }, []);
 
@@ -34,16 +64,154 @@ const AllDrivers = () => {
     fetchDrivers();
   }, []);
 
+  const setupSocketListeners = () => {
+    const socket = getSocket();
+    if (!socket) {
+      console.error('[AllDrivers] Socket not available for setting up listeners');
+      return;
+    }
+
+    console.log('[AllDrivers] Setting up socket listeners');
+    
+    // Verify socket connection status
+    if (!socket.connected) {
+      console.warn('[AllDrivers] Socket not connected, waiting for connection...');
+      socket.on('connect', () => {
+        console.log('[AllDrivers] Socket connected, admin should be in admins room');
+        setupActualListeners();
+      });
+    } else {
+      console.log('[AllDrivers] Socket already connected');
+      setupActualListeners();
+    }
+
+    function setupActualListeners() {
+      console.log('[AllDrivers] Setting up actual event listeners');
+      
+      // Listen for driver status updates
+      socket.on('driverStatusUpdated', (data) => {
+        console.log('[AllDrivers] Received driverStatusUpdated event:', data);
+        setDrivers(prevDrivers => {
+          const updatedDrivers = prevDrivers.map(driver => 
+            driver._id === data.driverId 
+              ? { 
+                  ...driver, 
+                  isOnline: data.isOnline, 
+                  currentPickupLocation: data.currentPickupLocation, 
+                  lastActiveTime: data.lastActiveTime 
+                }
+              : driver
+          );
+          console.log('[AllDrivers] Updated drivers list');
+          return updatedDrivers;
+        });
+      });
+
+      // Listen for admin toggle confirmations
+      socket.on('adminToggleDriverStatusConfirmed', (data) => {
+        console.log('[AllDrivers] Admin toggle confirmed:', data);
+        setSuccess(data.message);
+        setActionLoading(null);
+        setTimeout(() => setSuccess(''), 3000);
+      });
+
+      // Listen for admin toggle errors
+      socket.on('adminToggleDriverStatusError', (data) => {
+        console.log('[AllDrivers] Admin toggle error:', data);
+        setError(data.error);
+        setActionLoading(null);
+        setTimeout(() => setError(''), 3000);
+      });
+
+      // Listen for queue position updates
+      socket.on('queuePositionsUpdated', (data) => {
+        console.log('[AllDrivers] Queue positions updated:', data);
+        // Update drivers with new queue positions
+        if (data.queueUpdates) {
+          setDrivers(prevDrivers => {
+            const updatedDrivers = prevDrivers.map(driver => {
+              const queueUpdate = data.queueUpdates.find(q => q.driverId === driver._id);
+              if (queueUpdate) {
+                return {
+                  ...driver,
+                  queuePosition: queueUpdate.queuePosition,
+                  isOnline: queueUpdate.isOnline
+                };
+              }
+              return driver;
+            });
+            console.log('[AllDrivers] Updated drivers with new queue positions');
+            return updatedDrivers;
+          });
+        }
+      });
+
+      console.log('[AllDrivers] All event listeners set up successfully');
+    }
+  };
+
+  // Cleanup socket listeners on unmount
+  useEffect(() => {
+    return () => {
+      const socket = getSocket();
+      if (socket) {
+        console.log('[AllDrivers] Cleaning up socket listeners');
+        socket.off('driverStatusUpdated');
+        socket.off('adminToggleDriverStatusConfirmed');
+        socket.off('adminToggleDriverStatusError');
+        socket.off('queuePositionsUpdated');
+        socket.off('connect');
+      }
+    };
+  }, []);
+
   const fetchDrivers = async () => {
     setLoading(true);
     setError('');
     try {
       const res = await adminAPI.getAllDrivers();
-      setDrivers(res.data || []);
+      const driversData = res.data || [];
+      setDrivers(driversData);
     } catch (err) {
       setError(err.error || 'Failed to fetch drivers');
     }
     setLoading(false);
+  };
+
+  const toggleDriverStatus = async (driverId, currentStatus) => {
+    console.log(`[AllDrivers] Toggling driver ${driverId} from ${currentStatus ? 'online' : 'offline'} to ${!currentStatus ? 'online' : 'offline'}`);
+    
+    setActionLoading(driverId + '-toggle');
+    setError('');
+    setSuccess('');
+    
+    try {
+      const socket = getSocket();
+      if (!socket) {
+        throw new Error('Socket not connected');
+      }
+      
+      if (!socket.connected) {
+        throw new Error('Socket not connected to server');
+      }
+      
+      console.log('[AllDrivers] Emitting adminToggleDriverStatus event');
+      
+      // Emit admin driver status change
+      socket.emit('adminToggleDriverStatus', {
+        driverId,
+        isOnline: !currentStatus
+      });
+      
+      console.log('[AllDrivers] Toggle request sent to server');
+      
+    } catch (err) {
+      console.error('[AllDrivers] Error in toggleDriverStatus:', err);
+      setError(err.message || 'Failed to toggle driver status');
+      setActionLoading(null);
+    }
+    
+    // Note: Don't set actionLoading to null here - let the confirmation/error handlers do it
   };
 
   const handleApprove = async (id) => {
@@ -192,6 +360,7 @@ const AllDrivers = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Online Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Registered</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -199,7 +368,7 @@ const AllDrivers = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center">
+                  <td colSpan="8" className="px-6 py-12 text-center">
                     <div className="flex items-center justify-center space-x-2">
                       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                       <span className="text-gray-500">Loading drivers...</span>
@@ -208,7 +377,7 @@ const AllDrivers = () => {
                 </tr>
               ) : filteredDrivers.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center">
+                  <td colSpan="8" className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center space-y-3">
                       <FiUser className="h-12 w-12 text-gray-400" />
                       <div>
@@ -256,6 +425,33 @@ const AllDrivers = () => {
                         <FiClock className="mr-1" /> Pending
                       </span>
                     )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      {driver.isOnline ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <FiWifi className="mr-1" /> Online
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          <FiWifiOff className="mr-1" /> Offline
+                        </span>
+                      )}
+                      {driver.isVerified && (
+                        <button
+                          disabled={actionLoading === driver._id + '-toggle'}
+                          onClick={() => toggleDriverStatus(driver._id, driver.isOnline)}
+                          className={`px-2 py-1 text-xs font-medium rounded transition-colors disabled:opacity-50 ${
+                            driver.isOnline
+                              ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                              : 'bg-green-100 text-green-800 hover:bg-green-200'
+                          }`}
+                          title={driver.isOnline ? 'Set Offline' : 'Set Online'}
+                        >
+                          {actionLoading === driver._id + '-toggle' ? '...' : (driver.isOnline ? 'Set Offline' : 'Set Online')}
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {driver.registrationDate ? new Date(driver.registrationDate).toLocaleDateString() : '-'}

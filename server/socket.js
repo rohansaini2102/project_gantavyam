@@ -18,6 +18,237 @@ let io;
 let enhancedNotificationService;
 let rideCompletionService;
 
+// Track connected clients by user ID
+const connectedClients = new Map();
+
+// Function to update queue after driver goes offline (proper queue shifting)
+const updateQueueAfterDriverRemoval = async (removedDriverId) => {
+  try {
+    console.log(`🔄 Updating queue after driver ${removedDriverId} removal...`);
+    
+    // Get the removed driver's position
+    const removedDriver = await Driver.findById(removedDriverId);
+    if (!removedDriver || !removedDriver.queuePosition) {
+      console.log('❌ Removed driver not found or had no queue position');
+      return await getCompleteQueueState();
+    }
+    
+    const removedPosition = removedDriver.queuePosition;
+    console.log(`📋 Removed driver was at position ${removedPosition}`);
+    
+    // Clear the removed driver's queue position
+    await Driver.findByIdAndUpdate(removedDriverId, {
+      queuePosition: null
+    });
+    
+    // Find all drivers who were AFTER the removed driver (position > removedPosition)
+    const driversToShift = await Driver.find({
+      isOnline: true,
+      isVerified: true,
+      queuePosition: { $gt: removedPosition }
+    }).sort({ queuePosition: 1 });
+    
+    console.log(`📋 Found ${driversToShift.length} drivers to shift up`);
+    
+    // Validate queue integrity and reorder if needed
+    await validateQueueIntegrity();
+    
+    console.log(`✅ Queue reordered after driver removal - ${driversToShift.length} drivers repositioned`);
+    
+    // Get complete queue state for broadcasting
+    const completeQueueState = await getCompleteQueueState();
+    
+    // Broadcast updated queue state to all admins
+    notifyAdmins('queuePositionsUpdated', {
+      queueUpdates: completeQueueState,
+      totalOnline: completeQueueState.length,
+      timestamp: new Date().toISOString(),
+      action: 'driver_removed',
+      removedDriverId
+    });
+    
+    console.log('📢 Queue positions broadcasted to all admins after driver removal');
+    return completeQueueState;
+    
+  } catch (error) {
+    console.error('❌ Error updating queue after driver removal:', error);
+    return await getCompleteQueueState();
+  }
+};
+
+// Function to update queue after driver goes online (proper queue insertion)
+const updateQueueAfterDriverAddition = async (addedDriverId) => {
+  try {
+    console.log(`🔄 Updating queue after driver ${addedDriverId} addition...`);
+    
+    // Get the added driver
+    const addedDriver = await Driver.findById(addedDriverId);
+    if (!addedDriver || !addedDriver.isOnline) {
+      console.log('❌ Added driver not found or not online');
+      return await getCompleteQueueState();
+    }
+    
+    // Get all current online drivers sorted by queue entry time (first-come-first-served)
+    const onlineDrivers = await Driver.find({
+      isOnline: true,
+      isVerified: true,
+      _id: { $ne: addedDriverId }
+    }).sort({ queueEntryTime: 1 });
+    
+    // New driver gets the next position in sequence (first-come-first-served)
+    const newPosition = onlineDrivers.length + 1;
+    
+    console.log(`📋 New driver will be assigned position ${newPosition} (${onlineDrivers.length} drivers already online)`);
+    console.log(`📋 Queue entry time: ${addedDriver.queueEntryTime || addedDriver.lastActiveTime}`);
+    
+    // Set the new driver's position
+    await Driver.findByIdAndUpdate(addedDriverId, {
+      queuePosition: newPosition
+    });
+    
+    console.log(`✅ Driver ${addedDriver.fullName} assigned position ${newPosition}`);
+    
+    // Validate queue integrity and reorder if needed
+    await validateQueueIntegrity();
+    
+    // Get complete queue state for broadcasting
+    const completeQueueState = await getCompleteQueueState();
+    
+    // Broadcast updated queue state to all admins
+    notifyAdmins('queuePositionsUpdated', {
+      queueUpdates: completeQueueState,
+      totalOnline: completeQueueState.length,
+      timestamp: new Date().toISOString(),
+      action: 'driver_added',
+      addedDriverId
+    });
+    
+    console.log('📢 Queue positions broadcasted to all admins after driver addition');
+    return completeQueueState;
+    
+  } catch (error) {
+    console.error('❌ Error updating queue after driver addition:', error);
+    return await getCompleteQueueState();
+  }
+};
+
+// Function to validate queue integrity and fix any issues
+const validateQueueIntegrity = async () => {
+  try {
+    console.log('🔍 Validating queue integrity...');
+    
+    const onlineDrivers = await Driver.find({
+      isOnline: true,
+      isVerified: true
+    }).sort({ 
+      queueEntryTime: 1,
+      lastActiveTime: 1
+    });
+    
+    let hasIssues = false;
+    const issues = [];
+    
+    // Check for duplicate positions
+    const positions = onlineDrivers.map(d => d.queuePosition).filter(p => p !== null);
+    const duplicates = positions.filter((pos, index) => positions.indexOf(pos) !== index);
+    if (duplicates.length > 0) {
+      hasIssues = true;
+      issues.push(`Duplicate queue positions: ${duplicates.join(', ')}`);
+    }
+    
+    // Check for missing positions (gaps in sequence)
+    const expectedPositions = Array.from({ length: onlineDrivers.length }, (_, i) => i + 1);
+    const missingPositions = expectedPositions.filter(pos => !positions.includes(pos));
+    if (missingPositions.length > 0) {
+      hasIssues = true;
+      issues.push(`Missing queue positions: ${missingPositions.join(', ')}`);
+    }
+    
+    // Check for drivers without queue entry time
+    const driversWithoutEntryTime = onlineDrivers.filter(d => !d.queueEntryTime);
+    if (driversWithoutEntryTime.length > 0) {
+      hasIssues = true;
+      issues.push(`${driversWithoutEntryTime.length} drivers without queue entry time`);
+    }
+    
+    if (hasIssues) {
+      console.log('⚠️ Queue integrity issues found:', issues);
+      await reorderQueueByEntryTime();
+      console.log('✅ Queue integrity issues fixed');
+      return false;
+    }
+    
+    console.log('✅ Queue integrity validated - no issues found');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error validating queue integrity:', error);
+    return false;
+  }
+};
+
+// Function to reorder queue by entry time (first-come-first-served)
+const reorderQueueByEntryTime = async () => {
+  try {
+    console.log('🔄 Reordering queue by entry time...');
+    
+    // Get all online drivers sorted by queue entry time
+    const onlineDrivers = await Driver.find({
+      isOnline: true,
+      isVerified: true
+    }).sort({ 
+      queueEntryTime: 1,
+      lastActiveTime: 1 // Fallback for drivers without queueEntryTime
+    });
+    
+    // Reassign positions based on sorted order
+    const updatePromises = onlineDrivers.map((driver, index) => {
+      const newPosition = index + 1;
+      console.log(`📋 Driver ${driver.fullName} -> Position ${newPosition} (Entry: ${driver.queueEntryTime || driver.lastActiveTime})`);
+      
+      // Set queue entry time if missing
+      const updateData = { queuePosition: newPosition };
+      if (!driver.queueEntryTime) {
+        updateData.queueEntryTime = driver.lastActiveTime;
+      }
+      
+      return Driver.findByIdAndUpdate(driver._id, updateData);
+    });
+    
+    await Promise.all(updatePromises);
+    console.log('✅ Queue reordered by entry time');
+    
+  } catch (error) {
+    console.error('❌ Error reordering queue by entry time:', error);
+  }
+};
+
+// Helper function to get complete queue state
+const getCompleteQueueState = async () => {
+  try {
+    const onlineDrivers = await Driver.find({
+      isOnline: true,
+      isVerified: true
+    }).sort({ 
+      queueEntryTime: 1,
+      lastActiveTime: 1 // Fallback for drivers without queueEntryTime
+    });
+    
+    return onlineDrivers.map(driver => ({
+      driverId: driver._id,
+      driverName: driver.fullName,
+      queuePosition: driver.queuePosition,
+      isOnline: true,
+      currentPickupLocation: driver.currentPickupLocation,
+      lastActiveTime: driver.lastActiveTime,
+      queueEntryTime: driver.queueEntryTime
+    }));
+  } catch (error) {
+    console.error('❌ Error getting complete queue state:', error);
+    return [];
+  }
+};
+
 const initializeSocket = (server) => {
   console.log('\n=== INITIALIZING SOCKET.IO SERVER ===');
   
@@ -100,6 +331,10 @@ const initializeSocket = (server) => {
     console.log('User Role:', socket.user.role);
     console.log('Time:', new Date().toISOString());
 
+    // Track connected client
+    connectedClients.set(socket.user._id, socket);
+    console.log(`✅ Client ${socket.user._id} added to connected clients map`);
+
     // Join role-specific room based on the user's role
     if (socket.user.role === 'driver') {
       socket.join('drivers');
@@ -148,7 +383,8 @@ const initializeSocket = (server) => {
         // Use fixed pickup location if not provided
         const fixedMetroBooth = metroBooth || "Hauz Khas Metro Gate No 1";
         
-        // Update driver status
+        // Update driver status with queue entry timestamp
+        const queueEntryTime = new Date();
         await Driver.findByIdAndUpdate(socket.user._id, {
           isOnline: true,
           currentMetroBooth: fixedMetroBooth,
@@ -158,8 +394,11 @@ const initializeSocket = (server) => {
             lastUpdated: new Date()
           },
           vehicleType: vehicleType,
-          lastActiveTime: new Date()
+          lastActiveTime: queueEntryTime,
+          queueEntryTime: queueEntryTime // Dedicated field for queue entry tracking
         });
+        
+        console.log(`📋 Driver ${socket.user._id} queue entry time set to: ${queueEntryTime.toISOString()}`);
         
         // Update metro station online drivers count
         const metroStation = await MetroStation.findOne({ name: fixedMetroBooth });
@@ -186,6 +425,10 @@ const initializeSocket = (server) => {
           location,
           roomStatus: { inDriversRoom, inDriverSpecificRoom, allRooms: rooms }
         });
+        
+        // Update queue positions after driver goes online
+        console.log('🔄 Updating queue after driver goes online...');
+        await updateQueueAfterDriverAddition(socket.user._id);
         
         // Notify admins of driver going online
         notifyAdmins('driverOnline', {
@@ -228,7 +471,9 @@ const initializeSocket = (server) => {
         await Driver.findByIdAndUpdate(socket.user._id, {
           isOnline: false,
           currentMetroBooth: null,
-          lastActiveTime: new Date()
+          lastActiveTime: new Date(),
+          queuePosition: null,
+          queueEntryTime: null
         });
         
         // Update metro station online drivers count
@@ -241,6 +486,10 @@ const initializeSocket = (server) => {
         
         console.log(`✅ Driver ${socket.user._id} is now offline`);
         logRideEvent(`DRIVER-${socket.user._id}`, 'driver_offline', { metroBooth });
+        
+        // Update queue positions after driver goes offline
+        console.log('🔄 Updating queue after driver goes offline...');
+        await updateQueueAfterDriverRemoval(socket.user._id);
         
         // Notify admins of driver going offline
         notifyAdmins('driverOffline', {
@@ -258,6 +507,171 @@ const initializeSocket = (server) => {
       } catch (error) {
         console.error('❌ Error updating driver status:', error);
         socket.emit('driverOfflineConfirmed', { success: false, error: error.message });
+      }
+    });
+
+    // Handle admin queue validation request
+    socket.on('validateQueue', async () => {
+      console.log('\n=== ADMIN QUEUE VALIDATION REQUEST ===');
+      console.log('Admin ID:', socket.user._id);
+      console.log('Admin Role:', socket.user.role);
+      
+      try {
+        // Verify admin role
+        if (socket.user.role !== 'admin') {
+          console.error('❌ Unauthorized: Only admins can validate queue');
+          socket.emit('queueValidationError', { 
+            success: false, 
+            error: 'Unauthorized: Only admins can validate queue' 
+          });
+          return;
+        }
+        
+        // Run queue validation
+        const isValid = await validateQueueIntegrity();
+        
+        // Get current queue state
+        const queueState = await getCompleteQueueState();
+        
+        // Send validation result
+        socket.emit('queueValidationResult', {
+          success: true,
+          isValid,
+          queueState,
+          timestamp: new Date().toISOString(),
+          message: isValid ? 'Queue is valid' : 'Queue issues found and fixed'
+        });
+        
+        // If queue was fixed, notify all admins
+        if (!isValid) {
+          notifyAdmins('queuePositionsUpdated', {
+            queueUpdates: queueState,
+            totalOnline: queueState.length,
+            timestamp: new Date().toISOString(),
+            action: 'queue_validation_fix'
+          });
+        }
+        
+        console.log(`✅ Queue validation completed by admin ${socket.user._id}`);
+        
+      } catch (error) {
+        console.error('❌ Error during queue validation:', error);
+        socket.emit('queueValidationError', { 
+          success: false, 
+          error: error.message 
+        });
+      }
+    });
+
+    // Handle admin driver status toggle
+    socket.on('adminToggleDriverStatus', async (data) => {
+      console.log('\n=== ADMIN TOGGLING DRIVER STATUS ===');
+      console.log('Admin ID:', socket.user._id);
+      console.log('Admin Role:', socket.user.role);
+      console.log('Target Driver ID:', data.driverId);
+      console.log('New Status:', data.isOnline);
+      
+      try {
+        // Verify admin role
+        if (socket.user.role !== 'admin') {
+          console.error('❌ Unauthorized: Only admins can toggle driver status');
+          socket.emit('adminToggleDriverStatusError', { 
+            success: false, 
+            error: 'Unauthorized: Only admins can toggle driver status' 
+          });
+          return;
+        }
+        
+        const driver = await Driver.findById(data.driverId);
+        if (!driver) {
+          console.error('❌ Driver not found');
+          socket.emit('adminToggleDriverStatusError', { 
+            success: false, 
+            error: 'Driver not found' 
+          });
+          return;
+        }
+        
+        // Update driver status
+        const queueEntryTime = new Date();
+        const updateData = {
+          isOnline: data.isOnline,
+          lastActiveTime: queueEntryTime
+        };
+        
+        // If setting online, set queue entry time
+        if (data.isOnline) {
+          updateData.queueEntryTime = queueEntryTime;
+          console.log(`📋 Admin setting driver ${data.driverId} online with queue entry time: ${queueEntryTime.toISOString()}`);
+        } else {
+          // If setting offline, clear current booth and queue entry time
+          updateData.currentMetroBooth = null;
+          updateData.currentPickupLocation = null;
+          updateData.queueEntryTime = null;
+          console.log(`📋 Admin setting driver ${data.driverId} offline - clearing queue entry time`);
+        }
+        
+        await Driver.findByIdAndUpdate(data.driverId, updateData);
+        
+        // Update metro station online drivers count
+        if (driver.currentMetroBooth) {
+          const metroStation = await MetroStation.findOne({ name: driver.currentMetroBooth });
+          if (metroStation) {
+            if (data.isOnline) {
+              await metroStation.incrementOnlineDrivers();
+            } else {
+              await metroStation.decrementOnlineDrivers();
+            }
+          }
+        }
+        
+        console.log(`✅ Admin ${socket.user._id} toggled driver ${data.driverId} status to ${data.isOnline ? 'online' : 'offline'}`);
+        logRideEvent(`ADMIN-${socket.user._id}`, 'admin_toggle_driver_status', { 
+          driverId: data.driverId, 
+          newStatus: data.isOnline 
+        });
+        
+        // Find driver socket and notify them
+        const driverSocket = connectedClients.get(data.driverId);
+        if (driverSocket) {
+          driverSocket.emit('statusChangedByAdmin', {
+            isOnline: data.isOnline,
+            message: `Your status has been changed to ${data.isOnline ? 'online' : 'offline'} by admin`
+          });
+        }
+        
+        // Update queue positions after admin status change
+        console.log('🔄 Updating queue after admin status change...');
+        if (data.isOnline) {
+          await updateQueueAfterDriverAddition(data.driverId);
+        } else {
+          await updateQueueAfterDriverRemoval(data.driverId);
+        }
+        
+        // Notify all admins about driver status change (with updated positions)
+        notifyAdmins('driverStatusUpdated', {
+          driverId: data.driverId,
+          driverName: driver.fullName,
+          isOnline: data.isOnline,
+          currentPickupLocation: driver.currentPickupLocation,
+          lastActiveTime: updateData.lastActiveTime,
+          changedBy: 'admin',
+          adminId: socket.user._id,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Confirm to the admin who made the change
+        socket.emit('adminToggleDriverStatusConfirmed', { 
+          success: true,
+          message: `Driver ${data.isOnline ? 'set online' : 'set offline'} successfully`
+        });
+        
+      } catch (error) {
+        console.error('❌ Error toggling driver status:', error);
+        socket.emit('adminToggleDriverStatusError', { 
+          success: false, 
+          error: error.message 
+        });
       }
     });
 
@@ -1248,6 +1662,10 @@ const initializeSocket = (server) => {
       console.log('Role:', socket.user.role);
       console.log('Reason:', reason);
       console.log('Time:', new Date().toISOString());
+      
+      // Remove from connected clients map
+      connectedClients.delete(socket.user._id);
+      console.log(`✅ Client ${socket.user._id} removed from connected clients map`);
       
       // Update driver status if it's a driver
       if (socket.user.role === 'driver') {
