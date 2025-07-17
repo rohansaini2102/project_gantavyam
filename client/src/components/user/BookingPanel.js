@@ -42,25 +42,25 @@ const BookingPanel = ({
 
   // Removed pickup location filtering since we use fixed location
 
-  // Vehicle options
+  // Vehicle options - using real fare estimates or reasonable defaults only when estimates unavailable
   const vehicles = [
     { 
       type: 'bike', 
       available: true,
       eta: '2 mins away',
-      price: fareEstimates?.bike || 25
+      price: fareEstimates?.estimates?.bike?.totalFare || (fareEstimates ? 'Calculating...' : 25)
     },
     { 
       type: 'auto', 
       available: true,
       eta: '3 mins away',
-      price: fareEstimates?.auto || 45
+      price: fareEstimates?.estimates?.auto?.totalFare || (fareEstimates ? 'Calculating...' : 40)
     },
     { 
       type: 'car', 
       available: true,
       eta: '5 mins away',
-      price: fareEstimates?.car || 85
+      price: fareEstimates?.estimates?.car?.totalFare || (fareEstimates ? 'Calculating...' : 80)
     }
   ];
 

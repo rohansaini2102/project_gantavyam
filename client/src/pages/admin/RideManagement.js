@@ -268,6 +268,18 @@ const RideManagement = () => {
           totalRides: paginationData.total,
           hasMore: paginationData.hasMore
         });
+        
+        // DEBUG: Log destination data for rides
+        console.log('🔍 [DEBUG] Frontend ride destinations:');
+        ridesData.slice(0, 3).forEach((ride, index) => {
+          console.log(`  Ride ${index + 1}:`, {
+            id: ride._id,
+            destination: ride.destination,
+            hasDestination: !!ride.destination,
+            dropLocation: ride.dropLocation,
+            pickupLocation: ride.pickupLocation
+          });
+        });
       } else {
         console.error('🔍 [Ride Management] Invalid response format:', response);
         ridesData = [];
@@ -719,7 +731,7 @@ const RideManagement = () => {
   };
 
   const formatRideData = (data) => {
-    return {
+    const formattedData = {
       _id: data.rideId || data._id,
       rideId: data.uniqueRideId || data.rideId,
       status: data.status,
@@ -733,6 +745,16 @@ const RideManagement = () => {
       queueNumber: data.queueNumber,
       createdAt: data.createdAt || new Date().toISOString()
     };
+    
+    // DEBUG: Log real-time ride data formatting
+    console.log('🔍 [DEBUG] Formatting real-time ride data:', {
+      originalDropLocation: data.dropLocation,
+      originalDestination: data.destination,
+      formattedDestination: formattedData.destination,
+      hasDropLocationAddress: !!data.dropLocation?.address
+    });
+    
+    return formattedData;
   };
 
   const viewRideDetails = async (rideId) => {

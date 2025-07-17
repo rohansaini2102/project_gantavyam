@@ -144,6 +144,16 @@ router.get('/', async (req, res) => {
     // Execute both queries in parallel
     const [activeRides, historyRides] = await Promise.all([activeRidesPromise, historyRidesPromise]);
 
+    // FIXED: Normalize RideRequest data to ensure destination field exists
+    activeRides.forEach(ride => {
+      // Ensure destination field is set from dropLocation.address
+      if (!ride.destination && ride.dropLocation?.address) {
+        ride.destination = ride.dropLocation.address;
+      } else if (!ride.destination) {
+        ride.destination = 'Not specified';
+      }
+    });
+
     // Normalize RideHistory data to match RideRequest format
     const normalizedHistoryRides = historyRides.map(ride => ({
       _id: ride._id,
@@ -200,6 +210,8 @@ router.get('/', async (req, res) => {
         ride.pickupLocation = ride.pickupLocation.boothName;
       }
       
+      // Note: destination field is now set earlier in the process
+      
       // Fix driver info display - use populated driver data as fallback
       if (ride.driverId && typeof ride.driverId === 'object') {
         // Driver is populated, use it as fallback for missing fields
@@ -233,11 +245,67 @@ router.get('/', async (req, res) => {
       id: rides[0]._id,
       status: rides[0].status,
       pickupLocation: rides[0].pickupLocation,
+      destination: rides[0].destination,
+      dropLocation: rides[0].dropLocation,
       userId: rides[0].userId?.name || 'No user',
       driverId: rides[0].driverId?.name || 'No driver',
       createdAt: rides[0].createdAt,
       timestamp: rides[0].timestamp
     } : 'No rides found');
+    
+    // DEBUG: Log dropLocation data for first few rides
+    console.log(`🔍 [DEBUG] Drop location data for first 3 rides:`);
+    rides.slice(0, 3).forEach((ride, index) => {
+      console.log(`  Ride ${index + 1} (${ride._id}):`, {
+        destination: ride.destination,
+        dropLocation: ride.dropLocation,
+        hasDropLocation: !!ride.dropLocation,
+        hasDestination: !!ride.destination,
+        dropLocationAddress: ride.dropLocation?.address,
+        destinationType: typeof ride.destination,
+        destinationLength: ride.destination?.length
+      });
+    });
+    
+    // DEBUG: Enhanced drop-off location analysis
+    const ridesWithDestination = rides.filter(ride => ride.destination && ride.destination !== 'Not specified').length;
+    const ridesWithoutDestination = rides.length - ridesWithDestination;
+    const ridesWithDropLocation = rides.filter(ride => ride.dropLocation && ride.dropLocation.address).length;
+    const ridesWithDropLocationButNoDestination = rides.filter(ride => 
+      ride.dropLocation && ride.dropLocation.address && 
+      (!ride.destination || ride.destination === 'Not specified')
+    ).length;
+    
+    console.log(`🔍 [DEBUG] Drop-off Location Analysis:`);
+    console.log(`  Total rides: ${rides.length}`);
+    console.log(`  Rides with destination field: ${ridesWithDestination}`);
+    console.log(`  Rides without destination: ${ridesWithoutDestination}`);
+    console.log(`  Rides with dropLocation.address: ${ridesWithDropLocation}`);
+    console.log(`  Rides with dropLocation but no destination: ${ridesWithDropLocationButNoDestination}`);
+    
+    if (ridesWithDropLocationButNoDestination > 0) {
+      console.log(`⚠️  [DEBUG] ${ridesWithDropLocationButNoDestination} rides have dropLocation.address but missing destination field!`);
+      const samples = rides.filter(ride => 
+        ride.dropLocation && ride.dropLocation.address && 
+        (!ride.destination || ride.destination === 'Not specified')
+      ).slice(0, 3);
+      
+      samples.forEach((ride, index) => {
+        console.log(`    Sample ${index + 1}: dropLocation.address="${ride.dropLocation.address}", destination="${ride.destination}"`);
+      });
+    }
+    
+    // DEBUG: Log the actual API response structure for first ride
+    if (rides[0]) {
+      console.log(`🔍 [DEBUG] Sample API response structure:`, {
+        _id: rides[0]._id,
+        status: rides[0].status,
+        destination: rides[0].destination,
+        pickupLocation: rides[0].pickupLocation,
+        userId: rides[0].userId,
+        hasDestination: !!rides[0].destination
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -310,6 +378,11 @@ router.get('/booth/:boothName', async (req, res) => {
     rides.forEach(ride => {
       if (typeof ride.pickupLocation === 'object' && ride.pickupLocation?.boothName) {
         ride.pickupLocation = ride.pickupLocation.boothName;
+      }
+      
+      // FIXED: Map dropLocation.address to destination for consistency
+      if (!ride.destination && ride.dropLocation) {
+        ride.destination = ride.dropLocation.address || 'Not specified';
       }
       
       // Fix driver info display using populated data as fallback
@@ -419,6 +492,11 @@ router.get('/:rideId', async (req, res) => {
       }
     }
       
+    // FIXED: Map dropLocation.address to destination for RideRequest records (if not already mapped)
+    if (ride && !ride.destination && ride.dropLocation) {
+      ride.destination = ride.dropLocation.address || 'Not specified';
+    }
+    
     // Fix driver info if populated but fields are missing
     if (ride && ride.driverId && typeof ride.driverId === 'object') {
       if (!ride.driverName && (ride.driverId.fullName || ride.driverId.name)) {

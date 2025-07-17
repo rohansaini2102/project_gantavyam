@@ -296,10 +296,10 @@ const NewUserDashboard = () => {
 
   // Calculate fare when locations change
   useEffect(() => {
-    if (selectedPickup && dropCoordinates && vehicleType) {
+    if (selectedPickup && dropCoordinates) {
       calculateFare();
     }
-  }, [selectedPickup, dropCoordinates, vehicleType]);
+  }, [selectedPickup, dropCoordinates]);
 
   const calculateFare = async () => {
     try {
@@ -320,24 +320,24 @@ const NewUserDashboard = () => {
       } else {
         console.error('[NewUserDashboard] Fare estimation failed:', response.message);
         setBookingError('⚠️ Could not calculate fare. You can still book the ride.');
-        // Set fallback estimates for booking
+        // Set fallback estimates for booking (matching minimum fares)
         setFareEstimates({
           estimates: {
-            bike: 50,
-            auto: 100,
-            car: 150
+            bike: 20,
+            auto: 30,
+            car: 60
           }
         });
       }
     } catch (error) {
       console.error('[NewUserDashboard] Error calculating fare:', error);
       setBookingError('⚠️ Could not calculate fare. You can still book the ride.');
-      // Set fallback estimates for booking
+      // Set fallback estimates for booking (matching minimum fares)
       setFareEstimates({
         estimates: {
-          bike: 50,
-          auto: 100,
-          car: 150
+          bike: 20,
+          auto: 30,
+          car: 60
         }
       });
     } finally {

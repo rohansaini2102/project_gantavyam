@@ -17,21 +17,21 @@ const VehicleCard = ({
   };
 
   const vehicleNames = {
-    bike: 'Uber Go',
-    auto: 'Moto',
-    car: 'UberXL'
+    bike: 'Bike',
+    auto: 'Auto',
+    car: 'Cab'
   };
 
   const vehicleDescriptions = {
-    bike: '1-2 seats',
-    auto: '5 mins away',
-    car: '4 mins away'
+    bike: 'Quick & affordable',
+    auto: 'Comfortable for 3',
+    car: 'Spacious & AC'
   };
 
   const vehicleSubtitles = {
-    bike: 'Affordable sedan rides',
-    auto: 'Affordable motorcycle rides',
-    car: 'Comfortable sedans'
+    bike: 'Fastest way to travel',
+    auto: 'Most popular choice',
+    car: 'Premium comfort ride'
   };
 
   return (

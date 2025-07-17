@@ -168,6 +168,18 @@ const adminProtect = async (req, res, next) => {
     try {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+      
+      console.log('Admin auth - Decoded token:', decoded);
+      console.log('Admin auth - Looking for admin with ID:', decoded.id);
+      
+      // Check if decoded.id exists
+      if (!decoded.id) {
+        console.error('Admin auth - Token missing id field:', decoded);
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid token structure - missing id field'
+        });
+      }
 
       // Get admin from the token
       const admin = await Admin.findById(decoded.id).select('-password');

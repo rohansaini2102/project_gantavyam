@@ -169,7 +169,7 @@ router.post('/admin/login', async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { 
-        _id: admin._id.toString(),
+        id: admin._id.toString(),
         role: 'admin',
         name: admin.name,
         email: admin.email

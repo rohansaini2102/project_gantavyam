@@ -524,6 +524,7 @@ const initializeSocket = (server) => {
           driverName: driverName,
           userName: rideRequest.userName,
           pickupLocation: rideRequest.pickupLocation,
+          dropLocation: rideRequest.dropLocation,
           status: 'driver_assigned',
           queueNumber: rideRequest.queueNumber,
           acceptedAt: rideRequest.acceptedAt
@@ -644,6 +645,7 @@ const initializeSocket = (server) => {
           userName: rideRequest.userName,
           driverName: rideRequest.driverName,
           pickupLocation: rideRequest.pickupLocation,
+          dropLocation: rideRequest.dropLocation,
           status: 'ride_started',
           startedAt: rideRequest.rideStartedAt,
           queueNumber: rideRequest.queueNumber
@@ -812,6 +814,7 @@ const initializeSocket = (server) => {
             userName: rideRequest.userName,
             driverName: rideRequest.driverName,
             pickupLocation: rideRequest.pickupLocation,
+            dropLocation: rideRequest.dropLocation,
             status: 'completed',
             completedAt: completionData.completedAt,
             actualFare: rideRequest.actualFare,
@@ -962,6 +965,7 @@ const initializeSocket = (server) => {
           userName: rideRequest.userName,
           driverName: rideRequest.driverName || 'No driver assigned',
           pickupLocation: rideRequest.pickupLocation,
+          dropLocation: rideRequest.dropLocation,
           status: 'cancelled',
           cancelledAt: rideRequest.cancelledAt,
           cancelledBy: socket.user.role,

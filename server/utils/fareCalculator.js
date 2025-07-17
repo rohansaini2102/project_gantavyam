@@ -7,21 +7,21 @@ const VEHICLE_CONFIGS = {
   bike: {
     baseFare: 15,
     perKmRate: 8,
-    minimumFare: 25,
+    minimumFare: 20, // Reduced from 25 to allow shorter trips to be priced by distance
     surgeFactor: 1.2,
     waitingChargePerMin: 1
   },
   auto: {
     baseFare: 25,
-    perKmRate: 12,
-    minimumFare: 40,
+    perKmRate: 17,
+    minimumFare: 30, // Reduced from 40 to allow shorter trips to be priced by distance
     surgeFactor: 1.3,
     waitingChargePerMin: 2
   },
   car: {
     baseFare: 50,
     perKmRate: 18,
-    minimumFare: 80,
+    minimumFare: 60, // Reduced from 80 to allow shorter trips to be priced by distance
     surgeFactor: 1.5,
     waitingChargePerMin: 3
   }

@@ -522,15 +522,15 @@ router.post('/book-ride', protectUser, async (req, res) => {
           dropLocation.lat, dropLocation.lng
         );
         
-        // Simple fallback calculation: base fare + distance-based fare
-        const baseFare = vehicleType === 'bike' ? 25 : vehicleType === 'auto' ? 45 : 85;
-        const perKmRate = vehicleType === 'bike' ? 10 : vehicleType === 'auto' ? 15 : 25;
-        finalFare = Math.max(baseFare, baseFare + Math.ceil(distance) * perKmRate);
+        // Use the same fare calculation logic as the main system for consistency
+        const { calculateFare } = require('../utils/fareCalculator');
+        const fareCalculation = calculateFare(vehicleType, distance, true, 0);
+        finalFare = fareCalculation.totalFare;
         
         console.log(`✅ Calculated fallback fare: ₹${finalFare} for ${distance}km`);
       } catch (fallbackError) {
         console.error('❌ Fallback fare calculation failed:', fallbackError);
-        finalFare = vehicleType === 'bike' ? 50 : vehicleType === 'auto' ? 100 : 150; // Default minimum
+        finalFare = vehicleType === 'bike' ? 20 : vehicleType === 'auto' ? 30 : 60; // Default minimum matching new fare structure
       }
     }
     

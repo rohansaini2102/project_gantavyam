@@ -94,7 +94,17 @@ router.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: admin._id, role: 'admin' }, process.env.JWT_SECRET || 'your_jwt_secret', { expiresIn: '1d' });
+    console.log('Admin found:', { id: admin._id, email: admin.email, name: admin.name });
+    
+    // Ensure admin._id exists
+    if (!admin._id) {
+      console.error('Admin._id is undefined!', admin);
+      return res.status(500).json({ success: false, error: 'Admin ID not found' });
+    }
+    
+    const token = jwt.sign({ id: admin._id.toString(), role: 'admin' }, process.env.JWT_SECRET || 'your_jwt_secret', { expiresIn: '1d' });
+    console.log('Token created with payload:', { id: admin._id.toString(), role: 'admin' });
+    
     res.json({ success: true, token, admin: { id: admin._id, email: admin.email, name: admin.name } });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Server error' });
