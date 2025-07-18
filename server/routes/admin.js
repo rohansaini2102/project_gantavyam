@@ -21,6 +21,7 @@ const queueRoutes = require('./admin/queueRoutes');
 const rideRoutes = require('./admin/rideRoutes');
 const { router: rideManagementTools } = require('./admin/rideManagementTools');
 const driverInfoRecoveryRoutes = require('./admin/driverInfoRecovery');
+const manualBookingRoutes = require('./admin/manualBookingRoutes');
 
 // Configure multer for multiple files
 const driverDocumentUpload = uploadDriverDocuments.fields([
@@ -51,6 +52,7 @@ router.use('/queue', queueRoutes);
 router.use('/rides', rideRoutes);
 router.use('/ride-tools', rideManagementTools);
 router.use('/driver-recovery', driverInfoRecoveryRoutes);
+router.use('/', manualBookingRoutes);
 
 // Dashboard and statistics routes
 router.get('/dashboard/stats', adminProtect, getDashboardStats);

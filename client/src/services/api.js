@@ -550,6 +550,44 @@ export const admin = {
     } catch (error) {
       throw error;
     }
+  },
+
+  // Manual Booking APIs
+  createManualBooking: async (bookingData) => {
+    try {
+      const response = await apiClient.post('/admin/manual-booking', bookingData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  checkUserByPhone: async (phone) => {
+    try {
+      const response = await apiClient.get(`/admin/check-user/${phone}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getManualBookingDetails: async (bookingId) => {
+    try {
+      const response = await apiClient.get(`/admin/manual-booking/${bookingId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get fare estimates for manual booking (admin context)
+  getFareEstimate: async (fareData) => {
+    try {
+      const response = await apiClient.post('/fare/estimate', fareData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 

@@ -62,6 +62,7 @@ export const PICKUP_LOCATIONS = {
       { id: 'M-Y-022', name: 'AIIMS', lat: 28.5686, lng: 77.2080, address: 'AIIMS, Delhi' },
       { id: 'M-Y-023', name: 'Green Park', lat: 28.5599, lng: 77.2067, address: 'Green Park, Delhi' },
       { id: 'M-Y-024', name: 'Hauz Khas', lat: 28.5433, lng: 77.2066, address: 'Hauz Khas, Delhi' },
+      { id: 'M-Y-024-G1', name: 'Hauz Khas Metro Gate No 1', lat: 28.5433, lng: 77.2066, address: 'Hauz Khas Metro Gate No 1, Delhi' },
       { id: 'M-Y-025', name: 'Malviya Nagar', lat: 28.5281, lng: 77.2056, address: 'Malviya Nagar, Delhi' },
       { id: 'M-Y-026', name: 'Saket', lat: 28.5208, lng: 77.2015, address: 'Saket, Delhi' },
       { id: 'M-Y-027', name: 'Qutab Minar', lat: 28.5131, lng: 77.1857, address: 'Qutab Minar, Delhi' },

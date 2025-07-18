@@ -130,7 +130,36 @@ const rideRequestSchema = new mongoose.Schema({
   },
   driversNotified: Number,
   broadcastAt: Date,
-  broadcastMethod: String
+  broadcastMethod: String,
+  // Manual booking fields
+  bookingSource: {
+    type: String,
+    enum: ['app', 'manual'],
+    default: 'app'
+  },
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin'
+  },
+  adminName: String,
+  bookingId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  driver: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Driver'
+  },
+  pickupStation: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PickupLocation'
+  },
+  assignedAt: Date
 }, {
   timestamps: true  // This automatically adds createdAt and updatedAt fields
 });

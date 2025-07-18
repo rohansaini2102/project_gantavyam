@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FaUserPlus, FaUsers, FaCar, FaUser, FaHome, FaTachometerAlt, FaChartBar, FaCog, FaRoute, FaMapMarkerAlt, FaListOl } from 'react-icons/fa';
+import { FaUserPlus, FaUsers, FaCar, FaUser, FaHome, FaTachometerAlt, FaChartBar, FaCog, FaRoute, FaMapMarkerAlt, FaListOl, FaHandHoldingHeart } from 'react-icons/fa';
 
 const navLinks = [
   { to: '/admin', label: 'Dashboard', icon: <FaTachometerAlt />, isExact: true },
@@ -22,6 +22,7 @@ const navLinks = [
     category: 'Operations',
     items: [
       { to: '/admin/rides', label: 'Ride Management', icon: <FaRoute /> },
+      { to: '/admin/manual-booking', label: 'Manual Booking', icon: <FaHandHoldingHeart /> },
       { to: '/admin/queue', label: 'Queue Management', icon: <FaListOl /> },
       { to: '/admin/booths', label: 'Booth Management', icon: <FaMapMarkerAlt /> },
     ]

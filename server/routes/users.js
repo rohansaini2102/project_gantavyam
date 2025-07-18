@@ -401,11 +401,51 @@ router.post('/fare-estimate', protectUser, async (req, res) => {
   }
 });
 
-// Create a ride request
+// Create a ride request (supports both regular and manual bookings)
 router.post('/book-ride', protectUser, async (req, res) => {
   try {
-    const { pickupStation, dropLocation, vehicleType, estimatedFare } = req.body;
-    const userId = req.user.id;
+    const { 
+      pickupStation, 
+      dropLocation, 
+      vehicleType, 
+      estimatedFare,
+      // Manual booking specific fields
+      bookingSource,
+      adminBooked,
+      customerPhone,
+      customerName,
+      existingUserId,
+      pickupLat,
+      pickupLng,
+      dropLat,
+      dropLng
+    } = req.body;
+    
+    // Determine user ID based on booking type
+    let userId, user;
+    if (adminBooked && bookingSource === 'manual') {
+      // Manual booking by admin
+      if (existingUserId) {
+        user = await User.findById(existingUserId);
+        userId = existingUserId;
+      } else {
+        // Create new user for manual booking
+        user = await User.findOne({ phone: customerPhone });
+        if (!user) {
+          user = new User({
+            name: customerName,
+            phone: customerPhone,
+            password: customerPhone, // Default password
+            isPhoneVerified: true
+          });
+          await user.save();
+        }
+        userId = user._id;
+      }
+    } else {
+      // Regular online booking
+      userId = req.user.id;
+    }
     
     console.log('\n=== USER RIDE BOOKING REQUEST ===');
     console.log('User ID:', userId);
@@ -422,9 +462,23 @@ router.post('/book-ride', protectUser, async (req, res) => {
       });
     }
     
+    // Handle drop location for manual bookings
+    let processedDropLocation;
+    if (adminBooked && bookingSource === 'manual') {
+      // For manual bookings, construct drop location from coordinates
+      processedDropLocation = {
+        address: dropLocation,
+        lat: dropLat,
+        lng: dropLng
+      };
+    } else {
+      // Regular booking validation
+      processedDropLocation = dropLocation;
+    }
+    
     // Validate drop location structure
-    if (!dropLocation.address || typeof dropLocation.lat !== 'number' || typeof dropLocation.lng !== 'number') {
-      console.error('❌ Invalid drop location structure:', dropLocation);
+    if (!processedDropLocation.address || typeof processedDropLocation.lat !== 'number' || typeof processedDropLocation.lng !== 'number') {
+      console.error('❌ Invalid drop location structure:', processedDropLocation);
       return res.status(400).json({
         success: false,
         message: 'Drop location must include address, lat, and lng coordinates'
@@ -432,8 +486,8 @@ router.post('/book-ride', protectUser, async (req, res) => {
     }
     
     // Validate coordinates range
-    if (dropLocation.lat < -90 || dropLocation.lat > 90 || dropLocation.lng < -180 || dropLocation.lng > 180) {
-      console.error('❌ Invalid coordinates range:', { lat: dropLocation.lat, lng: dropLocation.lng });
+    if (processedDropLocation.lat < -90 || processedDropLocation.lat > 90 || processedDropLocation.lng < -180 || processedDropLocation.lng > 180) {
+      console.error('❌ Invalid coordinates range:', { lat: processedDropLocation.lat, lng: processedDropLocation.lng });
       return res.status(400).json({
         success: false,
         message: 'Invalid coordinate values. Latitude must be between -90 and 90, longitude between -180 and 180'
@@ -456,9 +510,20 @@ router.post('/book-ride', protectUser, async (req, res) => {
       });
     }
     
-    // Handle fixed pickup location - Hauz Khas Metro Gate No 1
+    // Handle pickup location for both regular and manual bookings
     let station;
-    if (pickupStation === 'Hauz Khas Metro Gate No 1') {
+    if (adminBooked && bookingSource === 'manual' && pickupLat && pickupLng) {
+      // For manual bookings, use provided coordinates
+      station = {
+        id: 'M-Y-024-GATE1',
+        name: pickupStation,
+        lat: pickupLat,
+        lng: pickupLng,
+        line: 'yellow',
+        type: 'metro'
+      };
+      console.log('✅ Using manual booking pickup location:', station);
+    } else if (pickupStation === 'Hauz Khas Metro Gate No 1') {
       // Use the fixed location directly
       station = {
         id: 'M-Y-024-GATE1',
@@ -495,13 +560,15 @@ router.post('/book-ride', protectUser, async (req, res) => {
       }
     }
     
-    // Get user details
-    const user = await User.findById(userId);
+    // Get user details (already retrieved for manual bookings)
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+      user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
     }
     
     console.log('✅ User found:', {
@@ -545,7 +612,7 @@ router.post('/book-ride', protectUser, async (req, res) => {
     const { calculateDistance } = require('../utils/fareCalculator');
     const distance = calculateDistance(
       station.lat, station.lng,
-      dropLocation.lat, dropLocation.lng
+      processedDropLocation.lat, processedDropLocation.lng
     );
     
     // Create ride request
@@ -572,9 +639,9 @@ router.post('/book-ride', protectUser, async (req, res) => {
         longitude: station.lng
       },
       dropLocation: {
-        address: dropLocation.address,
-        latitude: dropLocation.lat,
-        longitude: dropLocation.lng
+        address: processedDropLocation.address,
+        latitude: processedDropLocation.lat,
+        longitude: processedDropLocation.lng
       },
       vehicleType: vehicleType,
       distance: distance,

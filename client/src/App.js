@@ -16,6 +16,7 @@ import AllDrivers from './pages/admin/AllDrivers';
 import RideManagement from './pages/admin/RideManagement';
 import QueueManagement from './pages/admin/QueueManagement';
 import BoothManagement from './pages/admin/BoothManagement';
+import ManualBooking from './pages/admin/ManualBooking';
 // Driver
 import DriverDashboard from './pages/driver/Dashboard';
 import NewDriverDashboard from './pages/driver/NewDashboard';
@@ -53,6 +54,7 @@ function App() {
           <Route path="drivers" element={<AllDrivers />} />
           <Route path="view-users" element={<ViewUsers />} />
           <Route path="rides" element={<RideManagement />} />
+          <Route path="manual-booking" element={<ManualBooking />} />
           <Route path="queue" element={<QueueManagement />} />
           <Route path="booths" element={<BoothManagement />} />
         </Route>
