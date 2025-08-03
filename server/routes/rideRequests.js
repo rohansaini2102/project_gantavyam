@@ -16,71 +16,79 @@ const { logRideEvent, logUserAction } = require('../utils/rideLogger');
 // @route   POST /api/ride-requests/request
 // @access  Private (User only)
 router.post('/request', protectUser, async (req, res) => {
-  console.log('\n=== NEW RIDE REQUEST VIA API ===');
-  console.log('User ID:', req.user.id);
-  console.log('Request body:', req.body);
-  
   try {
-    const {
-      pickupStation,
-      dropLocation,
-      vehicleType,
-      estimatedFare
+    const { 
+      pickupStation, 
+      dropLocation, 
+      vehicleType, 
+      estimatedFare,
+      distance 
     } = req.body;
-
-    // Validate required fields
-    if (!pickupStation || !dropLocation || !vehicleType || !estimatedFare) {
-      console.error('❌ Missing required fields');
+    
+    const userId = req.user.id;
+    
+    console.log('\n=== NEW RIDE REQUEST ===');
+    console.log('User ID:', userId);
+    console.log('Pickup Station:', pickupStation);
+    console.log('Drop Location:', dropLocation);
+    console.log('Vehicle Type:', vehicleType);
+    console.log('Estimated Fare:', estimatedFare);
+    console.log('Distance:', distance);
+    
+    // Validate input
+    if (!pickupStation || !dropLocation || !vehicleType || estimatedFare === undefined || distance === undefined) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: pickupStation, dropLocation, vehicleType, estimatedFare'
+        message: 'All booking details are required'
       });
     }
-
-    // Validate vehicle type
-    if (!['bike', 'auto', 'car'].includes(vehicleType)) {
+    
+    // Validate drop location structure
+    if (!dropLocation.address || typeof dropLocation.lat !== 'number' || typeof dropLocation.lng !== 'number') {
       return res.status(400).json({
         success: false,
-        error: 'Invalid vehicle type. Must be: bike, auto, or car'
+        message: 'Drop location must include address, lat, and lng'
       });
     }
-
-    // Find pickup station
-    const station = await MetroStation.findOne({ name: pickupStation });
-    if (!station) {
-      return res.status(404).json({
-        success: false,
-        error: 'Pickup station not found'
-      });
-    }
-
+    
     // Get user details
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: 'User not found'
+        message: 'User not found'
       });
     }
-
-    // Generate unique ride ID and OTPs
+    
+    // Handle fixed pickup location
+    let station;
+    if (pickupStation === 'Hauz Khas Metro Gate No 1') {
+      station = {
+        name: 'Hauz Khas Metro Gate No 1',
+        lat: 28.5433,
+        lng: 77.2066,
+        line: 'yellow',
+        type: 'metro'
+      };
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid pickup location'
+      });
+    }
+    
+    // Generate ride details
     const rideId = generateRideId();
     const { startOTP, endOTP } = generateRideOTPs();
-
-    // Calculate distance for database storage
-    const { calculateDistance } = require('../utils/fareCalculator');
-    const distance = calculateDistance(
-      station.lat, station.lng,
-      dropLocation.lat, dropLocation.lng
-    );
-
+    
     // Create ride request
-    const rideRequest = await RideRequest.create({
-      userId: req.user.id,
+    const rideRequest = new RideRequest({
+      userId: user._id,
+      user: user._id,
       userName: user.name,
       userPhone: user.phone,
       pickupLocation: {
-        boothName: pickupStation,
+        boothName: station.name,
         latitude: station.lat,
         longitude: station.lng
       },
@@ -89,84 +97,59 @@ router.post('/request', protectUser, async (req, res) => {
         latitude: dropLocation.lat,
         longitude: dropLocation.lng
       },
-      vehicleType: vehicleType,
-      distance: distance,
-      fare: estimatedFare,
-      estimatedFare: estimatedFare,
-      rideId: rideId,
-      startOTP: startOTP,
-      endOTP: endOTP,
-      status: 'pending'
-    });
-
-    console.log(`✅ Ride request created with ID: ${rideRequest._id}`);
-    console.log(`🔐 Generated OTPs - Start: ${startOTP}, End: ${endOTP}`);
-
-    // Log ride event
-    logRideEvent(rideId, 'ride_request_created', {
-      userId: req.user.id,
-      userName: user.name,
-      pickupStation,
       vehicleType,
       estimatedFare,
-      distance
-    });
-
-    // Log user action
-    logUserAction(req.user.id, 'ride_booked', {
+      fare: estimatedFare,
+      distance,
+      startOTP,
+      endOTP,
       rideId,
-      pickupStation,
+      status: 'pending',
+      timestamp: new Date()
+    });
+    
+    await rideRequest.save();
+    
+    // Log ride event
+    logRideEvent(rideRequest._id, 'ride_request_created', {
+      userId,
+      pickupStation: station.name,
+      dropLocation: dropLocation.address,
       vehicleType,
       estimatedFare
     });
-
-    // Broadcast ride request to matching drivers using the proper method
+    
+    console.log('✅ Ride request created:', rideRequest._id);
+    
+    // Broadcast to available drivers
     try {
-      const broadcastData = {
-        rideId: rideRequest._id.toString(),
-        pickupStation: pickupStation,
-        vehicleType: vehicleType,
-        userName: user.name,
-        userPhone: user.phone
-      };
-
-      console.log(`📡 Broadcasting ride request to matching drivers:`, broadcastData);
-      const broadcastResult = await broadcastRideRequest(broadcastData);
-      
-      if (broadcastResult.success) {
-        console.log(`✅ Socket broadcast completed for ride ${rideId} - ${broadcastResult.driversNotified} drivers notified`);
-      } else {
-        console.error(`❌ Socket broadcast failed for ride ${rideId}:`, broadcastResult.error);
-      }
-
-    } catch (socketError) {
-      console.error('❌ Socket broadcast failed:', socketError);
-      // Don't fail the API call if socket fails
+      await broadcastRideRequest(rideRequest);
+      console.log('✅ Ride request broadcast to drivers');
+    } catch (broadcastError) {
+      console.error('❌ Error broadcasting ride request:', broadcastError);
+      // Continue even if broadcast fails
     }
-
-    res.status(201).json({
+    
+    res.json({
       success: true,
-      message: 'Ride request created successfully',
       data: {
-        rideId: rideRequest._id,
-        uniqueRideId: rideId,
+        _id: rideRequest._id,
+        rideId: rideRequest.rideId,
         status: 'pending',
-        pickupStation: pickupStation,
-        dropLocation: dropLocation,
-        vehicleType: vehicleType,
-        estimatedFare: estimatedFare,
-        distance: distance,
-        startOTP: startOTP,
-        timestamp: rideRequest.timestamp
+        pickupLocation: rideRequest.pickupLocation,
+        dropLocation: rideRequest.dropLocation,
+        vehicleType: rideRequest.vehicleType,
+        estimatedFare: rideRequest.estimatedFare,
+        startOTP: rideRequest.startOTP
       }
     });
-
+    
   } catch (error) {
     console.error('❌ Error creating ride request:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to create ride request',
-      message: error.message
+      message: 'Failed to create ride request',
+      error: error.message
     });
   }
 });
@@ -199,62 +182,68 @@ router.get('/active', protectUser, async (req, res) => {
 router.post('/cancel', protectUser, async (req, res) => {
   try {
     const { rideId, reason } = req.body;
-
-    if (!rideId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Ride ID is required'
-      });
-    }
-
-    const rideRequest = await RideRequest.findById(rideId);
+    const userId = req.user.id;
+    
+    console.log('\n=== RIDE CANCELLATION REQUEST ===');
+    console.log('User ID:', userId);
+    console.log('Ride ID:', rideId);
+    console.log('Reason:', reason);
+    
+    // Find the ride request
+    const rideRequest = await RideRequest.findOne({
+      _id: rideId,
+      userId: userId,
+      status: { $in: ['pending', 'driver_assigned', 'driver_arrived'] }
+    });
+    
     if (!rideRequest) {
       return res.status(404).json({
         success: false,
-        error: 'Ride request not found'
+        message: 'Ride not found or cannot be cancelled'
       });
     }
-
-    // Check if user owns this ride request
-    if (rideRequest.userId.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized to cancel this ride'
-      });
-    }
-
-    // Update ride request status
+    
+    // Update ride status
     rideRequest.status = 'cancelled';
-    rideRequest.cancelledAt = new Date();
-    rideRequest.cancellationReason = reason || 'User cancelled';
     rideRequest.cancelledBy = 'user';
+    rideRequest.cancellationReason = reason || 'User cancelled';
+    rideRequest.cancelledAt = new Date();
+    
     await rideRequest.save();
-
-    // Broadcast cancellation to driver if assigned
-    if (rideRequest.driverId) {
-      try {
-        const io = getIO();
-        io.to(`driver_${rideRequest.driverId}`).emit('rideCancelled', {
-          rideId: rideRequest._id,
-          uniqueRideId: rideRequest.rideId,
-          cancelledBy: 'user',
-          reason: reason
-        });
-      } catch (socketError) {
-        console.error('Failed to notify driver of cancellation:', socketError);
-      }
+    
+    // If driver was assigned, free them up
+    if (rideRequest.driver) {
+      await Driver.findByIdAndUpdate(rideRequest.driver, {
+        currentRide: null,
+        isAvailable: true
+      });
+      
+      // Notify driver via socket
+      const io = getIO();
+      io.to(`driver_${rideRequest.driver}`).emit('rideCancelled', {
+        rideId: rideRequest._id,
+        reason: reason || 'User cancelled'
+      });
     }
-
+    
+    // Log cancellation
+    logRideEvent(rideRequest._id, 'ride_cancelled_by_user', {
+      userId,
+      reason: reason || 'User cancelled',
+      previousStatus: rideRequest.status
+    });
+    
     res.json({
       success: true,
-      message: 'Ride request cancelled successfully'
+      message: 'Ride cancelled successfully'
     });
-
+    
   } catch (error) {
-    console.error('Error cancelling ride request:', error);
+    console.error('❌ Error cancelling ride:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to cancel ride request'
+      message: 'Failed to cancel ride',
+      error: error.message
     });
   }
 });

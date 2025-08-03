@@ -19,18 +19,16 @@ const UserLogin = () => {
     setError('');
     
     try {
-      // Clear any existing tokens before login to prevent contamination
-      console.log('[UserLogin] Clearing ALL existing tokens before login');
-      const tokensToRemove = [
-        'userToken', 'driverToken', 'adminToken',
-        'user', 'driver', 'admin',
-        'userRole', 'driverRole', 'adminRole'
+      // Clear only user tokens before login (preserve other user types)
+      console.log('[UserLogin] Clearing only user tokens before login');
+      const userTokensToRemove = [
+        'userToken', 'user', 'userRole'
       ];
       
-      tokensToRemove.forEach(key => {
+      userTokensToRemove.forEach(key => {
         const existingValue = localStorage.getItem(key);
         if (existingValue) {
-          console.log(`[UserLogin] Removing existing ${key}`);
+          console.log(`[UserLogin] Removing existing user token: ${key}`);
           localStorage.removeItem(key);
         }
       });

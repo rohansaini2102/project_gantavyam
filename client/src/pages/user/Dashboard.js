@@ -643,9 +643,8 @@ const UserDashboard = () => {
       localStorage.removeItem('admin');
     }
     if (driverToken) {
-      console.log('[UserDashboard] Removing contaminating driver token');
-      localStorage.removeItem('driverToken');
-      localStorage.removeItem('driver');
+      console.log('[UserDashboard] Driver token found but preserving it - users and drivers can coexist');
+      // Don't clear driver tokens - multiple user types should be able to coexist
     }
     
     if (!token) {
@@ -793,6 +792,23 @@ const UserDashboard = () => {
       
       // Show user that request has been sent to drivers
       setBookingError('✅ Ride request sent to nearby drivers! Waiting for driver to accept...');
+      
+      // Set a timeout to show "no drivers available" message after 30 seconds
+      const noDriverTimeout = setTimeout(() => {
+        if (activeRide?.status === 'pending') {
+          setBookingError('⚠️ No drivers available at the moment. Please try again in a few minutes.');
+          // Allow user to try booking again
+          setActiveRide(null);
+        }
+      }, 30000); // 30 seconds
+      
+      // Clear timeout if ride gets accepted
+      const checkRideStatus = setInterval(() => {
+        if (activeRide?.status !== 'pending') {
+          clearTimeout(noDriverTimeout);
+          clearInterval(checkRideStatus);
+        }
+      }, 1000);
       
       // Clear form
       setFareEstimates(null);
@@ -993,16 +1009,11 @@ const UserDashboard = () => {
     console.log('[UserDashboard] Logging out...');
     unsubscribeFromUserRideUpdates();
     
-    // Complete token cleanup
+    // Only clear user tokens (preserve driver and admin sessions)
     localStorage.removeItem('user');
     localStorage.removeItem('userToken');
-    localStorage.removeItem('driver');
-    localStorage.removeItem('driverToken');
-    localStorage.removeItem('admin');
-    localStorage.removeItem('adminToken');
     localStorage.removeItem('userRole');
-    localStorage.removeItem('driverRole');
-    localStorage.removeItem('adminRole');
+    console.log('[UserDashboard] Only cleared user tokens, preserving other user types');
     
     // Clear any additional storage
     sessionStorage.clear();
@@ -1265,6 +1276,21 @@ const UserDashboard = () => {
               boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
             }}>
               <h2 style={{ marginTop: 0, color: '#333' }}>Book a Ride</h2>
+              
+              {/* Socket Connection Warning */}
+              {!socketConnected && (
+                <div style={{
+                  backgroundColor: '#fff3cd',
+                  color: '#856404',
+                  padding: '0.75rem',
+                  borderRadius: '4px',
+                  marginBottom: '1rem',
+                  border: '1px solid #ffeeba',
+                  fontSize: '0.9rem'
+                }}>
+                  ⚠️ Connection lost. Please check your internet connection.
+                </div>
+              )}
               
               {/* Location Type Filter */}
               <div style={{ marginBottom: '1rem' }}>

@@ -175,7 +175,10 @@ router.get('/', async (req, res) => {
       createdAt: ride.timestamps?.requested || ride.createdAt,
       completedAt: ride.timestamps?.completed,
       paymentStatus: ride.paymentStatus,
-      paymentMethod: ride.paymentMethod
+      paymentMethod: ride.paymentMethod,
+      // Include OTPs for history rides
+      startOTP: ride.startOTP,
+      endOTP: ride.endOTP
     }));
 
     // Combine and sort all rides

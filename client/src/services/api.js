@@ -1,6 +1,9 @@
 // client/src/services/api.js
 import axios from 'axios';
 import { API_URL } from '../config';
+import { getToken, setToken } from './tokenService';
+import { driverStateThrottler } from '../utils/throttle';
+import { logSync } from '../utils/syncDebugger';
 
 // Create axios instance for JSON requests
 const apiClient = axios.create({
@@ -36,47 +39,31 @@ const addAuthToken = (config) => {
     return config;
   }
   
+  // Determine context from URL
+  let context = null;
   if (url.includes('/admin/')) {
-    token = localStorage.getItem('adminToken');
+    context = '/admin';
     tokenType = 'admin';
   } else if (url.includes('/drivers/')) {
-    token = localStorage.getItem('driverToken');
+    context = '/driver';
     tokenType = 'driver';
   } else if (url.includes('/users/')) {
-    token = localStorage.getItem('userToken');
+    context = '/user';
     tokenType = 'user';
   } else {
-    // For generic routes, try to determine from current context
-    const currentPath = window.location.pathname;
-    if (currentPath.includes('/admin')) {
-      token = localStorage.getItem('adminToken');
+    // For generic routes, use current path
+    context = window.location.pathname;
+    if (context.includes('/admin')) {
       tokenType = 'admin';
-    } else if (currentPath.includes('/driver')) {
-      token = localStorage.getItem('driverToken');
+    } else if (context.includes('/driver')) {
       tokenType = 'driver';
     } else {
-      token = localStorage.getItem('userToken');
       tokenType = 'user';
     }
   }
   
-  // Validate token before using it
-  if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const isExpired = payload.exp * 1000 <= Date.now();
-      
-      if (isExpired) {
-        console.log(`[API] ${tokenType} token is expired, removing from localStorage`);
-        localStorage.removeItem(`${tokenType}Token`);
-        token = null;
-      }
-    } catch (error) {
-      console.error(`[API] Invalid ${tokenType} token format, removing from localStorage:`, error);
-      localStorage.removeItem(`${tokenType}Token`);
-      token = null;
-    }
-  }
+  // Use unified token service
+  token = getToken(context);
   
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
@@ -93,11 +80,7 @@ const addAuthToken = (config) => {
       url: config.url,
       method: config.method,
       expectedTokenType: tokenType,
-      availableTokens: {
-        admin: !!localStorage.getItem('adminToken'),
-        user: !!localStorage.getItem('userToken'),
-        driver: !!localStorage.getItem('driverToken')
-      }
+      context: context
     });
   }
   return config;
@@ -162,12 +145,10 @@ export const auth = {
   userLogin: async (credentials) => {
     try {
       const response = await apiClient.post('/users/login', credentials);
-      // Store token in localStorage
+      // Store token using unified service
       if (response.data.token) {
         console.log('[API] Storing new user token after login');
-        localStorage.setItem('userToken', response.data.token);
-        localStorage.setItem('userRole', 'user');
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+        setToken('user', response.data.token, { user: response.data.user });
         
         // Force refresh of axios interceptors to use new token
         console.log('[API] Token stored, next requests will use new token');
@@ -191,14 +172,14 @@ export const auth = {
   driverLogin: async (credentials) => {
     try {
       const response = await apiClient.post('/drivers/login', credentials);
-      // Store token in localStorage
+      // Store token using unified service
       if (response.data.token) {
-        localStorage.setItem('driverToken', response.data.token);
-        localStorage.setItem('driverRole', 'driver');
-        localStorage.setItem('driver', JSON.stringify({
-          ...response.data.driver,
-          role: 'driver'
-        }));
+        setToken('driver', response.data.token, { 
+          user: {
+            ...response.data.driver,
+            role: 'driver'
+          }
+        });
       }
       return response.data;
     } catch (error) {
@@ -216,11 +197,9 @@ export const auth = {
       const response = await apiClient.post('/auth/admin/login', credentials);
       console.log('🔐 [API] Admin login response:', response.data);
       
-      // Store token in localStorage
+      // Store token using unified service
       if (response.data.token) {
-        localStorage.setItem('adminToken', response.data.token);
-        localStorage.setItem('adminRole', 'admin');
-        localStorage.setItem('admin', JSON.stringify(response.data.admin));
+        setToken('admin', response.data.token, { user: response.data.admin });
         console.log('🔐 [API] Token stored successfully');
       } else {
         console.error('🔐 [API] No token in response!');
@@ -291,9 +270,7 @@ export const drivers = {
         
         // Store token if provided in response
         if (response.data.token) {
-          localStorage.setItem('driverToken', response.data.token);
-          localStorage.setItem('driverRole', 'driver');
-          localStorage.setItem('driver', JSON.stringify(response.data.driver));
+          setToken('driver', response.data.token, { user: response.data.driver });
         }
         
         // Ensure 100% progress is reported
@@ -400,6 +377,104 @@ export const drivers = {
       const response = await apiClient.post('/drivers/collect-payment', paymentData);
       return response.data;
     } catch (error) {
+      throw error;
+    }
+  },
+
+  // Driver State Synchronization with throttling
+  syncDriverState: async (stateData) => {
+    try {
+      // Check rate limiting
+      if (driverStateThrottler.isRateLimited('driver_state_sync', 10, 60000)) {
+        const error = new Error('Rate limit exceeded for driver state sync');
+        error.rateLimited = true;
+        logSync('RATE_LIMITED', 'Driver state sync rate limit exceeded', { limit: 10, windowMs: 60000 });
+        throw error;
+      }
+      
+      console.log('[API] Syncing driver state:', stateData);
+      
+      // Use exponential backoff for reliability
+      const response = await driverStateThrottler.withBackoff(
+        'driver_state_sync_request',
+        async () => {
+          return await apiClient.post('/drivers/sync-state', stateData);
+        },
+        {
+          maxRetries: 2,
+          backoffMultiplier: 1.5
+        }
+      );
+      
+      return response.data;
+    } catch (error) {
+      console.error('[API] Error syncing driver state:', error);
+      
+      // Don't log rate limit errors as errors
+      if (error.rateLimited) {
+        console.warn('[API] Driver state sync rate limited');
+        logSync('RATE_LIMITED', 'API rate limit response', { error: error.message });
+        return { 
+          success: false, 
+          error: 'Rate limit exceeded. Please try again later.',
+          rateLimited: true 
+        };
+      }
+      
+      throw error;
+    }
+  },
+
+  // Refresh driver token
+  refreshToken: async () => {
+    try {
+      const response = await apiClient.post('/drivers/refresh-token');
+      if (response.data.success && response.data.token) {
+        // Update stored token
+        localStorage.setItem('driverToken', response.data.token);
+        // Update axios headers
+        apiClient.defaults.headers.Authorization = `Bearer ${response.data.token}`;
+        console.log('[API] Driver token refreshed successfully');
+      }
+      return response.data;
+    } catch (error) {
+      console.error('[API] Error refreshing driver token:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Failed to refresh token'
+      };
+    }
+  },
+
+  // Get Driver Current Status with throttling
+  getDriverStatus: async () => {
+    try {
+      // Apply throttling to prevent excessive status checks
+      const result = await driverStateThrottler.throttle(
+        'driver_status_check',
+        async () => {
+          console.log('[API] Getting driver status');
+          const response = await apiClient.get('/drivers/status');
+          return response.data;
+        },
+        {
+          minInterval: 10000 // 10 seconds minimum between status checks
+        }
+      );
+      
+      if (result.throttled) {
+        console.log('[API] Driver status check throttled:', result.message);
+        logSync('THROTTLED', 'Driver status check throttled', { message: result.message });
+        return { 
+          success: false, 
+          error: result.message,
+          throttled: true 
+        };
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('[API] Error getting driver status:', error);
       throw error;
     }
   }
@@ -751,6 +826,16 @@ const driverEnhancements = {
     } catch (error) {
       throw error;
     }
+  },
+
+  // Check for pending assignments (fallback for missed socket events)
+  checkPendingAssignments: async () => {
+    try {
+      const response = await apiClient.get('/drivers/check-pending-assignments');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 
@@ -812,13 +897,24 @@ export const getDriverById = admin.getDriverById;
 export const getUserById = admin.getUserById;
 export const registerDriver = admin.registerDriver;
 
+// Utility function to clear axios headers (for token cleanup)
+export const clearAxiosHeaders = () => {
+  [apiClient, fileClient].forEach(client => {
+    if (client.defaults.headers.Authorization) {
+      delete client.defaults.headers.Authorization;
+      console.log('[API] Cleared authorization header');
+    }
+  });
+};
+
 // Fixed default export
 const api = {
   auth,
   drivers,
   admin,
   users,
-  otp
+  otp,
+  clearAxiosHeaders
 };
 
 export default api;

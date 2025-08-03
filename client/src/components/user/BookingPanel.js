@@ -208,7 +208,7 @@ const BookingPanel = ({
               </label>
               <div className="relative">
                 <div className="flex items-center">
-                  <div className="w-3 h-3 bg-green-500 rounded-full mr-3" />
+                  <span className="text-2xl mr-3">📍</span>
                   <input
                     type="text"
                     value={pickupSearchQuery}
@@ -227,60 +227,64 @@ const BookingPanel = ({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Drop Location
               </label>
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-red-500 rounded-full mr-3" />
-                <div className="flex-1 relative">
-                  {window.google && window.google.maps ? (
+              <div className="relative">
+                <div className="flex items-center">
+                  <span className="text-2xl mr-3">📍</span>
+                  {window.google?.maps ? (
                     <Autocomplete
                       onLoad={onAutocompleteLoad}
                       onPlaceChanged={onPlaceChanged}
+                      className="flex-1"
                       options={{
-                        componentRestrictions: { country: "in" },
-                        fields: ["geometry", "formatted_address", "name"],
-                        types: ["establishment", "geocode"]
+                        bounds: new window.google.maps.LatLngBounds(
+                          new window.google.maps.LatLng(28.4089, 76.8856), // Southwest Delhi NCR
+                          new window.google.maps.LatLng(28.8832, 77.3470)  // Northeast Delhi NCR
+                        ),
+                        componentRestrictions: { country: 'in' },
+                        fields: ['formatted_address', 'geometry', 'name']
                       }}
                     >
                       <input
                         type="text"
-                        value={dropLocation}
-                        onChange={(e) => onDropLocationChange(e.target.value)}
+                        placeholder="Enter your destination"
+                        defaultValue={dropLocation || ''}
                         onKeyPress={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            handleManualAddressInput(e.target.value);
+                            const value = e.target.value;
+                            if (value && value !== dropLocation) {
+                              handleManualAddressInput(value);
+                            }
                           }
                         }}
-                        placeholder="Enter destination address (e.g., Connaught Place, Delhi)"
                         className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        disabled={isGeocodingLocation}
                       />
                     </Autocomplete>
                   ) : (
                     <input
                       type="text"
-                      value={dropLocation}
-                      onChange={(e) => onDropLocationChange(e.target.value)}
+                      placeholder="Enter your destination address"
+                      value={dropLocation || ''}
+                      onChange={(e) => onDropLocationChange(e.target.value, null)}
                       onKeyPress={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          handleManualAddressInput(e.target.value);
+                          const value = e.target.value;
+                          if (value) {
+                            handleManualAddressInput(value);
+                          }
                         }
                       }}
-                      placeholder="Enter destination address (Google Maps loading...)"
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      disabled={isGeocodingLocation}
+                      className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   )}
-                  {isGeocodingLocation && (
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                    </div>
-                  )}
                 </div>
+                {isGeocodingLocation && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Start typing to search or press Enter to geocode manually
-              </p>
             </div>
 
             {/* Continue Button */}
@@ -356,39 +360,40 @@ const BookingPanel = ({
             <h3 className="text-lg font-semibold text-gray-900">Confirm Your Booking</h3>
 
             {/* Trip Summary */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="space-y-3">
-                <div className="flex items-start space-x-3">
-                  <div className="w-3 h-3 bg-green-500 rounded-full mt-1" />
-                  <div>
-                    <div className="font-medium">{selectedPickup?.name}</div>
-                    <div className="text-sm text-gray-600">{selectedPickup?.address}</div>
-                  </div>
+            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+              <div className="flex items-start space-x-3">
+                <span className="text-lg">📍</span>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-600">Pickup</p>
+                  <p className="font-medium">{selectedPickup?.name}</p>
                 </div>
-                
-                <div className="flex items-start space-x-3">
-                  <div className="w-3 h-3 bg-red-500 rounded-full mt-1" />
-                  <div>
-                    <div className="font-medium">{dropLocation}</div>
-                  </div>
+              </div>
+              
+              <div className="border-l-2 border-gray-300 ml-2 h-4"></div>
+              
+              <div className="flex items-start space-x-3">
+                <span className="text-lg">📍</span>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-600">Drop</p>
+                  <p className="font-medium">{dropLocation}</p>
+                </div>
+              </div>
+              
+              <div className="pt-3 border-t border-gray-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-600">Vehicle</span>
+                  <span className="font-medium capitalize">{vehicleType}</span>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-gray-600">Estimated Fare</span>
+                  <span className="font-semibold text-lg">
+                    ₹{vehicles.find(v => v.type === vehicleType)?.price || '---'}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Selected Vehicle */}
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Selected Vehicle</h4>
-              {vehicles.find(v => v.type === vehicleType) && (
-                <VehicleCard
-                  vehicle={vehicleType}
-                  selected={true}
-                  price={vehicles.find(v => v.type === vehicleType).price}
-                  eta={vehicles.find(v => v.type === vehicleType).eta}
-                />
-              )}
-            </div>
-
-            {/* Connection Status & Location Status */}
+            {/* Connection Status */}
             <div className="space-y-2">
               <div className={`
                 flex items-center space-x-2 text-sm
@@ -407,7 +412,7 @@ const BookingPanel = ({
               {dropLocation && !window.google?.maps && (
                 <div className="flex items-center space-x-2 text-sm text-yellow-600">
                   <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                  <span>Google Maps loading for location search...</span>
+                  <span>Maps unavailable - Using approximate location</span>
                 </div>
               )}
             </div>

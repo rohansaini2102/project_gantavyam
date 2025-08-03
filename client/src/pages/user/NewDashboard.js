@@ -392,15 +392,16 @@ const NewUserDashboard = () => {
       setBookingError('');
 
       const bookingData = {
-        pickupStation: selectedPickup.name,
-        dropLocation: {
-          address: dropLocation,
-          lat: dropCoordinates.lat,
-          lng: dropCoordinates.lng
-        },
-        vehicleType,
-        estimatedFare: fareEstimates?.estimates?.[vehicleType]?.totalFare || 0
-      };
+      pickupStation: selectedPickup.name,
+      dropLocation: {
+        address: dropLocation,
+        lat: dropCoordinates.lat,
+        lng: dropCoordinates.lng
+      },
+      vehicleType,
+      estimatedFare: fareEstimates?.estimates?.[vehicleType]?.totalFare || 0,
+      distance: fareEstimates?.distance || 0
+    };
 
       console.log('[NewUserDashboard] Booking ride:', bookingData);
       

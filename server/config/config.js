@@ -19,6 +19,7 @@ module.exports = {
   // CORS origins - include both local and production
   allowedOrigins: [
     'http://localhost:3000', // Frontend development server
+    'http://localhost:3001', // Alternative frontend port
     'https://gt2-seven.vercel.app',
     'https://gantavyam.site',
     'https://www.gantavyam.site', // Main production domain

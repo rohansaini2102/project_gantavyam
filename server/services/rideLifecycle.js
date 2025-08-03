@@ -126,6 +126,10 @@ class RideLifecycleService {
         paymentMethod: rideRequest.paymentMethod || 'cash',
         paymentCollectedAt: rideRequest.paymentCollectedAt || new Date(),
         
+        // OTP information
+        startOTP: rideRequest.startOTP,
+        endOTP: rideRequest.endOTP,
+        
         // Ratings and feedback
         userRating: completionData.userRating,
         driverRatingForUser: completionData.driverRatingForUser,

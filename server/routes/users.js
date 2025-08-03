@@ -682,17 +682,13 @@ router.post('/book-ride', protectUser, async (req, res) => {
     
     // Broadcast ride request to matching drivers via Socket.IO
     try {
-      // Use the broadcastRideRequest function from socket.js
-      // This will find matching drivers and send them the ride request
-      const broadcastData = {
-        rideId: rideRequest._id.toString(),
-        pickupStation: pickupStation,
-        vehicleType: vehicleType,
-        userName: user.name,
-        userPhone: user.phone
-      };
-      
-      console.log(`📡 Broadcasting ride request to matching drivers:`, broadcastData);
+      console.log(`📡 Broadcasting ride request to matching drivers`);
+      console.log('Ride request object:', {
+        _id: rideRequest._id,
+        pickupLocation: rideRequest.pickupLocation,
+        dropLocation: rideRequest.dropLocation,
+        vehicleType: rideRequest.vehicleType
+      });
       
       // Call the socket handler directly
       const { broadcastRideRequest, notifyAdmins } = require('../socket');
@@ -705,7 +701,8 @@ router.post('/book-ride', protectUser, async (req, res) => {
       } else {
         console.log('✅ Socket.IO is available for broadcasting');
         
-        const broadcastResult = await broadcastRideRequest(broadcastData);
+        // Pass the complete rideRequest object to broadcastRideRequest
+        const broadcastResult = await broadcastRideRequest(rideRequest);
         
         if (broadcastResult && broadcastResult.success) {
           console.log(`✅ Socket broadcast completed for ride ${rideId} - ${broadcastResult.driversNotified} drivers notified`);
@@ -894,7 +891,10 @@ router.get('/ride-history', protectUser, async (req, res) => {
       cancelledBy: ride.cancelledBy,
       paymentStatus: ride.paymentStatus,
       paymentMethod: ride.paymentMethod,
-      journeyStats: ride.journeyStats
+      journeyStats: ride.journeyStats,
+      // Include OTPs for completed rides
+      startOTP: ride.status === 'completed' ? ride.startOTP : null,
+      endOTP: ride.status === 'completed' ? ride.endOTP : null
     }));
     
     res.json({

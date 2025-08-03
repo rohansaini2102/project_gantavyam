@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "uvx",
+      "args": ["--from", "serena-mcp", "serena", "--context", "ide-assistant"],
+      "env": {}
+    }
+  }
+}

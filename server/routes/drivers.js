@@ -1216,5 +1216,239 @@ router.get('/earnings', protect, async (req, res) => {
   }
 });
 
+// Driver State Synchronization Endpoint
+router.post('/sync-state', protect, async (req, res) => {
+  try {
+    console.log('[Driver State Sync] Request received from driver:', req.user.id);
+    
+    const driverId = req.user.id;
+    const { 
+      isOnline, 
+      queuePosition, 
+      activeRideId, 
+      vehicleType, 
+      selectedPickupLocation,
+      lastStateSync 
+    } = req.body;
+    
+    console.log('[Driver State Sync] Client state:', {
+      isOnline,
+      queuePosition,
+      activeRideId,
+      vehicleType,
+      selectedPickupLocation,
+      lastStateSync
+    });
+    
+    // Find the driver
+    const driver = await Driver.findById(driverId);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+    
+    // Get current server state
+    const serverState = {
+      isOnline: driver.isOnline,
+      queuePosition: driver.queuePosition,
+      activeRideId: driver.currentRide,
+      vehicleType: driver.vehicleType,
+      selectedPickupLocation: driver.currentMetroBooth,
+      lastUpdate: driver.updatedAt
+    };
+    
+    console.log('[Driver State Sync] Server state:', serverState);
+    
+    // Determine which state is more recent
+    const clientStateTime = lastStateSync ? new Date(lastStateSync) : new Date(0);
+    const serverStateTime = driver.updatedAt || new Date(0);
+    
+    let syncedState = serverState;
+    let conflicts = [];
+    
+    // Check for conflicts and resolve them
+    if (clientStateTime > serverStateTime) {
+      console.log('[Driver State Sync] Client state is newer, updating server');
+      
+      // Update server with client state
+      const updateData = {};
+      if (isOnline !== undefined) updateData.isOnline = isOnline;
+      if (queuePosition !== undefined) updateData.queuePosition = queuePosition;
+      if (activeRideId !== undefined) updateData.currentRide = activeRideId || null;
+      if (vehicleType !== undefined) updateData.vehicleType = vehicleType;
+      if (selectedPickupLocation !== undefined) updateData.currentMetroBooth = selectedPickupLocation;
+      
+      if (Object.keys(updateData).length > 0) {
+        await Driver.findByIdAndUpdate(driverId, updateData);
+        syncedState = { ...serverState, ...updateData };
+      }
+      
+    } else if (serverStateTime > clientStateTime) {
+      console.log('[Driver State Sync] Server state is newer, client should update');
+      
+      // Identify conflicts
+      if (isOnline !== serverState.isOnline) {
+        conflicts.push('isOnline');
+      }
+      if (queuePosition !== serverState.queuePosition) {
+        conflicts.push('queuePosition');
+      }
+      if (activeRideId !== serverState.activeRideId) {
+        conflicts.push('activeRideId');
+      }
+      
+    } else {
+      console.log('[Driver State Sync] States are in sync');
+    }
+    
+    // Get updated queue position if driver is online
+    let currentQueuePosition = null;
+    if (syncedState.isOnline && syncedState.selectedPickupLocation) {
+      const updatedDriver = await Driver.findById(driverId);
+      currentQueuePosition = updatedDriver.queuePosition;
+    }
+    
+    res.json({
+      success: true,
+      message: 'State synchronized successfully',
+      data: {
+        syncedState: {
+          ...syncedState,
+          queuePosition: currentQueuePosition
+        },
+        conflicts,
+        needsUpdate: conflicts.length > 0,
+        serverTime: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Driver State Sync] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error synchronizing driver state',
+      error: error.message
+    });
+  }
+});
+
+// Get Driver Current Status
+router.get('/status', protect, async (req, res) => {
+  try {
+    const driverId = req.user.id;
+    
+    const driver = await Driver.findById(driverId)
+      .populate('currentRide', 'status startOTP endOTP pickupLocation dropLocation');
+    
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+    
+    const status = {
+      isOnline: driver.isOnline,
+      queuePosition: driver.queuePosition,
+      currentMetroBooth: driver.currentMetroBooth,
+      vehicleType: driver.vehicleType,
+      activeRide: driver.currentRide,
+      lastActiveTime: driver.lastActiveTime,
+      queueEntryTime: driver.queueEntryTime
+    };
+    
+    res.json({
+      success: true,
+      data: status
+    });
+    
+  } catch (error) {
+    console.error('[Driver Status] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting driver status',
+      error: error.message
+    });
+  }
+});
+
+// @desc    Check for pending assignments (fallback for missed socket events)
+// @route   GET /api/drivers/check-pending-assignments
+// @access  Private (Driver only)
+router.get('/check-pending-assignments', protect, async (req, res) => {
+  try {
+    const driverId = req.user.id;
+    
+    console.log('\n=== CHECK PENDING ASSIGNMENTS ===');
+    console.log('Driver ID:', driverId);
+    
+    // Find any ride requests assigned to this driver that haven't been acknowledged
+    const RideRequest = require('../models/RideRequest');
+    const pendingAssignments = await RideRequest.find({
+      driverId: driverId,
+      status: 'driver_assigned',
+      // Look for rides assigned in the last 10 minutes that might have been missed
+      assignedAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) }
+    }).populate('user', 'name phone');
+    
+    console.log(`Found ${pendingAssignments.length} pending assignments for driver ${driverId}`);
+    
+    if (pendingAssignments.length > 0) {
+      // Return the assignment data in the same format as socket events
+      const assignmentData = pendingAssignments.map(ride => ({
+        rideId: ride._id,
+        bookingId: ride.bookingId,
+        queueNumber: ride.queueNumber,
+        pickupLocation: ride.pickupLocation.boothName,
+        dropLocation: ride.dropLocation.address,
+        estimatedFare: ride.estimatedFare,
+        vehicleType: ride.vehicleType,
+        startOTP: ride.startOTP,
+        endOTP: ride.endOTP,
+        status: 'driver_assigned',
+        user: {
+          name: ride.user.name,
+          phone: ride.user.phone
+        },
+        userName: ride.user.name,
+        userPhone: ride.user.phone,
+        assignedAt: ride.assignedAt,
+        distance: ride.distance,
+        fare: ride.estimatedFare,
+        assignmentType: ride.bookingSource === 'manual' ? 'manual' : 'auto',
+        message: ride.bookingSource === 'manual' ? 'Ride manually assigned by admin' : 'Ride automatically assigned by admin',
+        timestamp: ride.assignedAt.toISOString(),
+        isFallbackRecovery: true
+      }));
+      
+      console.log('📦 Returning pending assignments:', assignmentData.map(a => a.rideId));
+      
+      res.json({
+        success: true,
+        hasPendingAssignments: true,
+        assignments: assignmentData,
+        message: `Found ${pendingAssignments.length} pending assignment(s)`
+      });
+    } else {
+      res.json({
+        success: true,
+        hasPendingAssignments: false,
+        assignments: [],
+        message: 'No pending assignments found'
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error checking pending assignments:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error checking pending assignments',
+      error: error.message
+    });
+  }
+});
+
 // Export router
 module.exports = router;

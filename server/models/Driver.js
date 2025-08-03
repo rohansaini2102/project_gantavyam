@@ -171,6 +171,11 @@ const DriverSchema = new mongoose.Schema({
   queueEntryTime: {
     type: Date,
     default: null
+  },
+  currentRide: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'RideRequest',
+    default: null
   }
 }, {
   timestamps: true

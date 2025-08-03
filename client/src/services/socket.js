@@ -1,6 +1,7 @@
 // client/src/services/socket.js
 import { io } from 'socket.io-client';
 import { SOCKET_URL } from '../config';
+import { getToken } from './tokenService';
 
 class SocketService {
   constructor() {
@@ -10,13 +11,85 @@ class SocketService {
     this.reconnectionAttempts = 5;
     this.reconnectionDelay = 1000;
     this.initializePromise = null; // Track initialization
+    this.blacklistedTokens = new Set(); // Track permanently blocked tokens
+    this.cleanupInProgress = false; // Prevent multiple cleanup attempts
   }
 
   // Initialize socket connection with authentication token
-  initialize(token) {
+  initialize(token = null) {
+    // Use unified token service if no token provided
     if (!token) {
-      console.error('[SocketService] ❌ Cannot initialize socket: No token provided');
-      return null;
+      token = getToken();
+      if (!token) {
+        console.error('[SocketService] ❌ Cannot initialize socket: No token found');
+        return null;
+      }
+    }
+
+    // Skip token validation for driver pages
+    const isDriverPath = window.location.pathname.includes('/driver');
+    
+    if (isDriverPath) {
+      console.log('[SocketService] ✅ Driver page detected - skipping token validation');
+    } else {
+      // Validate token before attempting connection (non-driver pages only)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const currentTime = Date.now() / 1000;
+        const timeUntilExpiry = payload.exp - currentTime;
+        const knownExpiredTime = new Date('2025-07-18T01:35:34.000Z').getTime() / 1000;
+        
+        // Check for specific problematic token
+        if (payload.exp === knownExpiredTime) {
+          console.error('[SocketService] 🚫 BLOCKED: Known problematic token detected');
+          console.error('[SocketService] 🚫 This token has been permanently blocked');
+          console.error('[SocketService] 🚫 Token expired at:', new Date(payload.exp * 1000).toISOString());
+          
+          // Add to blacklist
+          this.blacklistedTokens.add(token);
+          
+          // Prevent multiple cleanup attempts
+          if (!this.cleanupInProgress) {
+            this.cleanupInProgress = true;
+            
+            // Import and use nuclear cleanup immediately
+            import('../utils/tokenUtils').then(({ nukeAllTokens }) => {
+              nukeAllTokens();
+              alert('Your session has expired. Please clear your browser cache and login again.');
+              window.location.reload();
+            });
+          }
+          
+          return null;
+        }
+        
+        // Check if token is blacklisted
+        if (this.blacklistedTokens.has(token)) {
+          console.error('[SocketService] 🚫 BLOCKED: Token is blacklisted');
+          return null;
+        }
+        
+        if (timeUntilExpiry < 0) {
+          console.error('[SocketService] ❌ Token is expired, cannot initialize socket');
+          console.error('[SocketService] ❌ Token expired at:', new Date(payload.exp * 1000).toISOString());
+          console.error('[SocketService] ❌ Current time:', new Date().toISOString());
+          
+          // Clear expired token using unified service
+          import('./tokenService').then(({ clearAllTokens }) => {
+            clearAllTokens();
+          });
+          return null;
+        }
+        
+        if (timeUntilExpiry < 300) { // Less than 5 minutes
+          console.warn('[SocketService] ⚠️ Token expires soon:', Math.floor(timeUntilExpiry), 'seconds');
+        }
+        
+        console.log('[SocketService] ✅ Using unified token service - token validated successfully');
+      } catch (error) {
+        console.error('[SocketService] ❌ Invalid token format:', error);
+        return null;
+      }
     }
 
     // Check if we already have a healthy connection
@@ -56,6 +129,9 @@ class SocketService {
         // Set up event listeners
         this._setupEventListeners();
         
+        // Set up token cleanup event listeners
+        this._setupTokenCleanupListeners();
+        
         // Set up timeout for connection
         const connectionTimeout = setTimeout(() => {
           console.error('[SocketService] ❌ Connection timeout after 10 seconds');
@@ -63,13 +139,12 @@ class SocketService {
           resolve(null);
         }, 10000);
         
-        // Wait for connection
-        this.socket.once('connect', () => {
-          clearTimeout(connectionTimeout);
-          console.log('[SocketService] ✅ Socket connected successfully');
-          this.initializePromise = null;
-          resolve(this.socket);
-        });
+        // Resolve immediately with socket instance
+        // The socket will connect asynchronously
+        clearTimeout(connectionTimeout);
+        console.log('[SocketService] 🔌 Socket instance created, connection pending...');
+        this.initializePromise = null;
+        resolve(this.socket);
         
         // Handle connection error
         this.socket.once('connect_error', (error) => {
@@ -96,6 +171,78 @@ class SocketService {
     this.socket.on('connect', () => {
       console.log('[SocketService] ✅ Connected to socket server with ID:', this.socket.id);
       this.connected = true;
+      
+      // For driver pages, emit rejoin event on reconnection
+      const isDriverPage = window.location.pathname.includes('/driver');
+      if (isDriverPage) {
+        const driverData = localStorage.getItem('driver');
+        if (driverData) {
+          try {
+            const driver = JSON.parse(driverData);
+            console.log('[SocketService] 🚗 Driver reconnected, emitting rejoin event');
+            this.socket.emit('driverRoomRejoin', {
+              driverId: driver._id || driver.id,
+              driverName: driver.fullName || driver.name,
+              timestamp: new Date().toISOString()
+            });
+          } catch (error) {
+            console.error('[SocketService] Error parsing driver data for rejoin:', error);
+          }
+        }
+      }
+    });
+
+    this.socket.on('tokenExpired', (data) => {
+      console.error('[SocketService] ❌ Server reported token expired:', data);
+      
+      // Skip token expiration handling for driver pages
+      const isDriverPage = window.location.pathname.includes('/driver');
+      if (isDriverPage) {
+        console.log('⚠️ [SocketService] Ignoring token expiration for driver page');
+        return;
+      }
+      
+      this._handleTokenExpiration();
+      // Force a page reload to clear everything
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    });
+
+    this.socket.on('forceTokenCleanup', async (data) => {
+      console.error('[SocketService] 🔥 Server demands force token cleanup:', data);
+      
+      // Skip ALL cleanup for driver pages
+      const isDriverPage = window.location.pathname.includes('/driver');
+      
+      if (isDriverPage) {
+        console.log('⚠️ [SocketService] Ignoring ALL server cleanup requests for driver page');
+        return;
+      }
+      
+      // Prevent multiple cleanup attempts
+      if (this.cleanupInProgress) {
+        console.log('[SocketService] 🔥 Cleanup already in progress, skipping');
+        return;
+      }
+      
+      this.cleanupInProgress = true;
+      
+      // Import and use the nuclear option
+      try {
+        const { nukeAllTokens } = await import('../utils/tokenUtils');
+        nukeAllTokens();
+        
+        // Show alert to user
+        alert('Your authentication has expired. Please clear your browser cache and login again.');
+        
+        // Force reload immediately
+        window.location.reload();
+      } catch (error) {
+        console.error('[SocketService] Error during force cleanup:', error);
+        // Fallback: just reload
+        window.location.reload();
+      }
     });
 
     this.socket.on('connectionSuccess', (data) => {
@@ -105,6 +252,31 @@ class SocketService {
     this.socket.on('connect_error', (error) => {
       console.error('[SocketService] ❌ Socket connection error:', error.message || error);
       this.connected = false;
+      
+      // Check if error is due to token expiration
+      if (error.message && error.message.includes('jwt expired')) {
+        console.log('[SocketService] 🔄 Token expired, clearing stored token');
+        
+        // Skip token expiration handling for driver pages
+        const isDriverPage = window.location.pathname.includes('/driver');
+        if (isDriverPage) {
+          console.log('⚠️ [SocketService] Ignoring JWT expiration for driver page');
+          return;
+        }
+        
+        // Clear expired token and notify components
+        this._handleTokenExpiration();
+      }
+      
+      // Check if error is due to blocked token
+      if (error.message && (error.message.includes('Known expired token') || error.message.includes('Rate limited'))) {
+        console.error('[SocketService] 🚫 Connection blocked due to expired token');
+        // Disable reconnection for blocked tokens
+        if (this.socket) {
+          this.socket.disconnect();
+        }
+        return;
+      }
       
       // Log additional connection debugging info
       console.log('[SocketService] 🔍 Connection debugging info:', {
@@ -162,6 +334,20 @@ class SocketService {
     }
   }
 
+  // Force disconnect and clear all cached connections
+  forceDisconnect() {
+    console.log('[SocketService] 🔄 Force disconnecting all connections');
+    
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    
+    this.connected = false;
+    this.initializePromise = null;
+  }
+
   // Get current socket instance
   getSocket() {
     if (!this.socket) {
@@ -173,6 +359,53 @@ class SocketService {
   // Check if socket is connected
   isConnected() {
     return this.connected && this.socket && this.socket.connected;
+  }
+
+  // Handle token expiration
+  _handleTokenExpiration() {
+    // Determine which token to clear based on current path
+    const currentPath = window.location.pathname;
+    
+    if (currentPath.includes('/admin/')) {
+      localStorage.removeItem('adminToken');
+      console.log('[SocketService] 🔄 Cleared expired admin token');
+      // Notify about token expiration
+      window.dispatchEvent(new CustomEvent('adminTokenExpired'));
+    } else if (currentPath.includes('/driver/')) {
+      console.log('[SocketService] 🔒 Skipping driver token clearing to preserve session');
+      // Driver tokens are never cleared to prevent logout
+    } else if (currentPath.includes('/user/')) {
+      localStorage.removeItem('userToken');
+      console.log('[SocketService] 🔄 Cleared expired user token');
+      window.dispatchEvent(new CustomEvent('userTokenExpired'));
+    }
+    
+    // Disconnect socket to prevent reconnection attempts with expired token
+    this.disconnect();
+  }
+
+  // Clear expired token from localStorage
+  _clearExpiredToken() {
+    const currentPath = window.location.pathname;
+    
+    if (currentPath.includes('/admin/')) {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('admin');
+      localStorage.removeItem('adminRole');
+      sessionStorage.removeItem('adminToken');
+      console.log('[SocketService] 🔄 Cleared expired admin token');
+      window.dispatchEvent(new CustomEvent('adminTokenExpired'));
+    } else if (currentPath.includes('/driver/')) {
+      console.log('[SocketService] 🔒 Skipping driver token clearing to preserve session');
+      // Driver tokens and data are never cleared to prevent logout
+    } else if (currentPath.includes('/user/')) {
+      localStorage.removeItem('userToken');
+      localStorage.removeItem('user');
+      localStorage.removeItem('userRole');
+      sessionStorage.removeItem('userToken');
+      console.log('[SocketService] 🔄 Cleared expired user token');
+      window.dispatchEvent(new CustomEvent('userTokenExpired'));
+    }
   }
 
   // Subscribe to user ride updates  
@@ -234,15 +467,47 @@ class SocketService {
   // Subscribe to driver ride requests and updates
   subscribeToDriverUpdates(callbacks = {}) {
     if (!this.socket) {
-      console.error('Cannot subscribe: Socket not initialized');
+      console.error('[SocketService] ❌ Cannot subscribe to driver updates: Socket not initialized');
       return;
     }
     
-    console.log('Subscribing to driver updates');
+    console.log('[SocketService] 📡 Subscribing to driver updates...');
+    console.log('[SocketService] Socket ID:', this.socket.id);
+    console.log('[SocketService] Socket connected:', this.socket.connected);
     
     // Driver-specific events
     if (callbacks.onNewRideRequest) {
-      this.socket.on('newRideRequest', callbacks.onNewRideRequest);
+      console.log('[SocketService] 🚕 Setting up newRideRequest listener');
+      this.socket.on('newRideRequest', (data, ack) => {
+        console.log('[SocketService] 📨 Received newRideRequest event:', data);
+        console.log('[SocketService] Event data details:');
+        console.log('   - Ride ID:', data._id || data.rideId);
+        console.log('   - Pickup:', data.pickupLocation?.boothName);
+        console.log('   - Customer:', data.userName);
+        console.log('   - Vehicle Type:', data.vehicleType);
+        console.log('   - Fare:', data.estimatedFare);
+        console.log('   - Is Manual Booking:', data.isManualBooking);
+        
+        // Send acknowledgment if callback provided
+        if (typeof ack === 'function') {
+          console.log('[SocketService] 📨 Sending acknowledgment for ride request');
+          ack({ 
+            received: true, 
+            rideId: data._id || data.rideId,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        callbacks.onNewRideRequest(data);
+      });
+    }
+    
+    if (callbacks.onRideAssigned) {
+      console.log('[SocketService] 🚗 Setting up rideAssigned listener for auto-assignment');
+      this.socket.on('rideAssigned', (data) => {
+        console.log('[SocketService] 📨 Received rideAssigned event:', data);
+        callbacks.onRideAssigned(data);
+      });
     }
     
     if (callbacks.onRideRequestClosed) {
@@ -296,6 +561,21 @@ class SocketService {
     if (callbacks.onOTPVerificationError) {
       this.socket.on('otpVerificationError', callbacks.onOTPVerificationError);
     }
+    
+    // Admin-initiated status changes
+    if (callbacks.onStatusChangedByAdmin) {
+      this.socket.on('statusChangedByAdmin', callbacks.onStatusChangedByAdmin);
+    }
+    
+    // Queue position updates
+    if (callbacks.onQueuePositionUpdated) {
+      this.socket.on('queuePositionUpdated', callbacks.onQueuePositionUpdated);
+    }
+    
+    // Real-time driver status updates
+    if (callbacks.onDriverStatusUpdated) {
+      this.socket.on('driverStatusUpdated', callbacks.onDriverStatusUpdated);
+    }
   }
 
   // Unsubscribe from user ride updates
@@ -319,11 +599,9 @@ class SocketService {
     if (!this.socket) return;
     
     console.log('Unsubscribing from driver updates');
-    this.socket.off('newRideRequest');
+    this.socket.off('rideAssigned');
     this.socket.off('rideRequestClosed');
-    this.socket.off('rideAcceptConfirmed');
     this.socket.off('queueNumberAssigned');
-    this.socket.off('rideAcceptError');
     this.socket.off('driverOnlineConfirmed');
     this.socket.off('driverOfflineConfirmed');
     this.socket.off('rideStarted');
@@ -331,6 +609,9 @@ class SocketService {
     this.socket.off('rideCancelled');
     this.socket.off('otpVerificationSuccess');
     this.socket.off('otpVerificationError');
+    this.socket.off('statusChangedByAdmin');
+    this.socket.off('queuePositionUpdated');
+    this.socket.off('driverStatusUpdated');
   }
 
   // Driver goes online with metro booth selection
@@ -365,7 +646,7 @@ class SocketService {
     }
   }
 
-  // Driver accepts a ride
+  // Driver accepts a customer ride request
   driverAcceptRide(rideData, callback) {
     if (!this.socket) {
       console.error('Cannot accept ride: Socket not initialized');
@@ -373,7 +654,7 @@ class SocketService {
       return;
     }
     
-    console.log('Driver accepting ride:', rideData);
+    console.log('Driver accepting customer ride:', rideData);
     if (callback) {
       this.socket.emit('driverAcceptRide', rideData, callback);
     } else {
@@ -445,6 +726,24 @@ class SocketService {
     }
   }
 
+  // Admin toggles driver status
+  adminToggleDriverStatus(driverId, isOnline, callback) {
+    if (!this.socket) {
+      console.error('Cannot toggle driver status: Socket not initialized');
+      if (callback) callback({ success: false, error: 'Socket not connected' });
+      return;
+    }
+    
+    console.log('Admin toggling driver status:', { driverId, isOnline });
+    const data = { driverId, isOnline };
+    
+    if (callback) {
+      this.socket.emit('adminToggleDriverStatus', data, callback);
+    } else {
+      this.socket.emit('adminToggleDriverStatus', data);
+    }
+  }
+
   // Generic method to emit events with error handling
   emitEvent(eventName, data, callback) {
     if (!this.socket) {
@@ -460,6 +759,61 @@ class SocketService {
       this.socket.emit(eventName, data);
     }
   }
+
+  // Set up token cleanup event listeners
+  _setupTokenCleanupListeners() {
+    if (!this.socket) return;
+    
+    // Listen for token cleanup events from server
+    this.socket.on('forceTokenCleanup', async (data) => {
+      console.error('[SocketService] 🔥 Server demands force token cleanup:', data);
+      
+      // Skip ALL cleanup for driver pages
+      const isDriverPage = window.location.pathname.includes('/driver');
+      
+      if (isDriverPage) {
+        console.log('⚠️ [SocketService] Ignoring ALL server cleanup requests for driver page');
+        return;
+      }
+      
+      // Prevent multiple cleanup attempts
+      if (this.cleanupInProgress) {
+        console.log('[SocketService] 🔥 Cleanup already in progress, ignoring...');
+        return;
+      }
+      
+      this.cleanupInProgress = true;
+      
+      try {
+        // Import and use nuclear cleanup
+        const { forceTokenCleanup } = await import('../utils/tokenCleanup');
+        await forceTokenCleanup();
+        
+        // Show user notification
+        const message = data.severity === 'CRITICAL' ? 
+          'CRITICAL: Your session has expired. Please clear your browser cache and login again.' :
+          'Your session has expired. Please login again.';
+        
+        alert(message);
+        
+        // Force page reload
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+        
+      } catch (error) {
+        console.error('[SocketService] Error during cleanup:', error);
+        alert('Session expired. Please refresh the page and login again.');
+        window.location.reload();
+      }
+    });
+    
+    // Listen for token expired events
+    this.socket.on('tokenExpired', (data) => {
+      console.error('[SocketService] ❌ Server reported token expired:', data);
+      this._handleTokenExpiration();
+    });
+  }
 }
 
 // Create singleton instance
@@ -468,6 +822,7 @@ const socketService = new SocketService();
 // Export instance methods
 export const initializeSocket = (token) => socketService.initialize(token);
 export const disconnectSocket = () => socketService.disconnect();
+export const forceDisconnectSocket = () => socketService.forceDisconnect();
 export const getSocket = () => socketService.getSocket();
 export const isSocketConnected = () => socketService.isConnected();
 
@@ -489,6 +844,9 @@ export const verifyEndOTP = (otpData, callback) => socketService.verifyEndOTP(ot
 
 // Ride management
 export const cancelRide = (cancelData, callback) => socketService.cancelRide(cancelData, callback);
+
+// Admin methods
+export const adminToggleDriverStatus = (driverId, isOnline, callback) => socketService.adminToggleDriverStatus(driverId, isOnline, callback);
 
 // Generic method
 export const emitEvent = (eventName, data, callback) => socketService.emitEvent(eventName, data, callback);

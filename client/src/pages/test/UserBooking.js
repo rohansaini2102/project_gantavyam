@@ -134,142 +134,33 @@ This is a test booking. Backend integration pending.`);
 
   return (
     <div className="user-booking-container">
-      <h1>Book Your Ride - Metro Station Pickup</h1>
+      <h1>Ride Booking Service</h1>
       
-      <div className="booking-form">
-        <div className="form-section">
-          <h3>Select Pickup Metro Station</h3>
-          
-          {nearestStation && (
-            <div className="nearest-station-info">
-              <p>Nearest Metro: <strong>{nearestStation.station.name}</strong> ({nearestStation.distance.toFixed(2)} km away)</p>
-              <button 
-                onClick={() => setSelectedStation(nearestStation.station)}
-                className="select-nearest-btn"
-              >
-                Select Nearest Station
-              </button>
-            </div>
-          )}
-
-          <select 
-            value={selectedStation?.id || ''} 
-            onChange={(e) => {
-              const station = DELHI_METRO_STATIONS.find(s => s.id === parseInt(e.target.value));
-              setSelectedStation(station);
-            }}
-            className="station-select"
-          >
-            <option value="">-- Select Metro Station --</option>
-            {DELHI_METRO_STATIONS.map(station => (
-              <option key={station.id} value={station.id}>
-                {station.name} - {station.line} Line
-              </option>
-            ))}
-          </select>
+      <div className="booking-disabled-message" style={{ 
+        textAlign: 'center', 
+        padding: '40px 20px',
+        backgroundColor: '#f8f9fa',
+        border: '1px solid #dee2e6',
+        borderRadius: '8px',
+        margin: '20px'
+      }}>
+        <h2 style={{ color: '#6c757d', marginBottom: '20px' }}>
+          Customer Online Booking Not Available
+        </h2>
+        <p style={{ fontSize: '18px', color: '#495057', marginBottom: '20px' }}>
+          All rides are now managed through our admin booking system for better service quality and driver management.
+        </p>
+        <p style={{ fontSize: '16px', color: '#6c757d' }}>
+          Please contact our admin team to book your ride or visit one of our booking counters.
+        </p>
+        <div style={{ marginTop: '30px', padding: '20px', backgroundColor: '#e7f3ff', borderRadius: '6px' }}>
+          <h4 style={{ color: '#0066cc', marginBottom: '10px' }}>How to Book:</h4>
+          <ul style={{ textAlign: 'left', color: '#495057', maxWidth: '400px', margin: '0 auto' }}>
+            <li>Visit our admin booking counter</li>
+            <li>Call our booking hotline</li>
+            <li>Use our admin booking portal</li>
+          </ul>
         </div>
-
-        <div className="form-section">
-          <h3>Enter Destination</h3>
-          <Autocomplete
-            onLoad={onLoadAutocomplete}
-            onPlaceChanged={onPlaceChanged}
-          >
-            <input
-              type="text"
-              placeholder="Enter your destination address"
-              value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-              className="destination-input"
-            />
-          </Autocomplete>
-        </div>
-
-        <button 
-          onClick={calculateRoute}
-          disabled={!selectedStation || !destinationCoords}
-          className="calculate-btn"
-        >
-          Calculate Fare
-        </button>
-
-        {showBookingDetails && (
-          <div className="booking-details">
-            <h3>Trip Details</h3>
-            <p><strong>From:</strong> {selectedStation.name} Metro Station</p>
-            <p><strong>To:</strong> {destination}</p>
-            <p><strong>Distance:</strong> {distance.toFixed(2)} km</p>
-            <p><strong>Estimated Fare:</strong> ₹{fare}</p>
-            
-            <button onClick={handleBookRide} className="book-ride-btn">
-              Book Ride
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="map-section">
-        <GoogleMap
-          mapContainerStyle={mapContainerStyle}
-          zoom={11}
-          center={userLocation || defaultCenter}
-          onLoad={onMapLoad}
-        >
-          {/* User location marker */}
-          {userLocation && (
-            <Marker
-              position={userLocation}
-              icon={{
-                url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
-              }}
-              title="Your Location"
-            />
-          )}
-
-          {/* Metro station markers */}
-          {DELHI_METRO_STATIONS.map(station => (
-            <Marker
-              key={station.id}
-              position={{ lat: station.lat, lng: station.lng }}
-              icon={{
-                url: station.id === selectedStation?.id 
-                  ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
-                  : 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
-                scaledSize: new window.google.maps.Size(
-                  station.id === selectedStation?.id ? 40 : 30,
-                  station.id === selectedStation?.id ? 40 : 30
-                )
-              }}
-              title={`${station.name} - ${station.line} Line`}
-              onClick={() => setSelectedStation(station)}
-            />
-          ))}
-
-          {/* Destination marker */}
-          {destinationCoords && (
-            <Marker
-              position={destinationCoords}
-              icon={{
-                url: 'http://maps.google.com/mapfiles/ms/icons/yellow-dot.png'
-              }}
-              title="Destination"
-            />
-          )}
-
-          {/* Route directions */}
-          {directions && (
-            <DirectionsRenderer
-              directions={directions}
-              options={{
-                suppressMarkers: true,
-                polylineOptions: {
-                  strokeColor: '#4285F4',
-                  strokeWeight: 4
-                }
-              }}
-            />
-          )}
-        </GoogleMap>
       </div>
     </div>
   );

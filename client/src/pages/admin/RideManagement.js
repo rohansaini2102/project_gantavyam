@@ -3,6 +3,8 @@ import { FaSearch, FaFilter, FaEye, FaMapMarkerAlt, FaClock, FaUser, FaCar } fro
 import { MdRefresh, MdDownload } from 'react-icons/md';
 import * as api from '../../services/api';
 import socketService from '../../services/socket';
+import DriverStatusIndicator from '../../components/admin/DriverStatusIndicator';
+import RideStatusTimeline from '../../components/admin/RideStatusTimeline';
 
 const RideManagement = () => {
   const [rides, setRides] = useState([]);
@@ -121,6 +123,17 @@ const RideManagement = () => {
             handleRealTimeUpdate({ type: 'driverRegistered', data });
           });
           
+          // Listen to manual booking events
+          socket.on('manualBookingCreated', (data) => {
+            console.log('📢 [Ride Management] Manual booking created:', data);
+            handleRealTimeUpdate({ type: 'manualBookingCreated', data });
+          });
+          
+          socket.on('rideAssigned', (data) => {
+            console.log('📢 [Ride Management] Ride assigned to driver:', data);
+            handleRealTimeUpdate({ type: 'rideAssigned', data });
+          });
+          
           socket.on('connectionSuccess', (data) => {
             console.log('✅ [Ride Management] Admin socket authenticated:', data);
             setSocketConnected(true);
@@ -172,6 +185,8 @@ const RideManagement = () => {
           socket.off('driverOffline');
           socket.off('userRegistered');
           socket.off('driverRegistered');
+          socket.off('manualBookingCreated');
+          socket.off('rideAssigned');
           socket.off('connectionSuccess');
           socket.off('connect');
           socket.off('disconnect');
@@ -690,6 +705,45 @@ const RideManagement = () => {
         // Could refresh driver statistics or show notification
         break;
         
+      case 'manualBookingCreated':
+        console.log('📋 [Ride Management] Manual booking created:', data);
+        // Refresh the rides list to show the new manual booking
+        loadRides(true);
+        
+        // Update statistics - new manual booking means +1 total, +1 active
+        setRideStats(prev => ({
+          ...prev,
+          total: prev.total + 1,
+          active: prev.active + 1
+        }));
+        break;
+        
+      case 'rideAssigned':
+        console.log('🚗 [Ride Management] Ride assigned to driver:', data);
+        // Update existing ride in the list to show driver assignment
+        setRides(prev => {
+          const safePrev = Array.isArray(prev) ? prev : [];
+          const updatedRides = safePrev.map(ride => {
+            if (ride._id === data.rideId || ride.rideId === data.bookingId) {
+              return {
+                ...ride,
+                status: 'driver_assigned',
+                driverId: data.driverId ? { 
+                  name: data.driverName || 'Assigned Driver',
+                  _id: data.driverId 
+                } : ride.driverId,
+                driverName: data.driverName || ride.driverName,
+                updatedAt: data.timestamp || new Date().toISOString(),
+                queueNumber: data.queueNumber || ride.queueNumber,
+                assignedAt: data.assignedAt || new Date().toISOString()
+              };
+            }
+            return ride;
+          });
+          return deduplicateRides(updatedRides);
+        });
+        break;
+        
       default:
         console.log('🔄 [Ride Management] Unknown update type:', type);
     }
@@ -1090,15 +1144,20 @@ const RideManagement = () => {
                     </div>
                   </td>
                   <td className="px-3 py-3">
-                    {driverName ? (
-                      <div className="flex items-center">
-                        <FaCar className="text-green-500 mr-2 flex-shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {driverName}
-                          </div>
-                        </div>
-                      </div>
+                    {ride.driverId ? (
+                      <DriverStatusIndicator 
+                        driver={{
+                          ...ride.driverId,
+                          fullName: ride.driverId.name || ride.driverId.fullName || driverName,
+                          mobileNo: ride.driverId.phone || ride.driverId.mobileNo,
+                          vehicleNo: ride.driverId.vehicleNumber || ride.driverId.vehicleNo,
+                          queuePosition: ride.queuePosition,
+                          currentRide: ride.status === 'ride_started' || ride.status === 'driver_assigned' ? ride._id : null,
+                          isOnline: true // Assume online if assigned to ride
+                        }}
+                        showDetails={false}
+                        size="small"
+                      />
                     ) : (
                       <div className="flex items-center">
                         <div className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse flex-shrink-0"></div>
@@ -1201,10 +1260,20 @@ const RideManagement = () => {
                       <div className="table-card-row">
                         <span className="table-card-label">Driver</span>
                         <div className="table-card-value text-right">
-                          {driverName ? (
-                            <div>
-                              <div className="font-medium">{driverName}</div>
-                            </div>
+                          {ride.driverId ? (
+                            <DriverStatusIndicator 
+                              driver={{
+                                ...ride.driverId,
+                                fullName: ride.driverId.name || ride.driverId.fullName || driverName,
+                                mobileNo: ride.driverId.phone || ride.driverId.mobileNo,
+                                vehicleNo: ride.driverId.vehicleNumber || ride.driverId.vehicleNo,
+                                queuePosition: ride.queuePosition,
+                                currentRide: ride.status === 'ride_started' || ride.status === 'driver_assigned' ? ride._id : null,
+                                isOnline: true // Assume online if assigned to ride
+                              }}
+                              showDetails={false}
+                              size="small"
+                            />
                           ) : (
                             <div className="flex items-center justify-end">
                               <div className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse"></div>
@@ -1480,15 +1549,24 @@ const RideManagement = () => {
                 </div>
 
                 <div className="bg-yellow-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">Driver Information</h4>
+                  <h4 className="font-medium text-gray-900 mb-3">Driver Information</h4>
                   {selectedRide.driverId ? (
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">{selectedRide.driverId.name || selectedRide.driverId.fullName}</div>
-                      <div className="text-sm text-gray-600">🚗 {selectedRide.driverId.vehicleNumber || selectedRide.driverId.vehicleNo}</div>
-                      {selectedRide.driverId.phone && (
-                        <div className="text-sm text-gray-600">📞 {selectedRide.driverId.phone}</div>
-                      )}
-                    </div>
+                    <DriverStatusIndicator 
+                      driver={{
+                        ...selectedRide.driverId,
+                        fullName: selectedRide.driverId.name || selectedRide.driverId.fullName,
+                        mobileNo: selectedRide.driverId.phone || selectedRide.driverId.mobileNo,
+                        vehicleNo: selectedRide.driverId.vehicleNumber || selectedRide.driverId.vehicleNo,
+                        queuePosition: selectedRide.queuePosition,
+                        currentRide: selectedRide.status === 'ride_started' || selectedRide.status === 'driver_assigned' ? selectedRide._id : null,
+                        isOnline: true, // Assume online if assigned to ride
+                        rating: selectedRide.driverId.rating || 0,
+                        totalRides: selectedRide.driverId.totalRides || 0,
+                        currentMetroBooth: selectedRide.pickupLocation?.boothName
+                      }}
+                      showDetails={true}
+                      size="medium"
+                    />
                   ) : (
                     <div className="text-sm text-gray-500">No driver assigned</div>
                   )}
@@ -1498,82 +1576,15 @@ const RideManagement = () => {
               {/* Ride Timeline */}
               <div className="bg-blue-50 p-4 rounded-lg">
                 <h4 className="font-medium text-gray-900 mb-3">Ride Timeline</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">Ride Created</div>
-                      <div className="text-xs text-gray-500">
-                        {formatDateTime(selectedRide.createdAt || selectedRide.timestamp)}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {selectedRide.acceptedAt && (
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">Driver Assigned</div>
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(selectedRide.acceptedAt)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {selectedRide.rideStartedAt && (
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-purple-500 rounded-full mr-3"></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">Ride Started</div>
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(selectedRide.rideStartedAt)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {selectedRide.rideEndedAt && (
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-orange-500 rounded-full mr-3"></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">Ride Ended</div>
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(selectedRide.rideEndedAt)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {selectedRide.completedAt && (
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-green-600 rounded-full mr-3"></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">Ride Completed</div>
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(selectedRide.completedAt)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {selectedRide.cancelledAt && (
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-red-500 rounded-full mr-3"></div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">Ride Cancelled</div>
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(selectedRide.cancelledAt)}
-                        </div>
-                        {selectedRide.cancellationReason && (
-                          <div className="text-xs text-red-600 mt-1">
-                            Reason: {selectedRide.cancellationReason}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <RideStatusTimeline 
+                  ride={{
+                    ...selectedRide,
+                    timestamp: selectedRide.createdAt || selectedRide.timestamp,
+                    assignedAt: selectedRide.acceptedAt || selectedRide.assignedAt,
+                    paymentStatus: selectedRide.paymentStatus || 'pending'
+                  }}
+                  showTimestamps={true}
+                />
               </div>
             </div>
 

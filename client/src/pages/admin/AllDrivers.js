@@ -118,9 +118,29 @@ const AllDrivers = () => {
       // Listen for admin toggle errors
       socket.on('adminToggleDriverStatusError', (data) => {
         console.log('[AllDrivers] Admin toggle error:', data);
-        setError(data.error);
+        
+        if (data.conflict) {
+          // Handle conflicts by updating driver state
+          console.log('[AllDrivers] Conflict detected, updating driver state');
+          setDrivers(prevDrivers => {
+            return prevDrivers.map(driver => 
+              driver._id === data.currentState?.driverId 
+                ? { 
+                    ...driver, 
+                    isOnline: data.currentState.isOnline,
+                    currentPickupLocation: data.currentState.currentMetroBooth,
+                    queuePosition: data.currentState.queuePosition
+                  }
+                : driver
+            );
+          });
+          setError(`Conflict: ${data.error}`);
+        } else {
+          setError(data.error);
+        }
+        
         setActionLoading(null);
-        setTimeout(() => setError(''), 3000);
+        setTimeout(() => setError(''), 5000);
       });
 
       // Listen for queue position updates

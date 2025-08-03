@@ -100,6 +100,16 @@ const rideHistorySchema = new mongoose.Schema({
   },
   paymentCollectedAt: Date,
   
+  // OTP information
+  startOTP: {
+    type: String,
+    required: false
+  },
+  endOTP: {
+    type: String,
+    required: false
+  },
+  
   // Ratings and feedback
   userRating: {
     rating: {
