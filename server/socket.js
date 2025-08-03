@@ -1216,36 +1216,66 @@ const initializeSocket = (server) => {
       console.log('Requester:', socket.user.role, socket.user._id);
       console.log('Ride ID:', data.rideId);
       console.log('Provided OTP:', data.otp);
+      console.log('OTP Type:', typeof data.otp);
       
       try {
         const { rideId, otp } = data;
+        
+        // Ensure OTP is a string for consistent comparison
+        const providedOTP = String(otp).trim();
         
         // Try to find ride by MongoDB ObjectId first, then by rideId field
         let rideRequest = null;
         try {
           rideRequest = await RideRequest.findById(rideId);
+          console.log('Found ride by MongoDB ObjectId');
         } catch (error) {
           // If it's not a valid ObjectId, try finding by rideId field
           console.log('Not a valid ObjectId, searching by rideId field...');
           rideRequest = await RideRequest.findOne({ rideId: rideId });
+          if (rideRequest) {
+            console.log('Found ride by rideId field');
+          }
         }
         
         if (!rideRequest) {
-          console.error('❌ Ride not found');
+          console.error('❌ Ride not found for ID:', rideId);
           const errorResponse = { success: false, message: 'Ride not found' };
           socket.emit('otpVerificationError', errorResponse);
           if (callback) callback(errorResponse);
           return;
         }
         
+        // Log ride details for debugging
+        console.log('Ride found:', {
+          _id: rideRequest._id,
+          rideId: rideRequest.rideId,
+          status: rideRequest.status,
+          startOTP: rideRequest.startOTP,
+          startOTPType: typeof rideRequest.startOTP,
+          endOTP: rideRequest.endOTP,
+          bookingSource: rideRequest.bookingSource
+        });
+        
+        // Ensure stored OTP is also a string
+        const storedStartOTP = String(rideRequest.startOTP).trim();
+        
+        console.log('OTP Comparison:', {
+          provided: providedOTP,
+          stored: storedStartOTP,
+          match: providedOTP === storedStartOTP
+        });
+        
         // Verify OTP
-        if (!verifyOTP(otp, rideRequest.startOTP)) {
-          console.error('❌ Invalid start OTP');
-          const errorResponse = { success: false, message: 'Invalid OTP' };
+        if (!verifyOTP(providedOTP, storedStartOTP)) {
+          console.error('❌ Invalid start OTP - mismatch');
+          const errorResponse = { success: false, message: 'Invalid OTP. Please try again.' };
           socket.emit('otpVerificationError', errorResponse);
           if (callback) callback(errorResponse);
           return;
         }
+        
+        console.log('✅ Start OTP verified successfully!');
         
         // Update ride status
         rideRequest.status = 'ride_started';
@@ -1409,32 +1439,60 @@ const initializeSocket = (server) => {
       console.log('Requester:', socket.user.role, socket.user._id);
       console.log('Ride ID:', data.rideId);
       console.log('Provided OTP:', data.otp);
+      console.log('OTP Type:', typeof data.otp);
       
       try {
         const { rideId, otp } = data;
+        
+        // Ensure OTP is a string for consistent comparison
+        const providedOTP = String(otp).trim();
         
         // Try to find ride by MongoDB ObjectId first, then by rideId field
         let rideRequest = null;
         try {
           rideRequest = await RideRequest.findById(rideId);
+          console.log('Found ride by MongoDB ObjectId');
         } catch (error) {
           // If it's not a valid ObjectId, try finding by rideId field
           console.log('Not a valid ObjectId, searching by rideId field...');
           rideRequest = await RideRequest.findOne({ rideId: rideId });
+          if (rideRequest) {
+            console.log('Found ride by rideId field');
+          }
         }
         
         if (!rideRequest) {
-          console.error('❌ Ride not found');
+          console.error('❌ Ride not found for ID:', rideId);
           const errorResponse = { success: false, message: 'Ride not found' };
           socket.emit('otpVerificationError', errorResponse);
           if (callback) callback(errorResponse);
           return;
         }
         
+        // Log ride details for debugging
+        console.log('Ride found:', {
+          _id: rideRequest._id,
+          rideId: rideRequest.rideId,
+          status: rideRequest.status,
+          startOTP: rideRequest.startOTP,
+          endOTP: rideRequest.endOTP,
+          endOTPType: typeof rideRequest.endOTP,
+          bookingSource: rideRequest.bookingSource
+        });
+        
+        // Ensure stored OTP is also a string
+        const storedEndOTP = String(rideRequest.endOTP).trim();
+        
+        console.log('OTP Comparison:', {
+          provided: providedOTP,
+          stored: storedEndOTP,
+          match: providedOTP === storedEndOTP
+        });
+        
         // Verify OTP
-        if (!verifyOTP(otp, rideRequest.endOTP)) {
-          console.error('❌ Invalid end OTP');
-          const errorResponse = { success: false, message: 'Invalid OTP' };
+        if (!verifyOTP(providedOTP, storedEndOTP)) {
+          console.error('❌ Invalid end OTP - mismatch');
+          const errorResponse = { success: false, message: 'Invalid OTP. Please try again.' };
           socket.emit('otpVerificationError', errorResponse);
           if (callback) callback(errorResponse);
           return;
@@ -1504,7 +1562,7 @@ const initializeSocket = (server) => {
           driverVehicleNo: rideRequest.driverVehicleNo
         });
         
-        console.log('✅ Ride ended, now completing automatically...');
+        console.log('✅ End OTP verified successfully! Ride ending...');
         
         // Remove from queue and update queue positions
         if (rideRequest.queueNumber) {

@@ -755,7 +755,7 @@ router.post('/book-ride', protectUser, async (req, res) => {
         estimatedFare: finalFare,
         distance: distance,
         startOTP: startOTP, // Show to user for driver verification
-        // endOTP will be shown after ride starts
+        endOTP: endOTP, // Show both OTPs to user for convenience
         timestamp: rideRequest.timestamp
       }
     });
@@ -803,8 +803,8 @@ router.get('/active-rides', protectUser, async (req, res) => {
         vehicleType: ride.driverId.vehicleType,
         rating: ride.driverId.rating
       } : null,
-      startOTP: ['driver_assigned', 'ride_started'].includes(ride.status) ? ride.startOTP : null,
-      endOTP: ride.status === 'ride_started' ? ride.endOTP : null,
+      startOTP: ride.startOTP, // Always show start OTP to user
+      endOTP: ride.endOTP, // Always show end OTP to user for convenience
       timestamps: {
         created: ride.timestamp,
         accepted: ride.acceptedAt,

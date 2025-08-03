@@ -506,7 +506,18 @@ const UserDashboard = () => {
         onRideAccepted: (data) => {
           console.log('[UserDashboard] Ride accepted:', data);
           setActiveRide(prev => ({ ...prev, ...data, status: 'driver_assigned' }));
-          setShowOTP({ type: 'start', otp: data.startOTP });
+          
+          // Show both OTPs if available
+          if (data.startOTP && data.endOTP) {
+            setShowOTP({ 
+              type: 'both', 
+              startOTP: data.startOTP,
+              endOTP: data.endOTP
+            });
+          } else if (data.startOTP) {
+            setShowOTP({ type: 'start', otp: data.startOTP });
+          }
+          
           setBookingError('');
         },
         
@@ -534,8 +545,16 @@ const UserDashboard = () => {
         
         onRideStarted: (data) => {
           console.log('[UserDashboard] Ride started:', data);
+          console.log('[UserDashboard] End OTP received:', data.endOTP);
           setActiveRide(prev => ({ ...prev, ...data, status: 'ride_started' }));
-          setShowOTP({ type: 'end', otp: data.endOTP });
+          
+          // Show end OTP only if it's available
+          if (data.endOTP) {
+            console.log('[UserDashboard] Setting end OTP display:', data.endOTP);
+            setShowOTP({ type: 'end', otp: data.endOTP });
+          } else {
+            console.warn('[UserDashboard] WARNING: No end OTP received in ride started event!');
+          }
         },
         
         onRideEnded: (data) => {
@@ -588,13 +607,24 @@ const UserDashboard = () => {
         
         onOTPVerificationSuccess: (data) => {
           console.log('[UserDashboard] OTP verification success:', data);
+          console.log('[UserDashboard] OTP success data contains endOTP:', data.endOTP);
           setBookingError('');
           
           // Update ride status based on verification response  
           const newStatus = data.status || data.rideStatus;
           if (newStatus === 'ride_started') {
             setActiveRide(prev => ({ ...prev, status: 'ride_started' }));
-            setShowOTP({ type: 'end', otp: data.endOTP || activeRide?.endOTP });
+            
+            // Try to get endOTP from response or from active ride
+            const endOTP = data.endOTP || activeRide?.endOTP;
+            console.log('[UserDashboard] End OTP for display:', endOTP, 'from data:', data.endOTP, 'from activeRide:', activeRide?.endOTP);
+            
+            if (endOTP) {
+              setShowOTP({ type: 'end', otp: endOTP });
+            } else {
+              console.error('[UserDashboard] ERROR: No end OTP available to display!');
+            }
+            
             setBookingError('✅ Ride started! Driver is on the way.');
           } else if (newStatus === 'ride_ended' || newStatus === 'completed') {
             setActiveRide(prev => ({ ...prev, status: newStatus }));
@@ -785,10 +815,23 @@ const UserDashboard = () => {
       const response = await users.bookRide(bookingData);
       
       console.log('[UserDashboard] Ride booked successfully:', response.data);
+      const rideData = response.data.data;
       setActiveRide({
-        ...response.data.data,
+        ...rideData,
         status: 'pending'
       });
+      
+      // Show both OTPs immediately
+      if (rideData.startOTP && rideData.endOTP) {
+        setShowOTP({ 
+          type: 'both', 
+          startOTP: rideData.startOTP,
+          endOTP: rideData.endOTP
+        });
+      } else if (rideData.startOTP) {
+        // Fallback to old behavior if only start OTP is available
+        setShowOTP({ type: 'start', otp: rideData.startOTP });
+      }
       
       // Show user that request has been sent to drivers
       setBookingError('✅ Ride request sent to nearby drivers! Waiting for driver to accept...');
@@ -1178,42 +1221,144 @@ const UserDashboard = () => {
               <div style={{ 
                 marginTop: '1.5rem', 
                 padding: '1.5rem', 
-                backgroundColor: showOTP.type === 'start' ? '#d4edda' : '#fff3cd', 
+                backgroundColor: showOTP.type === 'both' ? '#e3f2fd' : (showOTP.type === 'start' ? '#d4edda' : '#fff3cd'), 
                 borderRadius: '8px',
-                border: showOTP.type === 'start' ? '2px solid #28a745' : '2px solid #ffc107',
+                border: showOTP.type === 'both' ? '2px solid #2196f3' : (showOTP.type === 'start' ? '2px solid #28a745' : '2px solid #ffc107'),
                 textAlign: 'center'
               }}>
-                <div style={{ 
-                  fontSize: '1.1rem',
-                  fontWeight: 'bold',
-                  color: '#333',
-                  marginBottom: '1rem'
-                }}>
-                  {showOTP.type === 'start' ? '🚀 Start OTP (Give to Driver)' : '🏁 End OTP (For Ride Completion)'}
-                </div>
-                <div style={{ 
-                  fontSize: '2.5rem', 
-                  fontWeight: 'bold', 
-                  color: showOTP.type === 'start' ? '#28a745' : '#ffc107',
-                  letterSpacing: '0.2rem',
-                  fontFamily: 'monospace',
-                  backgroundColor: '#fff',
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  border: '2px dashed #ccc'
-                }}>
-                  {showOTP.otp}
-                </div>
-                <div style={{ 
-                  fontSize: '0.9rem',
-                  color: '#666',
-                  marginTop: '0.5rem'
-                }}>
-                  {showOTP.type === 'start' ? 
-                    'Share this OTP with your driver to start the ride' : 
-                    'Driver will ask for this OTP to complete your ride'
-                  }
-                </div>
+                {showOTP.type === 'both' ? (
+                  // Display both OTPs
+                  <>
+                    <div style={{ 
+                      fontSize: '1.2rem',
+                      fontWeight: 'bold',
+                      color: '#333',
+                      marginBottom: '1.5rem'
+                    }}>
+                      🔐 Your Ride OTPs
+                    </div>
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '1fr 1fr', 
+                      gap: '1rem',
+                      marginBottom: '1rem'
+                    }}>
+                      {/* Start OTP */}
+                      <div style={{
+                        backgroundColor: '#d4edda',
+                        padding: '1rem',
+                        borderRadius: '8px',
+                        border: '2px solid #28a745'
+                      }}>
+                        <div style={{ 
+                          fontSize: '1rem',
+                          fontWeight: 'bold',
+                          color: '#155724',
+                          marginBottom: '0.5rem'
+                        }}>
+                          🚀 Start OTP
+                        </div>
+                        <div style={{ 
+                          fontSize: '2rem', 
+                          fontWeight: 'bold', 
+                          color: '#28a745',
+                          letterSpacing: '0.2rem',
+                          fontFamily: 'monospace',
+                          backgroundColor: '#fff',
+                          padding: '0.5rem',
+                          borderRadius: '4px'
+                        }}>
+                          {showOTP.startOTP}
+                        </div>
+                        <div style={{ 
+                          fontSize: '0.8rem',
+                          color: '#155724',
+                          marginTop: '0.5rem'
+                        }}>
+                          Give to driver to start
+                        </div>
+                      </div>
+                      
+                      {/* End OTP */}
+                      <div style={{
+                        backgroundColor: '#fff3cd',
+                        padding: '1rem',
+                        borderRadius: '8px',
+                        border: '2px solid #ffc107'
+                      }}>
+                        <div style={{ 
+                          fontSize: '1rem',
+                          fontWeight: 'bold',
+                          color: '#856404',
+                          marginBottom: '0.5rem'
+                        }}>
+                          🏁 End OTP
+                        </div>
+                        <div style={{ 
+                          fontSize: '2rem', 
+                          fontWeight: 'bold', 
+                          color: '#ffc107',
+                          letterSpacing: '0.2rem',
+                          fontFamily: 'monospace',
+                          backgroundColor: '#fff',
+                          padding: '0.5rem',
+                          borderRadius: '4px'
+                        }}>
+                          {showOTP.endOTP}
+                        </div>
+                        <div style={{ 
+                          fontSize: '0.8rem',
+                          color: '#856404',
+                          marginTop: '0.5rem'
+                        }}>
+                          For ride completion
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ 
+                      fontSize: '0.9rem',
+                      color: '#666',
+                      fontStyle: 'italic'
+                    }}>
+                      Keep these OTPs safe. Share only with your assigned driver.
+                    </div>
+                  </>
+                ) : (
+                  // Original single OTP display
+                  <>
+                    <div style={{ 
+                      fontSize: '1.1rem',
+                      fontWeight: 'bold',
+                      color: '#333',
+                      marginBottom: '1rem'
+                    }}>
+                      {showOTP.type === 'start' ? '🚀 Start OTP (Give to Driver)' : '🏁 End OTP (For Ride Completion)'}
+                    </div>
+                    <div style={{ 
+                      fontSize: '2.5rem', 
+                      fontWeight: 'bold', 
+                      color: showOTP.type === 'start' ? '#28a745' : '#ffc107',
+                      letterSpacing: '0.2rem',
+                      fontFamily: 'monospace',
+                      backgroundColor: '#fff',
+                      padding: '1rem',
+                      borderRadius: '8px',
+                      border: '2px dashed #ccc'
+                    }}>
+                      {showOTP.otp}
+                    </div>
+                    <div style={{ 
+                      fontSize: '0.9rem',
+                      color: '#666',
+                      marginTop: '0.5rem'
+                    }}>
+                      {showOTP.type === 'start' ? 
+                        'Share this OTP with your driver to start the ride' : 
+                        'Driver will ask for this OTP to complete your ride'
+                      }
+                    </div>
+                  </>
+                )}
               </div>
             )}
             

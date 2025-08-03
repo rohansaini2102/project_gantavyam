@@ -401,12 +401,22 @@ const SimplifiedDriverDashboard = () => {
         onRideStarted: (data) => {
           console.log('[SimplifiedDriverDashboard] Ride started:', data);
           console.log('[SimplifiedDriverDashboard] End OTP received:', data.endOTP);
+          
+          // Update the active ride with the endOTP received from server
           setActiveRide(prev => ({ 
             ...prev, 
             ...data, 
             status: 'ride_started',
             endOTP: data.endOTP // Ensure endOTP is set when ride starts
           }));
+          
+          // Also update the ride in assignedRides to keep data consistent
+          setAssignedRides(prev => prev.map(ride => 
+            ride._id === data.rideId 
+              ? { ...ride, ...data, status: 'ride_started', endOTP: data.endOTP }
+              : ride
+          ));
+          
           setShowOTPInput(null);
           setOtpInput('');
         },
@@ -493,12 +503,19 @@ const SimplifiedDriverDashboard = () => {
 
   // Start ride with OTP
   const startRide = (ride) => {
+    console.log('[SimplifiedDriverDashboard] Starting ride:', ride);
+    console.log('[SimplifiedDriverDashboard] Ride has endOTP:', ride.endOTP);
     setActiveRide(ride);
     setShowOTPInput({ type: 'start', label: 'Ask customer for Start OTP' });
   };
 
   // Complete ride with OTP
   const completeRide = () => {
+    console.log('[SimplifiedDriverDashboard] Completing ride, activeRide:', activeRide);
+    console.log('[SimplifiedDriverDashboard] Active ride has endOTP:', activeRide?.endOTP);
+    if (!activeRide?.endOTP) {
+      console.warn('[SimplifiedDriverDashboard] WARNING: No endOTP found in active ride!');
+    }
     setShowOTPInput({ type: 'end', label: 'Ask customer for End OTP' });
   };
 
@@ -598,6 +615,12 @@ const SimplifiedDriverDashboard = () => {
       return;
     }
 
+    // For end OTP verification, check if the ride has been started and has endOTP
+    if (showOTPInput.type === 'end' && activeRide.status !== 'ride_started') {
+      setRideError('Please start the ride first before ending it');
+      return;
+    }
+
     const otpData = {
       rideId: activeRide._id || activeRide.rideId,
       otp: otpInput.trim()
@@ -606,7 +629,9 @@ const SimplifiedDriverDashboard = () => {
     console.log('[SimplifiedDriverDashboard] Verifying OTP:', {
       type: showOTPInput.type,
       rideId: otpData.rideId,
-      otp: otpData.otp
+      otp: otpData.otp,
+      rideStatus: activeRide.status,
+      hasEndOTP: !!activeRide.endOTP
     });
 
     const handleOTPResponse = (response) => {
