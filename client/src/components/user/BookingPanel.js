@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Autocomplete } from '@react-google-maps/api';
+import { Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import VehicleCard from './VehicleCard';
 import { FIXED_PICKUP_LOCATION, FIXED_PICKUP_MESSAGE } from '../../config/fixedLocations';
+import { FaMapMarkerAlt, FaInfoCircle, FaSpinner } from 'react-icons/fa';
 
 const BookingPanel = ({
   pickupLocations = [],
   selectedPickup,
   onPickupSelect,
   dropLocation,
+  dropCoordinates,
   onDropLocationChange,
   vehicleType,
   onVehicleSelect,
@@ -20,6 +22,7 @@ const BookingPanel = ({
 }) => {
   const [currentStep, setCurrentStep] = useState(1); // 1: Locations, 2: Vehicle, 3: Confirm
   const [pickupSearchQuery, setPickupSearchQuery] = useState(FIXED_PICKUP_LOCATION.name);
+  const [dropLocationConfirmed, setDropLocationConfirmed] = useState(false);
   
   // Notify parent component of step changes
   useEffect(() => {
@@ -39,6 +42,30 @@ const BookingPanel = ({
   // Google Places Autocomplete state
   const [autocomplete, setAutocomplete] = useState(null);
   const [isGeocodingLocation, setIsGeocodingLocation] = useState(false);
+  
+  // Map state for drop location selection
+  const [showMap, setShowMap] = useState(false);
+  const [mapInstance, setMapInstance] = useState(null);
+  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+
+  // Optional: Auto-show map when coordinates are available
+  // Commented out to keep map toggle manual for better UX
+  // useEffect(() => {
+  //   if (dropCoordinates && !showMap) {
+  //     setShowMap(true);
+  //   }
+  // }, [dropCoordinates]);
+
+  // Center map on coordinates change
+  useEffect(() => {
+    if (dropCoordinates && mapInstance && showMap) {
+      mapInstance.panTo(dropCoordinates);
+      // Don't change zoom if user has already adjusted it
+      if (mapInstance.getZoom() < 13) {
+        mapInstance.setZoom(15);
+      }
+    }
+  }, [dropCoordinates, mapInstance, showMap]);
 
   // Removed pickup location filtering since we use fixed location
 
@@ -92,10 +119,34 @@ const BookingPanel = ({
         
         console.log('Setting drop location:', { address, coordinates });
         onDropLocationChange(address, coordinates);
+        setDropLocationConfirmed(false); // Reset confirmation when location changes
         
-        if (selectedPickup) {
-          setCurrentStep(2);
+        // Always show map when drop location is selected
+        if (!showMap) {
+          setShowMap(true);
         }
+        
+        // Center map on the selected location and fit both markers
+        setTimeout(() => {
+          if (mapInstance && selectedPickup) {
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend({ lat: selectedPickup.lat, lng: selectedPickup.lng });
+            bounds.extend(coordinates);
+            mapInstance.fitBounds(bounds);
+            
+            // Add some padding
+            const padding = { top: 50, right: 50, bottom: 50, left: 50 };
+            mapInstance.fitBounds(bounds, padding);
+          } else if (mapInstance) {
+            mapInstance.panTo(coordinates);
+            mapInstance.setZoom(15);
+          }
+        }, 100); // Small delay to ensure map is rendered
+        
+        // Don't auto-advance to step 2 - let user confirm location first
+        // if (selectedPickup) {
+        //   setCurrentStep(2);
+        // }
       } else {
         console.warn('No geometry data for selected place');
       }
@@ -137,21 +188,107 @@ const BookingPanel = ({
     try {
       const result = await geocodeAddress(address);
       if (result) {
-        onDropLocationChange(result.formatted_address, {
+        const coordinates = {
           lat: result.lat,
           lng: result.lng
-        });
+        };
+        
+        onDropLocationChange(result.formatted_address, coordinates);
+        setDropLocationConfirmed(false); // Reset confirmation when location changes
+        
+        // Always show map when drop location is selected
+        if (!showMap) {
+          setShowMap(true);
+        }
+        
+        // Center map on the geocoded location
+        setTimeout(() => {
+          if (mapInstance && selectedPickup) {
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend({ lat: selectedPickup.lat, lng: selectedPickup.lng });
+            bounds.extend(coordinates);
+            mapInstance.fitBounds(bounds);
+            
+            // Add some padding
+            const padding = { top: 50, right: 50, bottom: 50, left: 50 };
+            mapInstance.fitBounds(bounds, padding);
+          } else if (mapInstance) {
+            mapInstance.panTo(coordinates);
+            mapInstance.setZoom(15);
+          }
+        }, 100);
       } else {
         // Fallback to Delhi center with user notification
         console.warn('Could not geocode address, using Delhi center');
-        onDropLocationChange(address, { lat: 28.6139, lng: 77.2090 });
+        const fallbackCoordinates = { lat: 28.6139, lng: 77.2090 };
+        onDropLocationChange(address, fallbackCoordinates);
+        
+        if (showMap && mapInstance) {
+          mapInstance.panTo(fallbackCoordinates);
+          mapInstance.setZoom(12);
+        }
       }
     } catch (error) {
       console.error('Error geocoding address:', error);
-      onDropLocationChange(address, { lat: 28.6139, lng: 77.2090 });
+      const fallbackCoordinates = { lat: 28.6139, lng: 77.2090 };
+      onDropLocationChange(address, fallbackCoordinates);
+      
+      if (showMap && mapInstance) {
+        mapInstance.panTo(fallbackCoordinates);
+        mapInstance.setZoom(12);
+      }
     } finally {
       setIsGeocodingLocation(false);
     }
+  };
+
+  // Handle map click for drop location selection
+  const handleMapClick = (event) => {
+    const coordinates = {
+      lat: event.latLng.lat(),
+      lng: event.latLng.lng()
+    };
+    
+    setIsReverseGeocoding(true);
+    
+    // Reverse geocode to get address
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ location: coordinates }, (results, status) => {
+      if (status === 'OK' && results[0]) {
+        onDropLocationChange(results[0].formatted_address, coordinates);
+      } else {
+        onDropLocationChange(`Location: ${coordinates.lat.toFixed(4)}, ${coordinates.lng.toFixed(4)}`, coordinates);
+      }
+      setDropLocationConfirmed(false); // Reset confirmation when location changes
+      setIsReverseGeocoding(false);
+    });
+  };
+
+  // Handle marker drag end
+  const handleMarkerDragEnd = (event) => {
+    const coordinates = {
+      lat: event.latLng.lat(),
+      lng: event.latLng.lng()
+    };
+    
+    setIsReverseGeocoding(true);
+    
+    // Reverse geocode to get address
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ location: coordinates }, (results, status) => {
+      if (status === 'OK' && results[0]) {
+        onDropLocationChange(results[0].formatted_address, coordinates);
+      } else {
+        onDropLocationChange(`Location: ${coordinates.lat.toFixed(4)}, ${coordinates.lng.toFixed(4)}`, coordinates);
+      }
+      setDropLocationConfirmed(false); // Reset confirmation when location changes
+      setIsReverseGeocoding(false);
+    });
+  };
+
+  // Handle map load
+  const onMapLoad = (map) => {
+    setMapInstance(map);
   };
 
   const canProceedToVehicles = selectedPickup && dropLocation;
@@ -287,10 +424,131 @@ const BookingPanel = ({
               </div>
             </div>
 
+            {/* Map Toggle Button */}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setShowMap(!showMap)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-all active:scale-[0.98] touch-manipulation"
+              >
+                <FaMapMarkerAlt className={`transition-transform duration-300 ${showMap ? 'rotate-180' : ''}`} />
+                <span className="font-medium text-gray-700">
+                  {showMap ? 'Hide Map' : 'Select on Map'}
+                </span>
+              </button>
+            </div>
+
+            {/* Map Container */}
+            {showMap && window.google?.maps && (
+              <div className="mt-4 animate-fadeIn">
+                <div className={`p-3 rounded-lg mb-3 transition-all ${
+                  dropCoordinates && !dropLocationConfirmed 
+                    ? 'bg-green-50 border border-green-200' 
+                    : 'bg-blue-50'
+                }`}>
+                  <p className={`text-sm flex items-start gap-2 ${
+                    dropCoordinates && !dropLocationConfirmed 
+                      ? 'text-green-700' 
+                      : 'text-blue-700'
+                  }`}>
+                    <FaInfoCircle className="mt-0.5 flex-shrink-0" />
+                    <span>
+                      {dropCoordinates && !dropLocationConfirmed
+                        ? "✨ Drop location selected! Drag the red marker to adjust or click 'Confirm Drop Location' below" 
+                        : dropCoordinates 
+                        ? "Drag the red marker to fine-tune your drop location" 
+                        : "Tap anywhere on the map to set your drop location"}
+                    </span>
+                  </p>
+                </div>
+                
+                <div className="relative rounded-lg overflow-hidden shadow-md"
+                     style={{ height: window.innerWidth < 768 ? '350px' : '400px' }}>
+                  
+                  {/* Loading overlay */}
+                  {isReverseGeocoding && (
+                    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white px-4 py-2 rounded-full shadow-lg z-10">
+                      <span className="text-sm text-gray-600 flex items-center gap-2">
+                        <FaSpinner className="animate-spin" />
+                        Getting address...
+                      </span>
+                    </div>
+                  )}
+                  
+                  <GoogleMap
+                    mapContainerStyle={{ width: '100%', height: '100%' }}
+                    center={dropCoordinates || selectedPickup ? 
+                      (dropCoordinates || { lat: selectedPickup.lat, lng: selectedPickup.lng })
+                      : { lat: 28.6139, lng: 77.2090 }
+                    }
+                    zoom={13}
+                    onClick={handleMapClick}
+                    onLoad={onMapLoad}
+                    options={{
+                      zoomControl: true,
+                      mapTypeControl: false,
+                      scaleControl: false,
+                      streetViewControl: false,
+                      rotateControl: false,
+                      fullscreenControl: true,
+                      clickableIcons: false
+                    }}
+                  >
+                    {/* Fixed Pickup Location Marker */}
+                    {selectedPickup && (
+                      <Marker
+                        position={{ lat: selectedPickup.lat, lng: selectedPickup.lng }}
+                        title={selectedPickup.name}
+                        icon={{
+                          url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+                          scaledSize: new window.google.maps.Size(44, 44)
+                        }}
+                      />
+                    )}
+                    
+                    {/* Drop Location Marker (Draggable) */}
+                    {dropCoordinates && (
+                      <Marker
+                        position={dropCoordinates}
+                        draggable={true}
+                        onDragEnd={handleMarkerDragEnd}
+                        title="Drop Location - Drag to adjust"
+                        icon={{
+                          url: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
+                          scaledSize: new window.google.maps.Size(44, 44)
+                        }}
+                        animation={window.google.maps.Animation.DROP}
+                      />
+                    )}
+                  </GoogleMap>
+                </div>
+                
+                {/* Map Legend */}
+                <div className="mt-3 flex items-center justify-center gap-6 text-sm text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <span style={{ color: '#1E40AF' }}>●</span> Pickup Location (Fixed)
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span style={{ color: '#DC2626' }}>●</span> Drop Location (Tap/Drag)
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Continue Button */}
             <div className="mt-6">
               <button
-                onClick={() => canProceedToVehicles && setCurrentStep(2)}
+                onClick={() => {
+                  if (canProceedToVehicles) {
+                    if (dropCoordinates && !dropLocationConfirmed) {
+                      // Confirm the drop location
+                      setDropLocationConfirmed(true);
+                      setCurrentStep(2);
+                    } else if (dropLocationConfirmed) {
+                      setCurrentStep(2);
+                    }
+                  }
+                }}
                 disabled={!canProceedToVehicles}
                 className={`
                   w-full py-4 rounded-lg font-semibold transition-colors text-lg
@@ -302,6 +560,7 @@ const BookingPanel = ({
               >
                 {!selectedPickup ? 'Select pickup location' :
                  !dropLocation ? 'Enter drop location' :
+                 dropCoordinates && !dropLocationConfirmed ? 'Confirm Drop Location' :
                  'Choose Vehicle'}
               </button>
             </div>

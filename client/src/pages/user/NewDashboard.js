@@ -545,6 +545,7 @@ const NewUserDashboard = () => {
         selectedPickup={selectedPickup}
         onPickupSelect={handlePickupSelect}
         dropLocation={dropLocation}
+        dropCoordinates={dropCoordinates}
         onDropLocationChange={handleDropLocationChange}
         vehicleType={vehicleType}
         onVehicleSelect={handleVehicleSelect}

@@ -1627,6 +1627,13 @@ const initializeSocket = (server) => {
           console.log('📤 Both parties notified of ride completion');
         } else {
           console.error('❌ Failed to complete ride automatically:', completionResult.error);
+          console.error('❌ Ride details that failed:', {
+            rideId: rideRequest._id,
+            boothRideNumber: rideRequest.boothRideNumber,
+            hasDriverId: !!rideRequest.driverId,
+            driverName: rideRequest.driverName,
+            status: rideRequest.status
+          });
           
           // Fallback to old behavior - just notify of ride end
           const endData = {
@@ -2343,8 +2350,11 @@ const sendRideRequestToDriver = async (rideRequest, driverId) => {
             });
           });
           
-          // Also emit to room
-          io.to(driverRoom).emit('newRideRequest', rideData);
+          // Only emit to room if direct emission failed or wasn't acknowledged
+          if (!directSent) {
+            console.log('⚠️ Direct emission failed, using room broadcast as fallback');
+            io.to(driverRoom).emit('newRideRequest', rideData);
+          }
           
           // Verify room size after sending
           const roomSize = io.sockets.adapter.rooms.get(driverRoom)?.size || 0;

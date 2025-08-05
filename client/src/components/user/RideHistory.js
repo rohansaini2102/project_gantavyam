@@ -25,19 +25,20 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
       console.log(`[RideHistory] Loading page ${pageNum}`);
       const response = await users.getRideHistory(pageNum, 10);
       
-      if (response.success && response.rides) {
+      if (response.success && response.data?.rideHistory) {
+        const ridesData = response.data.rideHistory;
         if (pageNum === 1) {
-          setRides(response.rides);
+          setRides(ridesData);
         } else {
-          setRides(prev => [...prev, ...response.rides]);
+          setRides(prev => [...prev, ...ridesData]);
         }
         
         // Use pagination metadata if available, otherwise fallback to old logic
-        if (response.pagination) {
-          setHasMore(response.pagination.hasMore);
-          console.log(`[RideHistory] Page ${pageNum}/${response.pagination.totalPages}, hasMore: ${response.pagination.hasMore}`);
+        if (response.data.pagination) {
+          setHasMore(response.data.pagination.hasMore);
+          console.log(`[RideHistory] Page ${pageNum}/${response.data.pagination.totalPages}, hasMore: ${response.data.pagination.hasMore}`);
         } else {
-          setHasMore(response.rides.length === 10);
+          setHasMore(ridesData.length === 10);
         }
         
         setPage(pageNum);
@@ -219,11 +220,12 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
   }
 
   const renderMobileCard = (ride) => {
-    const isExpanded = expandedRides.has(ride._id || ride.rideId);
+    const rideKey = ride._id || ride.rideId;
+    const isExpanded = expandedRides.has(rideKey);
     
     return (
       <SwipeableCard
-        key={ride._id || ride.rideId}
+        key={rideKey}
         leftAction={
           <div className="flex flex-col items-center">
             <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,7 +248,7 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
       >
         <div
           className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100"
-          onClick={() => toggleRideExpansion(ride._id || ride.rideId)}
+          onClick={() => toggleRideExpansion(rideKey)}
         >
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center space-x-3">
@@ -255,7 +257,7 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">
-                  {formatDate(ride.timestamps?.completed || ride.createdAt)}
+                  {formatDate(ride.timestamps?.completed || ride.timestamps?.created || ride.createdAt)}
                 </p>
                 <p className="font-medium text-gray-900">
                   ₹{ride.actualFare || ride.estimatedFare || ride.fare}
@@ -284,11 +286,11 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
           
           {isExpanded && (
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-              {ride.driverName && (
+              {(ride.driverName || ride.driver?.name) && (
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Driver</span>
                   <span className="text-sm font-medium text-gray-900">
-                    {ride.driverName}
+                    {ride.driverName || ride.driver?.name}
                   </span>
                 </div>
               )}
@@ -327,16 +329,17 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
   };
 
   const renderDesktopCard = (ride) => {
-    const isExpanded = expandedRides.has(ride._id || ride.rideId);
+    const rideKey = ride._id || ride.rideId;
+    const isExpanded = expandedRides.has(rideKey);
     
     return (
       <div
-        key={ride._id || ride.rideId}
+        key={rideKey}
         className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow mb-4"
       >
         <div
           className="p-4 cursor-pointer"
-          onClick={() => toggleRideExpansion(ride._id || ride.rideId)}
+          onClick={() => toggleRideExpansion(rideKey)}
         >
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -344,10 +347,10 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
                 <span className="text-2xl">{getVehicleIcon(ride.vehicleType)}</span>
                 <div>
                   <p className="text-sm text-gray-600">
-                    {formatDate(ride.timestamps?.completed || ride.createdAt)}
+                    {formatDate(ride.timestamps?.completed || ride.timestamps?.created || ride.createdAt)}
                   </p>
                   <p className="text-xs text-gray-500">
-                    Ride #{ride.boothRideNumber || ride.rideId}
+                    Ride #{ride.boothRideNumber || ride.uniqueRideId || ride.rideId}
                   </p>
                 </div>
               </div>
@@ -393,19 +396,19 @@ const RideHistory = ({ className = '', isMobile = false, onViewChange }) => {
         {isExpanded && (
           <div className="px-4 pb-4 border-t border-gray-200">
             <div className="pt-4 space-y-3">
-              {ride.driverName && (
+              {(ride.driverName || ride.driver?.name) && (
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Driver</span>
                   <span className="text-sm font-medium text-gray-900">
-                    {ride.driverName} ({ride.driverPhone || 'N/A'})
+                    {ride.driverName || ride.driver?.name} ({ride.driverPhone || ride.driver?.phone || 'N/A'})
                   </span>
                 </div>
               )}
               
-              {ride.driverVehicleNo && (
+              {(ride.driverVehicleNo || ride.driver?.vehicleNo) && (
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Vehicle Number</span>
-                  <span className="text-sm font-medium text-gray-900">{ride.driverVehicleNo}</span>
+                  <span className="text-sm font-medium text-gray-900">{ride.driverVehicleNo || ride.driver?.vehicleNo}</span>
                 </div>
               )}
               

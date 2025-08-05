@@ -80,7 +80,7 @@ class RideLifecycleService {
         userId: rideRequest.userId._id,
         driverId: driverInfo.driverId,
         rideId: rideRequest.rideId,
-        boothRideNumber: rideRequest.boothRideNumber,
+        boothRideNumber: rideRequest.boothRideNumber || rideRequest.rideId || `BOOTH-${Date.now()}`,
         
         // Location information
         pickupLocation: {

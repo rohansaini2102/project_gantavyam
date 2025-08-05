@@ -31,13 +31,15 @@ router.get('/user-rides', auth, async (req, res) => {
     
     res.json({
       success: true,
-      rides,
-      pagination: {
-        currentPage: page,
-        totalPages,
-        totalRides,
-        hasMore,
-        limit
+      data: {
+        rideHistory: rides,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalRides,
+          hasMore,
+          limit
+        }
       }
     });
   } catch (error) {

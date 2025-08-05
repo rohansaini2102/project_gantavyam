@@ -16,6 +16,7 @@ const ManualBooking = () => {
   const [customerType, setCustomerType] = useState(''); // 'existing' or 'new'
   const [dropLocation, setDropLocation] = useState('');
   const [dropCoordinates, setDropCoordinates] = useState(null);
+  const [dropLocationConfirmed, setDropLocationConfirmed] = useState(false);
   const [fareEstimates, setFareEstimates] = useState(null);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [isCalculatingFare, setIsCalculatingFare] = useState(false);
@@ -254,12 +255,12 @@ const ManualBooking = () => {
     }
   };
 
-  // Auto-calculate fare when drop coordinates change (like user booking)
+  // Calculate fare only when location is confirmed
   useEffect(() => {
-    if (dropCoordinates) {
+    if (dropCoordinates && dropLocationConfirmed) {
       calculateFareEstimates();
     }
-  }, [dropCoordinates]);
+  }, [dropCoordinates, dropLocationConfirmed]);
 
   // Google Maps is already loaded by App.js LoadScript
   // Check if it's available and set state accordingly
@@ -314,7 +315,32 @@ const ManualBooking = () => {
         console.log('Setting drop location:', { address, coordinates });
         setDropLocation(address);
         setDropCoordinates(coordinates);
-        // Fare calculation will trigger automatically via useEffect
+        setDropLocationConfirmed(false); // Reset confirmation when location changes
+        
+        // Always show map when drop location is selected
+        if (!showMap) {
+          setShowMap(true);
+        }
+        
+        // Center map on the selected location and fit both markers
+        setTimeout(() => {
+          if (mapInstance && currentBooth) {
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend({ lat: currentBooth.lat, lng: currentBooth.lng });
+            bounds.extend(coordinates);
+            mapInstance.fitBounds(bounds);
+            
+            // Add some padding
+            const padding = { top: 50, right: 50, bottom: 50, left: 50 };
+            mapInstance.fitBounds(bounds, padding);
+          } else if (mapInstance) {
+            mapInstance.panTo(coordinates);
+            mapInstance.setZoom(15);
+          }
+        }, 100); // Small delay to ensure map is rendered
+        
+        // Don't calculate fare immediately - wait for confirmation
+        // Fare calculation will be triggered when user confirms location
       } else {
         console.warn('No geometry data for selected place');
         alert('Please select a valid location from the dropdown');
@@ -329,6 +355,7 @@ const ManualBooking = () => {
       lng: event.latLng.lng()
     };
     setDropCoordinates(coordinates);
+    setDropLocationConfirmed(false); // Reset confirmation when location changes
     
     // Reverse geocode to get address
     const geocoder = new window.google.maps.Geocoder();
@@ -349,6 +376,7 @@ const ManualBooking = () => {
       lng: event.latLng.lng()
     };
     setDropCoordinates(coordinates);
+    setDropLocationConfirmed(false); // Reset confirmation when location changes
     
     // Reverse geocode to get address
     const geocoder = new window.google.maps.Geocoder();
@@ -385,6 +413,14 @@ const ManualBooking = () => {
       return;
     }
     
+    // If location is not confirmed yet, confirm it now
+    if (!dropLocationConfirmed) {
+      setDropLocationConfirmed(true);
+      // Fare calculation will trigger via useEffect
+      return;
+    }
+    
+    // If confirmed and fare is calculated, proceed
     if (!fareEstimates) {
       alert('Please wait for fare calculation to complete');
       return;
@@ -787,6 +823,7 @@ const ManualBooking = () => {
     setCustomerType('');
     setDropLocation('');
     setDropCoordinates(null);
+    setDropLocationConfirmed(false);
     setFareEstimates(null);
     setSelectedVehicle(null);
     setSelectedDriver(null);
@@ -1275,10 +1312,26 @@ const ManualBooking = () => {
               {/* Map Container */}
               {showMap && mapsLoaded && (
                 <div className="mb-6">
-                  <div className="bg-blue-50 p-3 rounded-lg mb-3">
-                    <p className="text-sm text-blue-700">
-                      <strong>Tip:</strong> Click anywhere on the map to set drop location, or drag the marker to adjust. 
-                      Most rides are within 10km radius of the pickup station.
+                  <div className={`p-3 rounded-lg mb-3 transition-all ${
+                    dropCoordinates && !dropLocationConfirmed 
+                      ? 'bg-green-50 border border-green-200' 
+                      : 'bg-blue-50'
+                  }`}>
+                    <p className={`text-sm ${
+                      dropCoordinates && !dropLocationConfirmed 
+                        ? 'text-green-700' 
+                        : 'text-blue-700'
+                    }`}>
+                      {dropCoordinates && !dropLocationConfirmed ? (
+                        <>
+                          <strong>✨ Drop location selected!</strong> Drag the red marker to adjust or click 'Confirm Drop Location' to calculate fare.
+                        </>
+                      ) : (
+                        <>
+                          <strong>Tip:</strong> Click anywhere on the map to set drop location, or drag the marker to adjust. 
+                          Most rides are within 10km radius of the pickup station.
+                        </>
+                      )}
                     </p>
                   </div>
                   <div style={{ height: '400px', borderRadius: '8px', overflow: 'hidden' }}>
@@ -1347,10 +1400,14 @@ const ManualBooking = () => {
                 </button>
                 <button
                   onClick={handleLocationSubmit}
-                  disabled={!dropLocation || !dropCoordinates || isCalculatingFare}
+                  disabled={!dropLocation || !dropCoordinates || (dropLocationConfirmed && isCalculatingFare)}
                   className="flex items-center bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
-                  Continue
+                  {!dropLocation ? 'Enter Drop Location' :
+                   !dropCoordinates ? 'Select Drop Location' :
+                   !dropLocationConfirmed ? 'Confirm Drop Location' :
+                   isCalculatingFare ? 'Calculating Fare...' :
+                   'Continue'}
                   <FaArrowRight className="ml-2" />
                 </button>
                 {mapsError && (
