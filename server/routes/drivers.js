@@ -1279,10 +1279,12 @@ router.post('/sync-state', protect, async (req, res) => {
       if (activeRideId !== undefined) updateData.currentRide = activeRideId || null;
       if (vehicleType !== undefined) updateData.vehicleType = vehicleType;
       if (selectedPickupLocation !== undefined) updateData.currentMetroBooth = selectedPickupLocation;
+      updateData.lastActiveTime = new Date(); // Always update last active time
       
       if (Object.keys(updateData).length > 0) {
         await Driver.findByIdAndUpdate(driverId, updateData);
         syncedState = { ...serverState, ...updateData };
+        console.log('[Driver State Sync] Database updated with:', updateData);
       }
       
     } else if (serverStateTime > clientStateTime) {

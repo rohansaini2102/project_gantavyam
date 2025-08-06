@@ -477,6 +477,16 @@ export const drivers = {
       console.error('[API] Error getting driver status:', error);
       throw error;
     }
+  },
+
+  getRideHistory: async (page = 1, limit = 10, status = 'all') => {
+    const token = localStorage.getItem('driverToken');
+    const response = await fetch(`${API_URL}/drivers/ride-history?page=${page}&limit=${limit}&status=${status}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return response.json();
   }
 };
 

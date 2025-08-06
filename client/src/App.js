@@ -5,7 +5,7 @@ import { LoadScript } from '@react-google-maps/api';
 import LandingPage from './pages/LandingPage';
 // Initialize app startup procedures (removed automatic import to prevent driver logout)
 // State Management
-// Removed DriverStateProvider - not used in SimplifiedDashboard
+import { DriverStateProvider } from './contexts/DriverStateContext';
 // Admin
 import AdminLayout from './components/admin/AdminLayout';
 import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute';
@@ -21,7 +21,7 @@ import QueueManagement from './pages/admin/QueueManagement';
 import BoothManagement from './pages/admin/BoothManagement';
 import ManualBooking from './pages/admin/ManualBooking';
 // Driver
-import SimplifiedDriverDashboard from './pages/driver/SimplifiedDashboard';
+import ModernDriverDashboard from './components/driver/minimal/ModernDriverDashboard';
 import DriverLogin from './pages/driver/Login';
 import DriverSignup from './pages/driver/Signup';
 import DriverProfile from './pages/driver/Profile';
@@ -76,7 +76,16 @@ function App() {
           <Route path="/user/login" element={<UserLogin />} />
           <Route path="/user/dashboard" element={<NewUserDashboard />} />
           <Route path="/user/dashboard-old" element={<UserDashboard />} />
-          <Route path="/driver/dashboard" element={<SimplifiedDriverDashboard />} />
+          <Route path="/driver/dashboard" element={
+            <DriverStateProvider>
+              <ModernDriverDashboard />
+            </DriverStateProvider>
+          } />
+          <Route path="/driver/minimal" element={
+            <DriverStateProvider>
+              <ModernDriverDashboard />
+            </DriverStateProvider>
+          } />
           <Route path="/driver/profile/:id" element={<DriverProfile />} />
           <Route path="/user/forgot-password" element={<ForgotPassword />} />
           <Route path="/driver/pending" element={<PendingApproval />} />

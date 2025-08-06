@@ -610,6 +610,20 @@ const initializeSocket = (server) => {
           console.log(`✅ Driver ${socket.user._id} rejoined room: ${roomName}`);
         });
         
+        // Update driver online status in database when rejoining
+        // This ensures the driver is marked as online for manual bookings
+        const driver = await Driver.findById(socket.user._id);
+        if (driver && !driver.isOnline) {
+          console.log(`📝 Updating driver ${socket.user._id} online status in database`);
+          await Driver.findByIdAndUpdate(socket.user._id, {
+            isOnline: true,
+            lastActiveTime: new Date()
+          });
+          console.log(`✅ Driver ${socket.user._id} marked as online in database`);
+        } else if (driver && driver.isOnline) {
+          console.log(`✅ Driver ${socket.user._id} already online in database`);
+        }
+        
         // Verify room membership after joining
         setTimeout(() => {
           const rooms = Array.from(socket.rooms);
@@ -1385,7 +1399,14 @@ const initializeSocket = (server) => {
           return;
         }
         
-        console.log('✅ Ride rejection processed');
+        // Update ride status to cancelled/rejected
+        rideRequest.status = 'cancelled';
+        rideRequest.cancelledBy = 'driver';
+        rideRequest.cancelReason = reason || 'Driver rejected the ride';
+        rideRequest.cancelledAt = new Date();
+        await rideRequest.save();
+        
+        console.log('✅ Ride rejection processed and status updated to cancelled');
         
         // Log the rejection
         logDriverAction(driverId, 'ride_rejected', {
@@ -1393,17 +1414,29 @@ const initializeSocket = (server) => {
           bookingId: rideRequest.bookingId,
           reason: reason || 'Driver not available',
           pickupLocation: rideRequest.pickupLocation?.boothName,
-          vehicleType: rideRequest.vehicleType
+          vehicleType: rideRequest.vehicleType,
+          status: 'cancelled'
         });
         
         // Notify the driver of successful rejection
         const rejectionResponse = {
           success: true,
           message: 'Ride rejected successfully',
-          rideId: rideRequest._id
+          rideId: rideRequest._id,
+          status: 'cancelled'
         };
         
         if (callback) callback(rejectionResponse);
+        
+        // Notify the user that their ride was cancelled
+        io.to(`user_${rideRequest.userId}`).emit('rideCancelled', {
+          rideId: rideRequest._id,
+          bookingId: rideRequest.bookingId,
+          reason: 'Driver rejected the ride request',
+          cancelledBy: 'driver',
+          status: 'cancelled',
+          timestamp: new Date().toISOString()
+        });
         
         // Notify admins about the rejection
         notifyAdmins('rideRejectedByDriver', {
@@ -2296,7 +2329,8 @@ const sendRideRequestToDriver = async (rideRequest, driverId) => {
       timestamp: rideRequest.timestamp || new Date(),
       isManualBooking: true,
       bookingSource: 'manual',
-      queueNumber: rideRequest.queueNumber
+      queueNumber: rideRequest.queueNumber,
+      // Removed autoAccept flag - manual bookings now require driver acceptance
     };
 
     // Convert driverId to string for comparison
@@ -2340,10 +2374,14 @@ const sendRideRequestToDriver = async (rideRequest, driverId) => {
           console.log(`📨 Sending ride request via direct socket and room...`);
           
           // Direct socket emission with acknowledgment
+          // Use different event for manual bookings that should auto-accept
+          const eventName = 'newRideRequest'; // Manual bookings now use same event as online
+          console.log(`📨 Emitting ${eventName} event to driver`);
+          
           const directSent = await new Promise((resolve) => {
             const timeout = setTimeout(() => resolve(false), 5000);
             
-            driverSocket.emit('newRideRequest', rideData, (ack) => {
+            driverSocket.emit(eventName, rideData, (ack) => {
               clearTimeout(timeout);
               console.log('✅ Driver acknowledged ride request:', ack);
               resolve(true);
@@ -2353,7 +2391,7 @@ const sendRideRequestToDriver = async (rideRequest, driverId) => {
           // Only emit to room if direct emission failed or wasn't acknowledged
           if (!directSent) {
             console.log('⚠️ Direct emission failed, using room broadcast as fallback');
-            io.to(driverRoom).emit('newRideRequest', rideData);
+            io.to(driverRoom).emit(eventName, rideData);
           }
           
           // Verify room size after sending

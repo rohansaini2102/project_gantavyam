@@ -164,6 +164,23 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
         vehicleType: vehicleType // Ensure vehicle type matches
       });
       
+      // If driver doesn't have booth set, try without booth restriction
+      if (!targetDriver && (!driverExists.currentMetroBooth || driverExists.currentMetroBooth === null)) {
+        console.log(`🔄 Driver booth is null, checking without booth restriction...`);
+        targetDriver = await Driver.findOne({
+          _id: selectedDriverId,
+          isOnline: true,
+          currentRide: null,
+          vehicleType: vehicleType
+        });
+        
+        if (targetDriver) {
+          console.log(`✅ Found driver without booth restriction, updating booth to ${pickupStation}`);
+          targetDriver.currentMetroBooth = pickupStation;
+          await targetDriver.save();
+        }
+      }
+      
       if (targetDriver) {
         console.log(`✅ Driver passes all validation checks: ${targetDriver.fullName} (Queue #${targetDriver.queuePosition})`);
       } else {
@@ -172,14 +189,24 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
         // Determine specific reason for failure
         const reasons = [];
         if (!driverExists.isOnline) reasons.push('Driver is offline');
-        if (driverExists.currentMetroBooth !== pickupStation) reasons.push(`Driver at wrong station (${driverExists.currentMetroBooth} vs ${pickupStation})`);
+        if (driverExists.currentMetroBooth && driverExists.currentMetroBooth !== pickupStation) {
+          reasons.push(`Driver at wrong station (${driverExists.currentMetroBooth} vs ${pickupStation})`);
+        }
         if (driverExists.currentRide) reasons.push('Driver has active ride');
         if (driverExists.vehicleType !== vehicleType) reasons.push(`Vehicle type mismatch (${driverExists.vehicleType} vs ${vehicleType})`);
         
-        return res.status(400).json({
-          success: false,
-          message: `Selected driver is not available: ${reasons.join(', ')}`
-        });
+        // If only issue is null booth, allow it and update
+        if (reasons.length === 0 && !driverExists.currentMetroBooth) {
+          console.log(`✅ Only issue was null booth, allowing driver and updating booth`);
+          targetDriver = driverExists;
+          targetDriver.currentMetroBooth = pickupStation;
+          await targetDriver.save();
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: `Selected driver is not available: ${reasons.join(', ')}`
+          });
+        }
       }
     } else {
       // Auto-selection - find driver from queue position 1
@@ -189,16 +216,56 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
       const allDriversAtStation = await Driver.find({
         currentMetroBooth: pickupStation,
         isOnline: true
-      }).select('fullName queuePosition currentRide isOnline vehicleType');
+      }).select('fullName queuePosition currentRide isOnline vehicleType currentMetroBooth');
+      
+      // Also get all online drivers regardless of booth for debugging
+      const allOnlineDrivers = await Driver.find({
+        isOnline: true,
+        vehicleType: vehicleType
+      }).select('fullName queuePosition currentRide isOnline vehicleType currentMetroBooth');
       
       console.log(`📊 All online drivers at ${pickupStation}:`, allDriversAtStation.map(d => ({
         name: d.fullName,
         queuePosition: d.queuePosition,
         currentRide: d.currentRide,
         isOnline: d.isOnline,
-        vehicleType: d.vehicleType
+        vehicleType: d.vehicleType,
+        currentMetroBooth: d.currentMetroBooth
       })));
       
+      console.log(`🌐 All online ${vehicleType} drivers (any location):`, allOnlineDrivers.map(d => ({
+        name: d.fullName,
+        queuePosition: d.queuePosition,
+        currentMetroBooth: d.currentMetroBooth || 'NOT SET',
+        hasActiveRide: !!d.currentRide
+      })));
+      
+      // Also check drivers that might be connected via socket but DB not updated yet
+      const io = getIO();
+      if (io && allDriversAtStation.length === 0) {
+        console.log(`🔌 No drivers found in DB, checking socket connections...`);
+        const allSockets = io.sockets.sockets;
+        for (const [socketId, socket] of allSockets) {
+          if (socket.user && socket.user.role === 'driver' && 
+              socket.user.currentMetroBooth === pickupStation &&
+              socket.user.vehicleType === vehicleType) {
+            console.log(`🔌 Found connected driver via socket: ${socket.user.fullName} (${socket.user._id})`);
+            // Try to find this driver in DB and update their status
+            const connectedDriver = await Driver.findById(socket.user._id);
+            if (connectedDriver && !connectedDriver.isOnline) {
+              console.log(`📝 Updating socket-connected driver ${socket.user._id} to online in DB`);
+              await Driver.findByIdAndUpdate(socket.user._id, {
+                isOnline: true,
+                currentMetroBooth: pickupStation,
+                vehicleType: vehicleType,
+                lastActiveTime: new Date()
+              });
+            }
+          }
+        }
+      }
+      
+      // First try exact match
       targetDriver = await Driver.findOne({
         currentMetroBooth: pickupStation,
         queuePosition: 1,
@@ -207,13 +274,68 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
         vehicleType: vehicleType // Ensure vehicle type matches
       });
       
+      // If no exact match, try without booth restriction (for drivers who haven't set location)
+      if (!targetDriver) {
+        console.log(`🔄 No driver found with exact booth match, trying without booth restriction...`);
+        console.log(`🔍 Looking for: vehicleType=${vehicleType}, queuePosition=1, isOnline=true, currentRide=null`);
+        
+        targetDriver = await Driver.findOne({
+          queuePosition: 1,
+          isOnline: true,
+          currentRide: null,
+          vehicleType: vehicleType
+        });
+        
+        if (targetDriver) {
+          console.log(`✅ Found driver without booth restriction: ${targetDriver.fullName}`);
+          console.log(`   Current booth: ${targetDriver.currentMetroBooth || 'NOT SET'}`);
+          console.log(`   Updating to: ${pickupStation}`);
+          // Update their booth to match the booking
+          targetDriver.currentMetroBooth = pickupStation;
+          await targetDriver.save();
+          console.log(`   ✅ Driver booth updated successfully`);
+        } else {
+          console.log(`❌ No driver found even without booth restriction`);
+        }
+      }
+      
       if (targetDriver) {
         console.log(`✅ Found available driver at queue position 1: ${targetDriver.fullName} (${targetDriver._id})`);
       } else {
         console.log(`❌ No available ${vehicleType} driver found at queue position 1 for ${pickupStation}`);
+        
+        // Provide more detailed debugging info
+        const debugInfo = {
+          searchCriteria: {
+            pickupStation,
+            vehicleType,
+            queuePosition: 1,
+            isOnline: true,
+            currentRide: null
+          },
+          driversFoundAtStation: allDriversAtStation.length,
+          driversAtStation: allDriversAtStation.map(d => ({
+            name: d.fullName,
+            queuePosition: d.queuePosition,
+            vehicleType: d.vehicleType,
+            isOnline: d.isOnline,
+            currentMetroBooth: d.currentMetroBooth || 'NOT SET',
+            hasActiveRide: !!d.currentRide
+          })),
+          allOnlineDriversOfType: allOnlineDrivers.map(d => ({
+            name: d.fullName,
+            queuePosition: d.queuePosition,
+            currentMetroBooth: d.currentMetroBooth || 'NOT SET',
+            hasActiveRide: !!d.currentRide
+          }))
+        };
+        
+        console.log('📊 Debug info for failed driver search:', debugInfo);
+        
         return res.status(400).json({
           success: false,
-          message: `No available ${vehicleType} driver at queue position 1. Please select a specific driver or wait for drivers to come online.`
+          message: `No available ${vehicleType} driver at queue position 1. Please select a specific driver or wait for drivers to come online.`,
+          debug: debugInfo
         });
       }
     }

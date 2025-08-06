@@ -207,6 +207,17 @@ export const DriverStateProvider = ({ children }) => {
       return false;
     }
     
+    // Parse driver data if it exists
+    let driverInfo = null;
+    try {
+      if (driverData) {
+        driverInfo = JSON.parse(driverData);
+        console.log('[DriverState] Driver data parsed successfully:', driverInfo);
+      }
+    } catch (error) {
+      console.error('[DriverState] Error parsing driver data:', error);
+    }
+    
     // Skip token validation entirely - trust that token exists
     console.log('[DriverState] Skipping token validation - trusting driver token exists');
     
@@ -215,8 +226,9 @@ export const DriverStateProvider = ({ children }) => {
     const queuePosition = loadFromStorage(STORAGE_KEYS.QUEUE_POSITION);
     const activeRide = loadFromStorage(STORAGE_KEYS.ACTIVE_RIDE);
     
-    if (lastKnownState || driverStatus || queuePosition || activeRide) {
+    if (lastKnownState || driverStatus || queuePosition || activeRide || driverInfo) {
       console.log('[DriverState] State found, recovering...', {
+        driverInfo,
         lastKnownState,
         driverStatus,
         queuePosition,
@@ -224,6 +236,7 @@ export const DriverStateProvider = ({ children }) => {
       });
       
       const recoveredState = {
+        driver: driverInfo,  // Include driver object in recovered state
         isOnline: driverStatus?.isOnline || false,
         queuePosition: queuePosition || null,
         activeRide: activeRide || null,

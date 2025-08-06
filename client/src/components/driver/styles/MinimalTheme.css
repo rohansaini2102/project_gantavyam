@@ -1,0 +1,416 @@
+/* Minimal Driver UI Theme - Blue & Black */
+
+:root {
+  /* Primary Colors */
+  --minimal-primary-blue: #1E40AF;
+  --minimal-bright-blue: #3B82F6;
+  --minimal-light-blue: #60A5FA;
+  --minimal-pale-blue: #DBEAFE;
+  
+  /* Dark Colors */
+  --minimal-black: #0F172A;
+  --minimal-dark-gray: #1E293B;
+  --minimal-medium-gray: #334155;
+  --minimal-light-gray: #64748B;
+  --minimal-pale-gray: #E2E8F0;
+  --minimal-white: #FFFFFF;
+  
+  /* Status Colors */
+  --minimal-success: #10B981;
+  --minimal-danger: #EF4444;
+  --minimal-warning: #F59E0B;
+  
+  /* Shadows */
+  --minimal-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.1);
+  --minimal-shadow-md: 0 4px 6px rgba(15, 23, 42, 0.1);
+  --minimal-shadow-lg: 0 10px 25px rgba(15, 23, 42, 0.15);
+  
+  /* Border Radius */
+  --minimal-radius-sm: 8px;
+  --minimal-radius-md: 12px;
+  --minimal-radius-lg: 16px;
+  --minimal-radius-full: 9999px;
+  
+  /* Touch Target Sizes (Mobile) */
+  --minimal-touch-target: 48px;
+  --minimal-touch-target-lg: 56px;
+}
+
+/* Global Minimal Styles */
+.minimal-driver-container {
+  background: var(--minimal-white);
+  color: var(--minimal-black);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Status Toggle Styles */
+.minimal-status-toggle {
+  width: 100%;
+  height: var(--minimal-touch-target-lg);
+  border-radius: var(--minimal-radius-full);
+  font-size: 18px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.minimal-status-toggle.online {
+  background: var(--minimal-bright-blue);
+  color: var(--minimal-white);
+  box-shadow: var(--minimal-shadow-md);
+}
+
+.minimal-status-toggle.offline {
+  background: var(--minimal-dark-gray);
+  color: var(--minimal-light-gray);
+}
+
+.minimal-status-toggle:active {
+  transform: scale(0.98);
+}
+
+/* Queue Badge */
+.minimal-queue-badge {
+  background: var(--minimal-primary-blue);
+  color: var(--minimal-white);
+  padding: 8px 16px;
+  border-radius: var(--minimal-radius-full);
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: var(--minimal-shadow-sm);
+}
+
+.minimal-queue-badge.next {
+  background: var(--minimal-success);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+/* Ride Card Styles */
+.minimal-ride-card {
+  background: var(--minimal-white);
+  border: 2px solid var(--minimal-pale-gray);
+  border-radius: var(--minimal-radius-md);
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--minimal-shadow-sm);
+}
+
+.minimal-ride-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.minimal-ride-fare {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--minimal-primary-blue);
+}
+
+.minimal-ride-distance {
+  font-size: 16px;
+  color: var(--minimal-medium-gray);
+  font-weight: 500;
+}
+
+.minimal-ride-location {
+  font-size: 14px;
+  color: var(--minimal-dark-gray);
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.minimal-ride-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.minimal-btn {
+  height: var(--minimal-touch-target);
+  border-radius: var(--minimal-radius-sm);
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.minimal-btn-accept {
+  background: var(--minimal-bright-blue);
+  color: var(--minimal-white);
+}
+
+.minimal-btn-reject {
+  background: var(--minimal-dark-gray);
+  color: var(--minimal-white);
+}
+
+.minimal-btn:active {
+  transform: scale(0.98);
+}
+
+/* Active Ride Panel */
+.minimal-active-ride {
+  background: linear-gradient(135deg, var(--minimal-primary-blue), var(--minimal-bright-blue));
+  color: var(--minimal-white);
+  border-radius: var(--minimal-radius-lg);
+  padding: 20px;
+  margin: 16px;
+  box-shadow: var(--minimal-shadow-lg);
+}
+
+.minimal-active-ride-stage {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.minimal-active-ride-info {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.minimal-otp-input {
+  width: 100%;
+  height: var(--minimal-touch-target-lg);
+  background: var(--minimal-white);
+  color: var(--minimal-black);
+  border: none;
+  border-radius: var(--minimal-radius-sm);
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.2em;
+  margin-bottom: 16px;
+}
+
+.minimal-btn-primary {
+  width: 100%;
+  height: var(--minimal-touch-target-lg);
+  background: var(--minimal-white);
+  color: var(--minimal-primary-blue);
+  border-radius: var(--minimal-radius-sm);
+  font-size: 18px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Bottom Navigation */
+.minimal-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--minimal-white);
+  border-top: 1px solid var(--minimal-pale-gray);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 8px 0;
+  box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.05);
+  z-index: 1000;
+}
+
+.minimal-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--minimal-medium-gray);
+  text-decoration: none;
+  min-height: var(--minimal-touch-target);
+}
+
+.minimal-nav-item.active {
+  color: var(--minimal-bright-blue);
+}
+
+.minimal-nav-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.minimal-nav-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Mobile Container */
+.minimal-mobile-container {
+  padding: 16px;
+  padding-bottom: 80px; /* Space for bottom nav */
+  max-width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Header */
+.minimal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--minimal-white);
+  border-bottom: 1px solid var(--minimal-pale-gray);
+}
+
+.minimal-header-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--minimal-black);
+}
+
+.minimal-connection-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--minimal-success);
+}
+
+.minimal-connection-indicator.disconnected {
+  background: var(--minimal-danger);
+}
+
+/* Empty State */
+.minimal-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--minimal-light-gray);
+}
+
+.minimal-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.minimal-empty-text {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* Loading State */
+.minimal-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.minimal-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--minimal-pale-blue);
+  border-top-color: var(--minimal-bright-blue);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive Design - Mobile First */
+@media (max-width: 768px) {
+  .minimal-mobile-container {
+    padding: 12px;
+  }
+  
+  .minimal-ride-card {
+    padding: 14px;
+  }
+  
+  .minimal-ride-fare {
+    font-size: 22px;
+  }
+}
+
+/* Safe Area Insets for iOS */
+@supports (padding: max(0px)) {
+  .minimal-bottom-nav {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  
+  .minimal-mobile-container {
+    padding-bottom: max(80px, calc(72px + env(safe-area-inset-bottom)));
+  }
+}
+
+/* Dark Mode Support (Optional) */
+@media (prefers-color-scheme: dark) {
+  .minimal-driver-container {
+    background: var(--minimal-black);
+    color: var(--minimal-white);
+  }
+  
+  .minimal-ride-card {
+    background: var(--minimal-dark-gray);
+    border-color: var(--minimal-medium-gray);
+  }
+  
+  .minimal-bottom-nav {
+    background: var(--minimal-dark-gray);
+    border-top-color: var(--minimal-medium-gray);
+  }
+}
+
+/* Accessibility */
+.minimal-btn:focus,
+.minimal-status-toggle:focus,
+.minimal-nav-item:focus {
+  outline: 2px solid var(--minimal-bright-blue);
+  outline-offset: 2px;
+}
+
+/* Smooth Scrolling */
+.minimal-scroll-container {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Prevent Text Selection on Buttons */
+.minimal-btn,
+.minimal-status-toggle,
+.minimal-nav-item {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}

@@ -1,0 +1,253 @@
+/* Driver Theme - Blue & Black Color Scheme */
+
+:root {
+  /* Primary Theme Colors - Matching Landing Page */
+  --driver-black: #111827;                /* gray-900 - Main black */
+  --driver-black-light: #1F2937;          /* gray-800 - Lighter black */
+  --driver-blue: #38BDF8;                 /* sky-400 - Primary blue */
+  --driver-blue-dark: #0284C7;            /* sky-600 - Dark blue */
+  --driver-blue-light: #7DD3FC;           /* sky-300 - Light blue */
+  --driver-blue-gradient: linear-gradient(135deg, #38BDF8 0%, #0284C7 100%);
+  
+  /* Background Colors */
+  --driver-bg-primary: #FFFFFF;           /* White background */
+  --driver-bg-secondary: #F9FAFB;         /* gray-50 - Light gray */
+  --driver-bg-dark: #111827;              /* Black background */
+  --driver-bg-sky: #F0F9FF;               /* sky-50 - Sky tinted */
+  
+  /* Text Colors */
+  --driver-text-primary: #111827;         /* gray-900 - Primary text */
+  --driver-text-secondary: #4B5563;       /* gray-600 - Secondary text */
+  --driver-text-light: #9CA3AF;           /* gray-400 - Light text */
+  --driver-text-white: #FFFFFF;           /* White text */
+  
+  /* Border Colors */
+  --driver-border-light: #E5E7EB;         /* gray-200 - Light border */
+  --driver-border-dark: #374151;          /* gray-700 - Dark border */
+  --driver-border-blue: rgba(56, 189, 248, 0.3);
+  
+  /* Status Colors */
+  --driver-success: #10B981;              /* emerald-500 - Success */
+  --driver-warning: #F59E0B;              /* amber-500 - Warning */
+  --driver-danger: #EF4444;               /* red-500 - Danger */
+  --driver-info: #3B82F6;                 /* blue-500 - Info */
+  
+  /* Shadow Colors */
+  --driver-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --driver-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --driver-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --driver-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  --driver-shadow-blue: 0 10px 30px rgba(56, 189, 248, 0.3);
+  
+  /* Glassmorphism Effects */
+  --driver-glass-bg: rgba(17, 24, 39, 0.9);
+  --driver-glass-border: rgba(56, 189, 248, 0.2);
+  --driver-glass-blur: 12px;
+  
+  /* Animation Durations */
+  --driver-transition-fast: 150ms;
+  --driver-transition-normal: 300ms;
+  --driver-transition-slow: 500ms;
+  
+  /* Animation Curves */
+  --driver-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --driver-ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --driver-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --driver-bg-primary: #1F2937;
+    --driver-bg-secondary: #111827;
+    --driver-text-primary: #F9FAFB;
+    --driver-text-secondary: #D1D5DB;
+    --driver-border-light: #374151;
+  }
+}
+
+/* Global Driver Styles */
+.driver-theme {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glassmorphism Header */
+.driver-header-glass {
+  background: var(--driver-glass-bg);
+  backdrop-filter: blur(var(--driver-glass-blur));
+  -webkit-backdrop-filter: blur(var(--driver-glass-blur));
+  border-bottom: 1px solid var(--driver-glass-border);
+}
+
+/* Blue Gradient Buttons */
+.driver-btn-primary {
+  background: var(--driver-blue-gradient);
+  color: var(--driver-text-white);
+  box-shadow: var(--driver-shadow-blue);
+  transition: all var(--driver-transition-normal) var(--driver-ease-in-out);
+}
+
+.driver-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 40px rgba(56, 189, 248, 0.4);
+}
+
+.driver-btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Black Secondary Button */
+.driver-btn-secondary {
+  background: var(--driver-black);
+  color: var(--driver-text-white);
+  border: 2px solid transparent;
+  transition: all var(--driver-transition-normal) var(--driver-ease-in-out);
+}
+
+.driver-btn-secondary:hover {
+  background: var(--driver-black-light);
+  border-color: var(--driver-blue);
+}
+
+/* Ghost Button */
+.driver-btn-ghost {
+  background: transparent;
+  color: var(--driver-blue);
+  border: 2px solid var(--driver-blue);
+  transition: all var(--driver-transition-normal) var(--driver-ease-in-out);
+}
+
+.driver-btn-ghost:hover {
+  background: var(--driver-blue);
+  color: var(--driver-text-white);
+  box-shadow: var(--driver-shadow-blue);
+}
+
+/* Status Indicators */
+.driver-status-online {
+  background: var(--driver-blue-gradient);
+  color: var(--driver-text-white);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+  animation: pulse-blue 2s infinite;
+}
+
+.driver-status-offline {
+  background: var(--driver-black);
+  color: var(--driver-text-white);
+}
+
+/* Animations */
+@keyframes pulse-blue {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(56, 189, 248, 0.8);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Card Styles */
+.driver-card {
+  background: var(--driver-bg-primary);
+  border: 1px solid var(--driver-border-light);
+  border-radius: 1rem;
+  box-shadow: var(--driver-shadow-sm);
+  transition: all var(--driver-transition-normal) var(--driver-ease-in-out);
+}
+
+.driver-card:hover {
+  border-color: var(--driver-blue);
+  box-shadow: var(--driver-shadow-blue);
+  transform: translateY(-2px);
+}
+
+/* Mobile Specific Styles */
+@media (max-width: 768px) {
+  .driver-mobile-full {
+    width: 100vw;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  .driver-mobile-rounded {
+    border-top-left-radius: 1.5rem;
+    border-top-right-radius: 1.5rem;
+  }
+  
+  .driver-bottom-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--driver-bg-primary);
+    border-top-left-radius: 1.5rem;
+    border-top-right-radius: 1.5rem;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.1);
+    animation: slide-up var(--driver-transition-normal) var(--driver-ease-spring);
+  }
+}
+
+/* Loading States */
+.driver-skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Focus States */
+.driver-focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.5);
+}
+
+/* Safe Area Support */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .driver-safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  
+  .driver-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .driver-safe-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  
+  .driver-safe-right {
+    padding-right: env(safe-area-inset-right);
+  }
+}

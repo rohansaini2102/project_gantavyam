@@ -510,6 +510,10 @@ class SocketService {
       });
     }
     
+    // Manual ride assignment handler removed - manual bookings now use newRideRequest
+    // The onManualRideAssigned event is no longer used as manual bookings go through
+    // the same newRideRequest flow as online bookings to ensure driver confirmation
+    
     if (callbacks.onRideRequestClosed) {
       this.socket.on('rideRequestClosed', callbacks.onRideRequestClosed);
     }

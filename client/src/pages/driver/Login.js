@@ -38,7 +38,7 @@ const DriverLogin = () => {
       if (res.driver && res.driver.isVerified === false) {
         navigate('/driver/pending');
       } else if (res.driver && res.driver.isVerified === true) {
-        navigate('/driver/dashboard');
+        navigate('/driver/minimal');
       } else {
         setError('Unexpected response from server.');
       }
