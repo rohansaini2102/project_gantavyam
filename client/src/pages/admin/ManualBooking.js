@@ -40,6 +40,7 @@ const ManualBooking = () => {
   // Socket connection state
   const [socket, setSocket] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [waitingForDriverResponse, setWaitingForDriverResponse] = useState(false);
 
   // Fixed pickup location (same as online booking)
   const currentBooth = FIXED_PICKUP_LOCATION;
@@ -215,6 +216,66 @@ const ManualBooking = () => {
     
     return () => clearInterval(connectionInterval);
   }, [navigate]);
+
+  // Set up socket event listeners for ride acceptance/rejection
+  useEffect(() => {
+    if (!socket || !socketConnected) return;
+
+    console.log('[ManualBooking] Setting up socket event listeners for ride updates');
+
+    // Listen for driver accepting the ride
+    const handleDriverAssigned = (data) => {
+      console.log('[ManualBooking] 🎉 Driver accepted the ride:', data);
+      
+      // Check if this is for our booking
+      if (bookingDetails && 
+          (data.bookingId === bookingDetails.bookingId || 
+           data.rideId === bookingDetails._id)) {
+        
+        setWaitingForDriverResponse(false);
+        setBookingDetails(prev => ({
+          ...prev,
+          status: 'driver_accepted',
+          driverName: data.driverName,
+          driverId: data.driverId,
+          startOTP: data.startOTP,
+          endOTP: data.endOTP,
+          queueNumber: data.queueNumber,
+          message: 'Driver has accepted the ride!'
+        }));
+      }
+    };
+
+    // Listen for driver rejecting the ride
+    const handleRideRejected = (data) => {
+      console.log('[ManualBooking] ❌ Driver rejected the ride:', data);
+      
+      // Check if this is for our booking
+      if (bookingDetails && 
+          (data.bookingId === bookingDetails.bookingId || 
+           data.rideId === bookingDetails._id)) {
+        
+        setWaitingForDriverResponse(false);
+        setBookingDetails(prev => ({
+          ...prev,
+          status: 'driver_rejected',
+          message: `Driver rejected the ride: ${data.reason || 'Driver not available'}`,
+          rejectionReason: data.reason
+        }));
+        
+        // Alert the admin
+        alert(`Driver rejected the ride: ${data.reason || 'Driver not available'}. Please try another driver.`);
+      }
+    };
+
+    socket.on('driverAssigned', handleDriverAssigned);
+    socket.on('rideRejectedByDriver', handleRideRejected);
+
+    return () => {
+      socket.off('driverAssigned', handleDriverAssigned);
+      socket.off('rideRejectedByDriver', handleRideRejected);
+    };
+  }, [socket, socketConnected, bookingDetails]);
 
   // Auto-save state when important fields change
   useEffect(() => {
@@ -744,30 +805,21 @@ const ManualBooking = () => {
       if (response.success) {
         console.log('🎉 [Manual Booking] Booking successful, setting booking details');
         
-        // First show waiting for driver acceptance
+        // Set waiting state and store booking details
+        setWaitingForDriverResponse(true);
         setBookingDetails({
+          ...response.booking,
           status: 'waiting_driver',
-          message: 'Waiting for driver to accept...',
+          message: 'Waiting for driver to accept the ride...',
           selectedDriver: selectedDriver,
-          bookingId: response.booking.bookingId,
-          queueNumber: response.booking.queueNumber
+          vehicleInfo: selectedVehicle,
+          pickupLocation: currentBooth,
+          dropLocation: { address: dropLocation }
         });
-        
-        // Simulate driver assignment process (in real app, this would be handled by socket events)
-        setTimeout(() => {
-          setBookingDetails({
-            ...response.booking,
-            vehicleInfo: selectedVehicle,
-            pickupLocation: currentBooth,
-            dropLocation: { address: dropLocation },
-            status: 'driver_accepted',
-            selectedDriver: selectedDriver
-          });
-        }, 2000);
         
         // Clear saved state on successful booking
         clearBookingState();
-        console.log('✅ [Manual Booking] Ride booked successfully!');
+        console.log('✅ [Manual Booking] Ride request sent to driver, waiting for response...');
       } else {
         console.error('❌ [Manual Booking] Booking failed - API returned success: false');
         console.error('❌ [Manual Booking] Response:', response);
@@ -941,12 +993,31 @@ const ManualBooking = () => {
       );
     }
     
+    const isWaiting = bookingDetails.status === 'waiting_driver';
+    const isRejected = bookingDetails.status === 'driver_rejected';
+    
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-8">
           <div className="text-center mb-6">
-            <FaCheckCircle className="text-green-500 text-6xl mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-800">Ride Booked Successfully!</h2>
+            {isWaiting ? (
+              <>
+                <FaSpinner className="text-blue-500 text-6xl mx-auto mb-4 animate-spin" />
+                <h2 className="text-2xl font-bold text-gray-800">Waiting for Driver Response...</h2>
+                <p className="text-gray-600 mt-2">{bookingDetails.message}</p>
+              </>
+            ) : isRejected ? (
+              <>
+                <div className="text-red-500 text-6xl mx-auto mb-4">❌</div>
+                <h2 className="text-2xl font-bold text-gray-800">Driver Rejected</h2>
+                <p className="text-red-600 mt-2">{bookingDetails.message}</p>
+              </>
+            ) : (
+              <>
+                <FaCheckCircle className="text-green-500 text-6xl mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-gray-800">Ride Accepted by Driver!</h2>
+              </>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -1021,7 +1092,7 @@ const ManualBooking = () => {
               Book Another Ride
             </button>
             <button
-              onClick={() => navigate('/admin/ride-management')}
+              onClick={() => navigate('/admin/rides')}
               className="flex-1 bg-gray-600 text-white py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors"
             >
               View All Rides

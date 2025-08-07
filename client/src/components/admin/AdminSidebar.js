@@ -1,14 +1,17 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FaUserPlus, FaUsers, FaCar, FaUser, FaHome, FaTachometerAlt, FaChartBar, FaCog, FaRoute, FaMapMarkerAlt, FaListOl, FaHandHoldingHeart } from 'react-icons/fa';
+import { FaUserPlus, FaUsers, FaCar, FaUser, FaHome, FaTachometerAlt, FaChartBar, FaCog, FaRoute, FaMapMarkerAlt, FaListOl, FaHandHoldingHeart, FaMoneyBillWave } from 'react-icons/fa';
 
 const navLinks = [
   { to: '/admin', label: 'Dashboard', icon: <FaTachometerAlt />, isExact: true },
-  { 
-    category: 'Management',
+  {
+    category: 'Operations',
     items: [
-      { to: '/admin/register-driver', label: 'Register Driver', icon: <FaCar /> },
-      { to: '/admin/add-user', label: 'Add User', icon: <FaUserPlus /> },
+      { to: '/admin/rides', label: 'Ride Management', icon: <FaRoute /> },
+      { to: '/admin/manual-booking', label: 'Manual Booking', icon: <FaHandHoldingHeart /> },
+      { to: '/admin/queue', label: 'Queue Management', icon: <FaListOl /> },
+      { to: '/admin/booths', label: 'Booth Management', icon: <FaMapMarkerAlt /> },
+      { to: '/admin/fare-management', label: 'Fare Management', icon: <FaMoneyBillWave /> },
     ]
   },
   {
@@ -18,13 +21,11 @@ const navLinks = [
       { to: '/admin/view-users', label: 'All Users', icon: <FaUser /> },
     ]
   },
-  {
-    category: 'Operations',
+  { 
+    category: 'Management',
     items: [
-      { to: '/admin/rides', label: 'Ride Management', icon: <FaRoute /> },
-      { to: '/admin/manual-booking', label: 'Manual Booking', icon: <FaHandHoldingHeart /> },
-      { to: '/admin/queue', label: 'Queue Management', icon: <FaListOl /> },
-      { to: '/admin/booths', label: 'Booth Management', icon: <FaMapMarkerAlt /> },
+      { to: '/admin/register-driver', label: 'Register Driver', icon: <FaCar /> },
+      { to: '/admin/add-user', label: 'Add User', icon: <FaUserPlus /> },
     ]
   },
   {

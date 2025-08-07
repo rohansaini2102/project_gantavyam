@@ -674,6 +674,89 @@ export const admin = {
       throw error;
     }
   }
+
+,
+
+  // Fare Management APIs
+  getFareConfig: async () => {
+    try {
+      const response = await apiClient.get('/admin/fare/fare-config');
+      return response.data;
+    } catch (error) {
+      console.error('Get fare config error:', error);
+      throw error;
+    }
+  },
+
+  getFareHistory: async () => {
+    try {
+      const response = await apiClient.get('/admin/fare/fare-config/history');
+      return response.data;
+    } catch (error) {
+      console.error('Get fare history error:', error);
+      throw error;
+    }
+  },
+
+  updateVehicleFare: async (vehicleType, config) => {
+    try {
+      const response = await apiClient.put(`/admin/fare/fare-config/vehicle/${vehicleType}`, config);
+      return response.data;
+    } catch (error) {
+      console.error('Update vehicle fare error:', error);
+      throw error;
+    }
+  },
+
+  updateAllVehicleFares: async (data) => {
+    try {
+      const response = await apiClient.put('/admin/fare/fare-config/vehicles', data);
+      return response.data;
+    } catch (error) {
+      console.error('Update all vehicles fare error:', error);
+      throw error;
+    }
+  },
+
+  updateSurgePricing: async (data) => {
+    try {
+      const response = await apiClient.put('/admin/fare/fare-config/surge', data);
+      return response.data;
+    } catch (error) {
+      console.error('Update surge pricing error:', error);
+      throw error;
+    }
+  },
+
+  updateDynamicPricing: async (data) => {
+    try {
+      const response = await apiClient.put('/admin/fare/fare-config/dynamic', data);
+      return response.data;
+    } catch (error) {
+      console.error('Update dynamic pricing error:', error);
+      throw error;
+    }
+  },
+
+  simulateFare: async (data) => {
+    try {
+      const response = await apiClient.post('/admin/fare/fare-config/simulate', data);
+      return response.data;
+    } catch (error) {
+      console.error('Simulate fare error:', error);
+      throw error;
+    }
+  },
+
+  restoreFareConfig: async (configId) => {
+    try {
+      const response = await apiClient.post(`/admin/fare/fare-config/restore/${configId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Restore fare config error:', error);
+      throw error;
+    }
+  }
 };
 
 // User APIs

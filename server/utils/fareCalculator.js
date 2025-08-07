@@ -1,39 +1,25 @@
 // utils/fareCalculator.js
 
-/**
- * Vehicle type configurations with pricing
- */
-const VEHICLE_CONFIGS = {
-  bike: {
-    baseFare: 15,
-    perKmRate: 8,
-    minimumFare: 20, // Reduced from 25 to allow shorter trips to be priced by distance
-    surgeFactor: 1.2,
-    waitingChargePerMin: 1
-  },
-  auto: {
-    baseFare: 25,
-    perKmRate: 17,
-    minimumFare: 30, // Reduced from 40 to allow shorter trips to be priced by distance
-    surgeFactor: 1.3,
-    waitingChargePerMin: 2
-  },
-  car: {
-    baseFare: 50,
-    perKmRate: 18,
-    minimumFare: 60, // Reduced from 80 to allow shorter trips to be priced by distance
-    surgeFactor: 1.5,
-    waitingChargePerMin: 3
+const FareConfig = require('../models/FareConfig');
+
+// Cache for config to avoid frequent DB calls
+let cachedConfig = null;
+let cacheExpiry = null;
+
+const getConfig = async () => {
+  if (cachedConfig && cacheExpiry && cacheExpiry > Date.now()) {
+    return cachedConfig;
   }
+  
+  cachedConfig = await FareConfig.getActiveConfig();
+  cacheExpiry = Date.now() + (5 * 60 * 1000); // Cache for 5 minutes
+  return cachedConfig;
 };
 
-/**
- * Time-based surge pricing configuration
- */
-const SURGE_TIMES = {
-  morning: { start: 7, end: 10, factor: 1.3 },
-  evening: { start: 17, end: 20, factor: 1.4 },
-  night: { start: 22, end: 5, factor: 1.2 }
+// Clear cache when needed
+const clearConfigCache = () => {
+  cachedConfig = null;
+  cacheExpiry = null;
 };
 
 /**
@@ -62,20 +48,24 @@ const toRad = (deg) => deg * (Math.PI/180);
  * Get current surge factor based on time
  * @returns {number} Current surge factor
  */
-const getCurrentSurgeFactor = () => {
+const getCurrentSurgeFactor = async () => {
+  const config = await getConfig();
   const now = new Date();
   const currentHour = now.getHours();
   
   // Check if current time falls in surge periods
-  for (const [period, config] of Object.entries(SURGE_TIMES)) {
-    if (period === 'night') {
-      // Night time spans across midnight
-      if (currentHour >= config.start || currentHour <= config.end) {
-        return config.factor;
+  for (const surge of config.surgeTimes) {
+    if (!surge.isActive) continue;
+    
+    if (surge.startHour <= surge.endHour) {
+      // Normal time period
+      if (currentHour >= surge.startHour && currentHour <= surge.endHour) {
+        return surge.factor;
       }
     } else {
-      if (currentHour >= config.start && currentHour <= config.end) {
-        return config.factor;
+      // Overnight period (e.g., 22 to 5)
+      if (currentHour >= surge.startHour || currentHour <= surge.endHour) {
+        return surge.factor;
       }
     }
   }
@@ -91,8 +81,9 @@ const getCurrentSurgeFactor = () => {
  * @param {number} waitingTime - Waiting time in minutes
  * @returns {Object} Fare calculation details
  */
-const calculateFare = (vehicleType, distance, applySurge = true, waitingTime = 0) => {
-  const config = VEHICLE_CONFIGS[vehicleType];
+const calculateFare = async (vehicleType, distance, applySurge = true, waitingTime = 0) => {
+  const dbConfig = await getConfig();
+  const config = dbConfig.vehicleConfigs[vehicleType];
   
   if (!config) {
     throw new Error(`Invalid vehicle type: ${vehicleType}`);
@@ -111,7 +102,7 @@ const calculateFare = (vehicleType, distance, applySurge = true, waitingTime = 0
   // Apply surge pricing if enabled
   let surgeFactor = 1.0;
   if (applySurge) {
-    surgeFactor = getCurrentSurgeFactor();
+    surgeFactor = await getCurrentSurgeFactor();
     totalFare = totalFare * surgeFactor;
   }
   
@@ -144,20 +135,21 @@ const calculateFare = (vehicleType, distance, applySurge = true, waitingTime = 0
  * @param {number} dropLng - Drop longitude
  * @returns {Object} Fare estimates for all vehicle types
  */
-const calculateFareEstimates = (pickupLat, pickupLng, dropLat, dropLng) => {
+const calculateFareEstimates = async (pickupLat, pickupLng, dropLat, dropLng) => {
   const distance = calculateDistance(pickupLat, pickupLng, dropLat, dropLng);
+  const config = await getConfig();
   
   const estimates = {};
   
   // Calculate for each vehicle type
-  Object.keys(VEHICLE_CONFIGS).forEach(vehicleType => {
-    estimates[vehicleType] = calculateFare(vehicleType, distance, true, 0);
-  });
+  for (const vehicleType of Object.keys(config.vehicleConfigs)) {
+    estimates[vehicleType] = await calculateFare(vehicleType, distance, true, 0);
+  }
   
   return {
     distance: parseFloat(distance.toFixed(2)),
     estimates,
-    surgeFactor: getCurrentSurgeFactor(),
+    surgeFactor: await getCurrentSurgeFactor(),
     timestamp: new Date().toISOString()
   };
 };
@@ -169,23 +161,37 @@ const calculateFareEstimates = (pickupLat, pickupLng, dropLat, dropLng) => {
  * @param {number} activeRequests - Number of active ride requests
  * @returns {number} Dynamic pricing factor
  */
-const getDynamicPricingFactor = (metroStation, onlineDrivers, activeRequests) => {
+const getDynamicPricingFactor = async (metroStation, onlineDrivers, activeRequests) => {
+  const config = await getConfig();
+  
   // Base factor
   let factor = 1.0;
   
-  // Demand vs supply ratio
-  if (onlineDrivers > 0) {
-    const demandSupplyRatio = activeRequests / onlineDrivers;
-    
-    if (demandSupplyRatio > 3) {
-      factor = 1.5; // High demand
-    } else if (demandSupplyRatio > 2) {
-      factor = 1.3; // Medium demand
-    } else if (demandSupplyRatio > 1) {
-      factor = 1.2; // Low demand
+  // Calculate demand/supply ratio
+  const ratio = onlineDrivers > 0 ? activeRequests / onlineDrivers : (activeRequests > 0 ? Infinity : 0);
+  
+  // Find matching dynamic pricing rule
+  for (const pricing of config.dynamicPricing) {
+    if (pricing.maxRatio === null || pricing.maxRatio === undefined) {
+      // This is for rules like "3+" (no upper limit)
+      if (ratio >= pricing.minRatio) {
+        factor = pricing.factor;
+      }
+    } else {
+      // This is for ranges like "1-2", "2-3"
+      if (ratio >= pricing.minRatio && ratio < pricing.maxRatio) {
+        factor = pricing.factor;
+        break;
+      }
     }
-  } else if (activeRequests > 0) {
-    factor = 1.8; // No drivers available
+  }
+  
+  // Special case for no drivers
+  if (onlineDrivers === 0 && activeRequests > 0) {
+    const noPricingRule = config.dynamicPricing.find(p => p.name === 'No Drivers');
+    if (noPricingRule) {
+      factor = noPricingRule.factor;
+    }
   }
   
   return parseFloat(factor.toFixed(2));
@@ -208,5 +214,6 @@ module.exports = {
   getCurrentSurgeFactor,
   getDynamicPricingFactor,
   logFareCalculation,
-  VEHICLE_CONFIGS
+  clearConfigCache,
+  getConfig
 };

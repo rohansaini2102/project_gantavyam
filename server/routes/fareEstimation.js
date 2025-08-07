@@ -26,7 +26,7 @@ router.post('/estimate', async (req, res) => {
     }
     
     // Calculate fare estimates
-    const fareEstimates = calculateFareEstimates(pickupLat, pickupLng, dropLat, dropLng);
+    const fareEstimates = await calculateFareEstimates(pickupLat, pickupLng, dropLat, dropLng);
     
     // Get dynamic pricing based on station demand
     let dynamicFactor = 1.0;
@@ -42,7 +42,7 @@ router.post('/estimate', async (req, res) => {
           'pickupLocation.boothName': pickupStation 
         });
         
-        dynamicFactor = getDynamicPricingFactor(pickupStation, onlineDrivers, activeRequests);
+        dynamicFactor = await getDynamicPricingFactor(pickupStation, onlineDrivers, activeRequests);
         
         console.log(`📊 Station: ${pickupStation}, Online Drivers: ${onlineDrivers}, Active Requests: ${activeRequests}, Factor: ${dynamicFactor}`);
       } catch (error) {

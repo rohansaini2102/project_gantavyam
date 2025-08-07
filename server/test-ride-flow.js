@@ -34,7 +34,7 @@ async function testCompleteRideFlow() {
     
     // Test 1: Fare Calculation
     console.log('\n📊 Test 1: Fare Calculation');
-    const fareEstimates = calculateFareEstimates(
+    const fareEstimates = await calculateFareEstimates(
       28.6328, 77.2197, // Rajiv Chowk
       28.5433, 77.2066  // Hauz Khas
     );

@@ -959,7 +959,7 @@ const ModernDriverDashboard = () => {
       )}
 
       {/* Add custom animations to head */}
-      <style jsx>{`
+      <style>{`
         @keyframes slideIn {
           from {
             opacity: 0;

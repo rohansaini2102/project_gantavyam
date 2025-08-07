@@ -20,6 +20,7 @@ import RideManagement from './pages/admin/RideManagement';
 import QueueManagement from './pages/admin/QueueManagement';
 import BoothManagement from './pages/admin/BoothManagement';
 import ManualBooking from './pages/admin/ManualBooking';
+import FareManagement from './pages/admin/FareManagement';
 // Driver
 import ModernDriverDashboard from './components/driver/minimal/ModernDriverDashboard';
 import DriverLogin from './pages/driver/Login';
@@ -59,6 +60,7 @@ function App() {
             <Route path="manual-booking" element={<ManualBooking />} />
             <Route path="queue" element={<QueueManagement />} />
             <Route path="booths" element={<BoothManagement />} />
+            <Route path="fare-management" element={<FareManagement />} />
           </Route>
           <Route path="/admin/users/:id" element={
             <ProtectedAdminRoute>

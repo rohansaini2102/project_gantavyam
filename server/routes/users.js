@@ -361,7 +361,7 @@ router.post('/fare-estimate', protectUser, async (req, res) => {
     }
     
     // Calculate fare estimates
-    const fareEstimates = calculateFareEstimates(
+    const fareEstimates = await calculateFareEstimates(
       station.lat, station.lng,
       dropLat, dropLng
     );
@@ -591,7 +591,7 @@ router.post('/book-ride', protectUser, async (req, res) => {
         
         // Use the same fare calculation logic as the main system for consistency
         const { calculateFare } = require('../utils/fareCalculator');
-        const fareCalculation = calculateFare(vehicleType, distance, true, 0);
+        const fareCalculation = await calculateFare(vehicleType, distance, true, 0);
         finalFare = fareCalculation.totalFare;
         
         console.log(`✅ Calculated fallback fare: ₹${finalFare} for ${distance}km`);
