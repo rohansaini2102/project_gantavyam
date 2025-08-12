@@ -182,3 +182,69 @@
 ---
 Last Updated: January 2025
 Tested on: Chrome, Firefox, Safari (Mobile & Desktop)
+
+## CRITICAL PRODUCTION FIXES - DATA VANISHING ISSUE
+
+### Issue Summary
+In production environment, the driver dashboard was experiencing critical data loss where OTP and fare information would appear briefly then vanish, breaking the entire ride flow.
+
+### Root Causes Identified
+
+#### 1. State Synchronization Destroying Data
+**Location:** `client/src/contexts/DriverStateContext.js` (Line 351-411)
+- The sync-state logic was replacing complete `activeRide` objects with minimal `{_id}` objects
+- This caused immediate loss of OTP and fare data after it was received
+
+#### 2. Preserved Session Overwriting Active Rides  
+**Location:** `client/src/contexts/DriverStateContext.js` (Lines 748-777)
+- On page refresh, preserved sessions were overwriting newly accepted rides
+- No check existed to prevent overwriting rides that had OTP data
+
+#### 3. Race Conditions in State Recovery
+**Location:** `client/src/contexts/DriverStateContext.js` (Lines 218-284)
+- State recovery from localStorage was overwriting active rides without checking data completeness
+
+### Fixes Applied
+
+#### 1. DriverStateContext.js - Critical State Preservation (Lines 368-398)
+```javascript
+// Don't overwrite activeRide if current has more complete data
+if (state.activeRide.startOTP || state.activeRide.endOTP || state.activeRide.fare) {
+  console.log('[DriverState] PRESERVING local activeRide with OTP/fare data during sync');
+  activeRideToUse = state.activeRide; // Keep existing complete data
+}
+```
+
+#### 2. Preserved Session Protection (Lines 757-762)
+```javascript
+// Skip preserved session if active ride exists
+if (state.activeRide && state.activeRide._id) {
+  console.log('[DriverState] Active ride exists, skipping preserved session');
+  sessionStorage.removeItem('driverSessionPreserved');
+  return;
+}
+```
+
+#### 3. Server sync-state Validation (server/routes/drivers.js Lines 1256-1270)
+```javascript
+// Only send activeRideId if ride is actually active
+if (!activeRideOnServer || ['completed', 'cancelled'].includes(activeRideOnServer.status)) {
+  serverActiveRideId = null;
+  driver.currentRide = null;
+  await driver.save();
+}
+```
+
+### Production Testing Required
+- [ ] Accept manual booking from admin
+- [ ] Verify OTP and fare display correctly and persist
+- [ ] Start ride with OTP verification
+- [ ] Complete ride and collect payment
+- [ ] Test network disconnection/reconnection
+- [ ] Verify data persists through connection issues
+
+### Success Metrics
+- No OTP/fare data loss reported
+- Drivers can complete full ride flow
+- State persists through page refreshes
+- No "data vanishing" complaints

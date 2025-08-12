@@ -1156,13 +1156,27 @@ const initializeSocket = (server) => {
           driverPhone: driverPhone,
           vehicleNumber: vehicleDetails?.number || driver?.vehicleNumber || 'Unknown',
           vehicleType: vehicleDetails?.type || rideRequest.vehicleType,
-          // OTP information
+          // OTP information - CRITICAL for production
           startOTP: rideRequest.startOTP,
           endOTP: rideRequest.endOTP,
+          // Fare information - ensure both fields
+          estimatedFare: rideRequest.estimatedFare || rideRequest.fare,
+          fare: rideRequest.fare || rideRequest.estimatedFare,
           // Status
           status: 'driver_assigned',
           acceptedAt: rideRequest.acceptedAt
         };
+        
+        // Enhanced logging for production debugging
+        console.log('📊 [AcceptanceData] OTP and Fare Status:', {
+          hasStartOTP: !!acceptanceData.startOTP,
+          hasEndOTP: !!acceptanceData.endOTP,
+          startOTP: acceptanceData.startOTP,
+          endOTP: acceptanceData.endOTP,
+          estimatedFare: acceptanceData.estimatedFare,
+          fare: acceptanceData.fare,
+          rideId: acceptanceData.rideId
+        });
 
         // Update driver's current ride
         if (driver) {
@@ -2205,13 +2219,25 @@ const broadcastRideRequest = async (rideRequest) => {
       },
       vehicleType: rideRequest.vehicleType,
       estimatedFare: rideRequest.estimatedFare,
+      fare: rideRequest.estimatedFare,  // Include fare as fallback
       distance: rideRequest.distance,
       startOTP: rideRequest.startOTP,
+      endOTP: rideRequest.endOTP,  // Include endOTP if available
       userName: rideRequest.userName,
       userPhone: rideRequest.userPhone,
       status: 'pending',
       timestamp: rideRequest.timestamp || new Date()
     };
+    
+    // Enhanced logging for production debugging
+    console.log('📊 [BroadcastRideRequest] Data being sent:', {
+      hasStartOTP: !!rideData.startOTP,
+      hasEndOTP: !!rideData.endOTP,
+      startOTP: rideData.startOTP,
+      endOTP: rideData.endOTP,
+      estimatedFare: rideData.estimatedFare,
+      fare: rideData.fare
+    });
 
     // Broadcast to all drivers
     const driversRoom = io.sockets.adapter.rooms.get('drivers');

@@ -114,16 +114,26 @@ class SocketService {
     
     this.initializePromise = new Promise((resolve, reject) => {
       try {
+        // Production-specific configuration for better stability
+        const isProduction = window.location.hostname !== 'localhost';
+        
         this.socket = io(this.serverUrl, {
           auth: { token },
           reconnection: true,
-          reconnectionAttempts: this.reconnectionAttempts,
+          reconnectionAttempts: isProduction ? 10 : this.reconnectionAttempts,
           reconnectionDelay: this.reconnectionDelay,
-          reconnectionDelayMax: 5000,
-          timeout: 10000,
-          transports: ['websocket', 'polling'],
+          reconnectionDelayMax: isProduction ? 10000 : 5000,
+          timeout: isProduction ? 30000 : 10000,
+          transports: isProduction ? ['polling', 'websocket'] : ['websocket', 'polling'],
           upgrade: true,
-          rememberUpgrade: true
+          rememberUpgrade: true,
+          // Production-specific options for better stability
+          ...(isProduction && {
+            pingInterval: 25000,
+            pingTimeout: 60000,
+            upgradeTimeout: 30000,
+            forceNew: false
+          })
         });
 
         // Set up event listeners

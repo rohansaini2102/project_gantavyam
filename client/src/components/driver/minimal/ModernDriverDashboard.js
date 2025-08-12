@@ -79,8 +79,10 @@ const ModernDriverDashboard = () => {
 
   const isMobile = windowWidth < 768;
 
-  // Load driver data on mount
+  // Load driver data on mount and recover active ride if needed
   useEffect(() => {
+    console.log('🚀 ModernDriverDashboard Component Loaded - New UI Active!');
+    
     const driverData = localStorage.getItem('driver');
     if (driverData && !driver) {
       try {
@@ -89,6 +91,40 @@ const ModernDriverDashboard = () => {
         actions.setDriver(parsedDriver);
       } catch (error) {
         console.error('[ModernDriverDashboard] Error parsing driver data:', error);
+      }
+    }
+    
+    // Check if we need to recover active ride from backup
+    if (!activeRide || !activeRide._id) {
+      try {
+        const backupRide = localStorage.getItem('driver_active_ride_backup');
+        if (backupRide) {
+          const recoveredRide = JSON.parse(backupRide);
+          console.log('[ModernDriverDashboard] Recovering active ride from backup:', recoveredRide);
+          
+          // Verify the ride has OTP data
+          if (recoveredRide._id && (recoveredRide.startOTP || recoveredRide.endOTP)) {
+            actions.setActiveRide(recoveredRide);
+            setRideStage(recoveredRide.status === 'started' ? 'started' : 'assigned');
+            console.log('[ModernDriverDashboard] Active ride recovered successfully with OTPs');
+          }
+        }
+      } catch (error) {
+        console.error('[ModernDriverDashboard] Failed to recover active ride:', error);
+      }
+    } else if (activeRide && (!activeRide.startOTP && !activeRide.endOTP)) {
+      // Active ride exists but missing OTP data, try to restore from backup
+      try {
+        const backupRide = localStorage.getItem('driver_active_ride_backup');
+        if (backupRide) {
+          const recoveredRide = JSON.parse(backupRide);
+          if (recoveredRide._id === activeRide._id && (recoveredRide.startOTP || recoveredRide.endOTP)) {
+            console.log('[ModernDriverDashboard] Restoring missing OTP data from backup');
+            actions.setActiveRide(recoveredRide);
+          }
+        }
+      } catch (error) {
+        console.error('[ModernDriverDashboard] Failed to restore OTP data:', error);
       }
     }
   }, []);
@@ -118,6 +154,21 @@ const ModernDriverDashboard = () => {
       const callbacks = {
         onNewRideRequest: (data) => {
           console.log('[ModernDriverDashboard] New ride request:', data);
+          console.log('[ModernDriverDashboard] Full ride data:', JSON.stringify(data, null, 2));
+          
+          // Production debugging
+          if (window.location.hostname !== 'localhost') {
+            console.log('[PRODUCTION] New ride fields:', {
+              hasStartOTP: !!data.startOTP,
+              hasEndOTP: !!data.endOTP,
+              startOTP: data.startOTP,
+              endOTP: data.endOTP,
+              estimatedFare: data.estimatedFare,
+              fare: data.fare,
+              distance: data.distance,
+              vehicleType: data.vehicleType
+            });
+          }
           
           // All bookings (including manual) now require driver acceptance
           // No skipping - handle all ride requests the same way
@@ -133,14 +184,25 @@ const ModernDriverDashboard = () => {
             dropLocation: data.dropLocation,
             vehicleType: data.vehicleType,
             distance: data.distance,
-            fare: data.estimatedFare,
-            estimatedFare: data.estimatedFare,
-            startOTP: data.startOTP,
+            fare: data.estimatedFare || data.fare,
+            estimatedFare: data.estimatedFare || data.fare,
+            startOTP: data.startOTP || null,
             endOTP: data.endOTP || null,
             status: 'pending',
             isManualBooking: data.isManualBooking || false,
             bookingSource: data.bookingSource || 'online'
           };
+          
+          console.log('[ModernDriverDashboard] Created ride object with OTPs:', {
+            id: newRide._id,
+            startOTP: newRide.startOTP,
+            endOTP: newRide.endOTP,
+            fare: newRide.fare,
+            hasOTPs: {
+              start: !!newRide.startOTP,
+              end: !!newRide.endOTP
+            }
+          });
           
           setAssignedRides(prev => [newRide, ...prev]);
           
@@ -186,35 +248,104 @@ const ModernDriverDashboard = () => {
         // onManualRideAssigned handler was here but removed for unified flow
         onRideAcceptConfirmed: (data) => {
           console.log('[ModernDriverDashboard] Ride accept confirmed:', data);
-          console.log('[ModernDriverDashboard] Ride OTPs:', { 
+          console.log('[ModernDriverDashboard] Full acceptance data:', JSON.stringify(data, null, 2));
+          console.log('[ModernDriverDashboard] Ride OTPs received:', { 
             startOTP: data.startOTP, 
-            endOTP: data.endOTP 
+            endOTP: data.endOTP,
+            hasStartOTP: !!data.startOTP,
+            hasEndOTP: !!data.endOTP
           });
+          
+          // Production debugging - log all fields
+          if (window.location.hostname !== 'localhost') {
+            console.log('[PRODUCTION] Ride acceptance data fields:', {
+              rideId: data.rideId,
+              uniqueRideId: data.uniqueRideId,
+              startOTP: data.startOTP,
+              endOTP: data.endOTP,
+              estimatedFare: data.estimatedFare,
+              fare: data.fare,
+              queueNumber: data.queueNumber,
+              queuePosition: data.queuePosition,
+              boothRideNumber: data.boothRideNumber
+            });
+          }
           
           // Find the ride from current state or use data.ride
           setAssignedRides(prev => {
             const acceptedRide = prev.find(r => r._id === data.rideId) || data.ride;
             
             if (acceptedRide) {
-              // Set as active ride with all OTP data
+              // Set as active ride with all OTP data - ensure all fields are preserved
               const activeRideData = {
                 ...acceptedRide,
                 _id: data.rideId || acceptedRide._id,
+                rideId: data.uniqueRideId || data.rideId || acceptedRide.rideId,
                 status: 'accepted',
                 queueNumber: data.queueNumber,
                 queuePosition: data.queuePosition,
                 acceptedAt: data.acceptedAt,
-                // Ensure OTPs are included from the acceptance data
-                startOTP: data.startOTP || acceptedRide.startOTP,
-                endOTP: data.endOTP || acceptedRide.endOTP
+                // CRITICAL: Ensure OTPs are properly set from the acceptance data
+                startOTP: data.startOTP || acceptedRide.startOTP || null,
+                endOTP: data.endOTP || acceptedRide.endOTP || null,
+                // Ensure fare is preserved
+                estimatedFare: data.estimatedFare || data.fare || acceptedRide.estimatedFare || acceptedRide.fare,
+                fare: data.fare || data.estimatedFare || acceptedRide.fare || acceptedRide.estimatedFare,
+                // Other important fields
+                boothRideNumber: data.boothRideNumber || acceptedRide.boothRideNumber,
+                userName: acceptedRide.userName,
+                userPhone: acceptedRide.userPhone,
+                pickupLocation: acceptedRide.pickupLocation,
+                dropLocation: acceptedRide.dropLocation,
+                vehicleType: acceptedRide.vehicleType,
+                distance: acceptedRide.distance
               };
               
-              console.log('[ModernDriverDashboard] Setting active ride with OTPs:', {
+              console.log('[ModernDriverDashboard] Setting active ride with complete data:', {
                 id: activeRideData._id,
                 startOTP: activeRideData.startOTP,
-                endOTP: activeRideData.endOTP
+                endOTP: activeRideData.endOTP,
+                fare: activeRideData.fare,
+                estimatedFare: activeRideData.estimatedFare,
+                hasOTPs: {
+                  start: !!activeRideData.startOTP,
+                  end: !!activeRideData.endOTP
+                }
               });
-              actions.setActiveRide(activeRideData);
+              
+              // Production alert for debugging
+              if (window.location.hostname !== 'localhost' && (!activeRideData.startOTP || !activeRideData.endOTP)) {
+                console.error('[PRODUCTION ERROR] Missing OTP data:', {
+                  startOTP: activeRideData.startOTP,
+                  endOTP: activeRideData.endOTP,
+                  originalData: data
+                });
+              }
+              
+              // CRITICAL: Save active ride to localStorage immediately to prevent loss
+              try {
+                localStorage.setItem('driver_active_ride_backup', JSON.stringify(activeRideData));
+                console.log('[ModernDriverDashboard] Active ride backed up to localStorage');
+                
+                // Production-specific: Also save to a secondary backup
+                if (window.location.hostname !== 'localhost') {
+                  localStorage.setItem('driver_active_ride_backup_v2', JSON.stringify({
+                    ...activeRideData,
+                    backupTime: new Date().toISOString(),
+                    hasOTPs: !!(activeRideData.startOTP || activeRideData.endOTP)
+                  }));
+                  console.log('[PRODUCTION] Secondary backup created');
+                }
+              } catch (error) {
+                console.error('[ModernDriverDashboard] Failed to backup active ride:', error);
+              }
+              
+              // FIX 1: Defer state update to avoid render-time updates (fixes React warning)
+              // This prevents "Cannot update a component while rendering" error
+              setTimeout(() => {
+                actions.setActiveRide(activeRideData);
+              }, 0);
+              
               setRideStage('assigned');
               
               // Remove from assigned rides list
@@ -272,6 +403,10 @@ const ModernDriverDashboard = () => {
             setRideStage('assigned');
             setShowCompletionAnimation(false);
             setCompletedRideDetails(null);
+            
+            // Clear the backup since ride is completed
+            localStorage.removeItem('driver_active_ride_backup');
+            console.log('[ModernDriverDashboard] Cleared active ride backup after completion');
           }, 4000);
         },
         onDriverOnlineConfirmed: (data) => {
@@ -462,6 +597,10 @@ const ModernDriverDashboard = () => {
           setRideStage('assigned');
           setShowOTPInput(false);
           setOtpInput('');
+          
+          // Clear the backup since ride is cancelled
+          localStorage.removeItem('driver_active_ride_backup');
+          console.log('[ModernDriverDashboard] Cleared active ride backup after cancellation');
           
           // Show success notification
           if ('Notification' in window && Notification.permission === 'granted') {
@@ -685,7 +824,7 @@ const ModernDriverDashboard = () => {
                   </a>
                 )}
               </div>
-              <div className="text-2xl font-bold">₹{activeRide.estimatedFare || activeRide.fare}</div>
+              <div className="text-2xl font-bold">₹{activeRide.estimatedFare || activeRide.fare || '0'}</div>
             </div>
 
             {/* Locations */}
@@ -749,15 +888,28 @@ const ModernDriverDashboard = () => {
                       hasStartOTP: !!activeRide?.startOTP,
                       hasEndOTP: !!activeRide?.endOTP,
                       startOTP: activeRide?.startOTP,
-                      endOTP: activeRide?.endOTP
+                      endOTP: activeRide?.endOTP,
+                      fullActiveRide: activeRide
                     });
+                    
+                    // Production debugging
+                    if (window.location.hostname !== 'localhost') {
+                      console.log('[PRODUCTION] Button click - Active ride OTP status:', {
+                        stage: rideStage,
+                        startOTP: activeRide?.startOTP,
+                        endOTP: activeRide?.endOTP,
+                        hasStartOTP: !!activeRide?.startOTP,
+                        hasEndOTP: !!activeRide?.endOTP,
+                        isProduction: true
+                      });
+                    }
                     
                     if (rideStage === 'assigned') {
                       if (activeRide.startOTP) {
-                        console.log('[ModernDriverDashboard] Showing START OTP input');
+                        console.log('[ModernDriverDashboard] Showing START OTP input for OTP:', activeRide.startOTP);
                         setShowOTPInput(true);
                       } else {
-                        console.log('[ModernDriverDashboard] No START OTP required, starting ride');
+                        console.log('[ModernDriverDashboard] No START OTP required, starting ride directly');
                         setRideStage('started');
                       }
                     } else {
@@ -765,7 +917,7 @@ const ModernDriverDashboard = () => {
                         console.log('[ModernDriverDashboard] Showing END OTP input for OTP:', activeRide.endOTP);
                         setShowOTPInput(true);
                       } else {
-                        console.log('[ModernDriverDashboard] No END OTP required, completing ride');
+                        console.log('[ModernDriverDashboard] No END OTP required, completing ride directly');
                         actions.setActiveRide(null);
                         setRideStage('assigned');
                       }

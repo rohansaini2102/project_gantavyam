@@ -1249,11 +1249,30 @@ router.post('/sync-state', protect, async (req, res) => {
       });
     }
     
-    // Get current server state
+    // Get current server state - IMPORTANT: Don't send incomplete ride data
+    // Only send activeRideId if we're sure it should override client data
+    let serverActiveRideId = driver.currentRide;
+    
+    // If driver has a current ride on server, verify it's still valid
+    if (serverActiveRideId) {
+      const RideRequest = require('../models/RideRequest');
+      const activeRideOnServer = await RideRequest.findById(serverActiveRideId);
+      
+      // Only include if ride is actually active
+      if (!activeRideOnServer || 
+          ['completed', 'cancelled'].includes(activeRideOnServer.status)) {
+        console.log('[Driver State Sync] Server ride is completed/cancelled, clearing');
+        serverActiveRideId = null;
+        // Clear it in driver record too
+        driver.currentRide = null;
+        await driver.save();
+      }
+    }
+    
     const serverState = {
       isOnline: driver.isOnline,
       queuePosition: driver.queuePosition,
-      activeRideId: driver.currentRide,
+      activeRideId: serverActiveRideId,
       vehicleType: driver.vehicleType,
       selectedPickupLocation: driver.currentMetroBooth,
       lastUpdate: driver.updatedAt

@@ -130,9 +130,29 @@ const driverStateReducer = (state, action) => {
       return { ...state, statusError: '', rideError: '' };
     
     case DRIVER_STATE_ACTIONS.RESTORE_STATE:
+      // CRITICAL: Don't overwrite activeRide if current has more data
+      const incomingActiveRide = action.payload.activeRide;
+      const currentActiveRide = state.activeRide;
+      
+      let finalActiveRide = incomingActiveRide;
+      
+      // If both exist and have same ID, keep the one with more data
+      if (currentActiveRide && incomingActiveRide && 
+          currentActiveRide._id === incomingActiveRide._id) {
+        // Check data completeness
+        const currentHasOTP = currentActiveRide.startOTP || currentActiveRide.endOTP;
+        const incomingHasOTP = incomingActiveRide.startOTP || incomingActiveRide.endOTP;
+        
+        if (currentHasOTP && !incomingHasOTP) {
+          console.log('[DriverState] RESTORE_STATE: Preserving current activeRide with OTP data');
+          finalActiveRide = currentActiveRide;
+        }
+      }
+      
       return { 
         ...state, 
-        ...action.payload, 
+        ...action.payload,
+        activeRide: finalActiveRide, // Use the validated activeRide
         stateRecovered: true,
         lastStateSync: new Date().toISOString()
       };
@@ -181,7 +201,11 @@ export const DriverStateProvider = ({ children }) => {
   const loadFromStorage = (key) => {
     try {
       const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : null;
+      // Safety check for undefined or "undefined" string
+      if (!data || data === 'undefined' || data === 'null') {
+        return null;
+      }
+      return JSON.parse(data);
     } catch (error) {
       console.error(`[DriverState] Error loading from storage:`, error);
       return null;
@@ -235,15 +259,25 @@ export const DriverStateProvider = ({ children }) => {
         activeRide
       });
       
+      // Don't overwrite active ride if it already exists and has data
+      const currentActiveRide = state.activeRide;
+      const shouldUseCurrentRide = currentActiveRide && currentActiveRide._id && 
+                                   (currentActiveRide.startOTP || currentActiveRide.endOTP);
+      
       const recoveredState = {
         driver: driverInfo,  // Include driver object in recovered state
         isOnline: driverStatus?.isOnline || false,
         queuePosition: queuePosition || null,
-        activeRide: activeRide || null,
+        // Preserve current active ride if it has OTP data, otherwise use recovered
+        activeRide: shouldUseCurrentRide ? currentActiveRide : (activeRide || null),
         vehicleType: driverStatus?.vehicleType || 'auto',
         selectedPickupLocation: driverStatus?.selectedPickupLocation || 'Hauz Khas Metro Gate No 1',
         ...lastKnownState
       };
+      
+      if (shouldUseCurrentRide) {
+        console.log('[DriverState] Preserving current active ride with OTP data during recovery');
+      }
       
       dispatch({ type: DRIVER_STATE_ACTIONS.RESTORE_STATE, payload: recoveredState });
       return true;
@@ -304,6 +338,23 @@ export const DriverStateProvider = ({ children }) => {
       return;
     }
     
+    // FIX 5: Skip sync if we have an active ride with OTP data (critical operation in progress)
+    if (state.activeRide && (state.activeRide.startOTP || state.activeRide.endOTP)) {
+      const timeSinceLastSync = state.lastServerSync ? 
+        Date.now() - new Date(state.lastServerSync).getTime() : 
+        61000; // If no last sync, set to > 60s to allow first sync
+      
+      // Only force sync if it's been more than 60 seconds (instead of normal 15-30s)
+      if (timeSinceLastSync < 60000) {
+        console.log('[DriverState] Skipping sync - active ride with OTP data', {
+          hasStartOTP: !!state.activeRide.startOTP,
+          hasEndOTP: !!state.activeRide.endOTP,
+          timeSinceLastSync: Math.round(timeSinceLastSync / 1000) + 's'
+        });
+        return;
+      }
+    }
+    
     console.log('[DriverState] State changed, preparing to sync:', currentStateData);
     
     // Check sync frequency
@@ -333,16 +384,69 @@ export const DriverStateProvider = ({ children }) => {
               // Update local state with server response if there are conflicts
               if (response.data.needsUpdate) {
                 const syncedState = response.data.syncedState;
+                
+                // CRITICAL FIX: Don't overwrite activeRide if current one has more complete data
+                let activeRideToUse = state.activeRide;
+                
+                // Check if we should update activeRide
+                if (syncedState.activeRideId) {
+                  // Server says we have an active ride
+                  if (!state.activeRide || !state.activeRide._id) {
+                    // We don't have an active ride locally, use server's ID
+                    activeRideToUse = { _id: syncedState.activeRideId };
+                    console.log('[DriverState] Setting activeRide from server ID:', syncedState.activeRideId);
+                  } else if (state.activeRide._id !== syncedState.activeRideId) {
+                    // Different ride ID, server's is probably newer
+                    activeRideToUse = { _id: syncedState.activeRideId };
+                    console.log('[DriverState] Updating activeRide ID from server:', syncedState.activeRideId);
+                  } else {
+                    // Same ride ID - Enhanced data preservation logic
+                    const localHasOTP = state.activeRide.startOTP || state.activeRide.endOTP;
+                    const localHasFare = state.activeRide.fare || state.activeRide.estimatedFare;
+                    const localHasUserData = state.activeRide.userName && state.activeRide.userPhone;
+                    
+                    // CRITICAL: Never overwrite local data if it has OTPs or critical fields
+                    if (localHasOTP || localHasFare || localHasUserData) {
+                      console.log('[DriverState] PRESERVING local activeRide - has critical data', {
+                        hasOTP: localHasOTP,
+                        hasFare: localHasFare,
+                        hasUserData: localHasUserData
+                      });
+                      
+                      // Merge server ID with local data (keep local data, only update ID if needed)
+                      activeRideToUse = {
+                        ...state.activeRide,
+                        _id: syncedState.activeRideId || state.activeRide._id
+                      };
+                    } else {
+                      // Only use server data if local has no critical data
+                      activeRideToUse = { _id: syncedState.activeRideId };
+                    }
+                  }
+                } else if (syncedState.activeRideId === null && state.activeRide && state.activeRide._id) {
+                  // Server says no active ride, but we have one locally with data
+                  if (state.activeRide.startOTP || state.activeRide.endOTP || state.activeRide.status === 'accepted') {
+                    console.warn('[DriverState] Server wants to clear activeRide but local has OTP data - KEEPING LOCAL');
+                    activeRideToUse = state.activeRide; // Don't clear if we have OTP data
+                  } else {
+                    activeRideToUse = null; // Clear if no important data
+                  }
+                } else {
+                  activeRideToUse = null; // Both agree there's no ride
+                }
+                
                 dispatch({ 
                   type: DRIVER_STATE_ACTIONS.RESTORE_STATE, 
                   payload: {
                     isOnline: syncedState.isOnline,
                     queuePosition: syncedState.queuePosition,
-                    activeRide: syncedState.activeRideId ? { _id: syncedState.activeRideId } : null,
+                    activeRide: activeRideToUse, // Use the preserved/validated activeRide
                     vehicleType: syncedState.vehicleType,
                     selectedPickupLocation: syncedState.selectedPickupLocation
                   }
                 });
+                
+                console.log('[DriverState] State updated from sync, activeRide preserved:', !!activeRideToUse);
               }
               
               // Update sync status
@@ -371,8 +475,9 @@ export const DriverStateProvider = ({ children }) => {
           }
         },
         { 
-          minInterval: 15000, // 15 seconds minimum between syncs
-          debounceDelay: 2000 // 2 second debounce
+          // FIX 3: Less aggressive sync for active rides
+          minInterval: state.activeRide ? 30000 : 15000, // 30s with ride, 15s without
+          debounceDelay: state.activeRide ? 5000 : 2000  // 5s with ride, 2s without
         }
       );
       
@@ -687,6 +792,14 @@ export const DriverStateProvider = ({ children }) => {
           const criticalState = JSON.parse(preserved);
           console.log('[DriverState] Found preserved session:', criticalState);
           
+          // IMPORTANT: Don't use preserved session if we already have an active ride
+          // This prevents overwriting newly accepted rides
+          if (state.activeRide && state.activeRide._id) {
+            console.log('[DriverState] Active ride exists, skipping preserved session to avoid data loss');
+            sessionStorage.removeItem('driverSessionPreserved');
+            return;
+          }
+          
           // Validate that the preserved session is recent (within 5 minutes)
           const lastActive = new Date(criticalState.lastActive);
           const now = new Date();
@@ -694,7 +807,8 @@ export const DriverStateProvider = ({ children }) => {
           
           if (timeDiff < 300) { // 5 minutes
             console.log('[DriverState] Preserved session is recent, will use for recovery');
-            // The session will be used by the regular recovery process
+            // Clear it after reading to prevent reuse
+            sessionStorage.removeItem('driverSessionPreserved');
           } else {
             console.log('[DriverState] Preserved session is too old, clearing');
             sessionStorage.removeItem('driverSessionPreserved');
