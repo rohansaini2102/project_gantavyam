@@ -10,6 +10,7 @@ const { generateOTP } = require('../../utils/otpUtils');
 const { getIO, sendRideRequestToDriver } = require('../../socket');
 const { v4: uuidv4 } = require('uuid');
 const { logRideEvent, logDriverAction, logStatusTransition, logSocketDelivery, logError } = require('../../utils/rideLogger');
+const { calculateFare } = require('../../utils/fareCalculator');
 
 // Manual booking endpoint
 router.post('/manual-booking', adminProtect, async (req, res) => {
@@ -77,7 +78,10 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
 
     const queueNumber = queueEntry.currentNumber;
 
-    // Create the ride request
+    // Calculate fare with commission structure
+    const fareDetails = await calculateFare(vehicleType, distance, true, 0);
+
+    // Create the ride request with both driver and customer fares
     const rideRequest = new RideRequest({
       userId: user._id,
       user: user._id,
@@ -95,8 +99,15 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
         longitude: 0
       },
       vehicleType,
-      estimatedFare,
-      fare: estimatedFare,
+      estimatedFare: fareDetails.customerTotalFare, // What customer sees and pays
+      fare: fareDetails.driverFare, // Driver earnings (base fare without GST/commission)
+      driverFare: fareDetails.driverFare, // Explicit driver earnings
+      customerFare: fareDetails.customerTotalFare, // What customer pays
+      baseFare: fareDetails.baseFare,
+      gstAmount: fareDetails.gstAmount,
+      commissionAmount: fareDetails.commissionAmount,
+      nightChargeAmount: fareDetails.nightChargeAmount,
+      fareBreakdown: fareDetails.breakdown,
       distance,
       startOTP,
       endOTP,

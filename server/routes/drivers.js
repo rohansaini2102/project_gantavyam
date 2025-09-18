@@ -403,7 +403,7 @@ router.get('/dashboard', protect, async (req, res) => {
       totalEarnings: driver.totalEarnings || 0,
       rating: driver.rating || 0,
       recentRides: recentRides.length,
-      recentEarnings: recentRides.reduce((sum, ride) => sum + (ride.actualFare || ride.estimatedFare || 0), 0)
+      recentEarnings: recentRides.reduce((sum, ride) => sum + (ride.driverFare || ride.fare || ride.actualFare || ride.estimatedFare || 0), 0)
     };
     
     // Get current metro station info if online
@@ -435,7 +435,7 @@ router.get('/dashboard', protect, async (req, res) => {
         rideId: ride._id,
         uniqueRideId: ride.rideId,
         status: ride.status,
-        fare: ride.actualFare || ride.estimatedFare,
+        fare: ride.driverFare || ride.fare || ride.actualFare || ride.estimatedFare,
         timestamp: ride.timestamp,
         pickupLocation: ride.pickupLocation,
         dropLocation: ride.dropLocation
@@ -703,7 +703,7 @@ router.post('/collect-payment', protect, async (req, res) => {
     logDriverAction(driverId, 'payment_collected', {
       rideId: rideRequest.rideId,
       boothRideNumber: rideRequest.boothRideNumber,
-      amount: rideRequest.actualFare || rideRequest.estimatedFare,
+      amount: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare || rideRequest.estimatedFare,
       paymentMethod: paymentMethod
     });
     
@@ -713,7 +713,7 @@ router.post('/collect-payment', protect, async (req, res) => {
       rideId: rideRequest._id,
       uniqueRideId: rideRequest.rideId,
       boothRideNumber: rideRequest.boothRideNumber,
-      amount: rideRequest.actualFare || rideRequest.estimatedFare,
+      amount: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare || rideRequest.estimatedFare,
       paymentMethod: paymentMethod,
       collectedAt: new Date().toISOString()
     });
@@ -726,7 +726,7 @@ router.post('/collect-payment', protect, async (req, res) => {
       data: {
         rideId: rideRequest._id,
         boothRideNumber: rideRequest.boothRideNumber,
-        amount: rideRequest.actualFare || rideRequest.estimatedFare,
+        amount: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare || rideRequest.estimatedFare,
         paymentMethod: paymentMethod,
         status: 'completed'
       }
@@ -1076,18 +1076,63 @@ router.get('/ride-history', protect, async (req, res) => {
     const totalRides = await RideHistory.countDocuments(filter);
     
     // Get ride history with user details
-    const rideHistory = await RideHistory.find(filter)
+    const rideHistoryRaw = await RideHistory.find(filter)
       .populate('userId', 'name mobileNo email')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum);
+
+    // Helper function to calculate driver earnings from customer fare
+    const calculateDriverEarningsFromCustomerFare = (customerFare) => {
+      if (!customerFare || customerFare <= 0) return 0;
+      // Reverse calculation: customerFare = driverFare + commission(10%) + gst(5%) + nightCharge
+      // Simplified: customerFare ≈ driverFare × 1.155 (assuming no night charge)
+      const estimatedDriverFare = Math.round(customerFare / 1.155);
+      return Math.max(0, estimatedDriverFare);
+    };
+
+    // Map ride history to show only driver fare
+    const rideHistory = rideHistoryRaw.map(ride => {
+      let driverEarnings;
+
+      // Priority 1: Use driverFare field (most accurate)
+      if (ride.driverFare && ride.driverFare > 0) {
+        driverEarnings = ride.driverFare;
+      }
+      // Priority 2: For legacy data, assume estimatedFare is driver's fare
+      else if (ride.estimatedFare && ride.estimatedFare > 0) {
+        driverEarnings = ride.estimatedFare;
+      }
+      // Priority 3: Calculate from actualFare (customer total) as last resort
+      else if (ride.actualFare && ride.actualFare > 0) {
+        driverEarnings = calculateDriverEarningsFromCustomerFare(ride.actualFare);
+      }
+      // Fallback
+      else {
+        driverEarnings = 0;
+      }
+
+      return {
+        ...ride.toObject(),
+        // Driver sees only their earnings
+        fare: driverEarnings,
+        actualFare: driverEarnings,
+        estimatedFare: driverEarnings,
+        driverFare: driverEarnings,
+        // Hide commission and GST from driver
+        gstAmount: undefined,
+        commissionAmount: undefined,
+        nightChargeAmount: undefined,
+        customerFare: undefined
+      };
+    });
     
     // Calculate summary statistics
     const completedRides = await RideHistory.countDocuments({ ...filter, status: 'completed' });
     const cancelledRides = await RideHistory.countDocuments({ ...filter, status: 'cancelled' });
     const totalEarnings = await RideHistory.aggregate([
       { $match: { ...filter, status: 'completed' } },
-      { $group: { _id: null, total: { $sum: '$actualFare' } } }
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$driverFare', { $ifNull: ['$fare', '$actualFare'] }] } } } }
     ]);
     
     const analytics = {
@@ -1176,9 +1221,10 @@ router.get('/earnings', protect, async (req, res) => {
             month: { $month: '$createdAt' },
             day: { $dayOfMonth: '$createdAt' }
           },
-          totalEarnings: { $sum: '$actualFare' },
+          // Use driverFare for driver's actual earnings (no GST/commission)
+          totalEarnings: { $sum: { $ifNull: ['$driverFare', { $ifNull: ['$fare', '$actualFare'] }] } },
           totalRides: { $sum: 1 },
-          averageFare: { $avg: '$actualFare' }
+          averageFare: { $avg: { $ifNull: ['$driverFare', { $ifNull: ['$fare', '$actualFare'] }] } }
         }
       },
       { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
@@ -1390,6 +1436,78 @@ router.get('/status', protect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error getting driver status',
+      error: error.message
+    });
+  }
+});
+
+// @desc    Get all pending rides available for driver
+// @route   GET /api/drivers/pending-rides
+// @access  Private (Driver only)
+router.get('/pending-rides', protect, async (req, res) => {
+  try {
+    const driverId = req.user.id;
+
+    console.log('\n=== FETCH PENDING RIDES FOR DRIVER ===');
+    console.log('Driver ID:', driverId);
+
+    // Get driver details to match vehicle type
+    const driver = await Driver.findById(driverId);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    // Find pending rides that match driver's vehicle type and location
+    const RideRequest = require('../models/RideRequest');
+    const pendingRides = await RideRequest.find({
+      status: 'pending',
+      vehicleType: driver.vehicleType,
+      // Only get rides from last 30 minutes to avoid stale rides
+      timestamp: { $gte: new Date(Date.now() - 30 * 60 * 1000) }
+    })
+    .populate('userId', 'name phone')
+    .sort({ timestamp: -1 })
+    .limit(20); // Limit to prevent too many rides
+
+    console.log(`Found ${pendingRides.length} pending rides for driver ${driverId}`);
+
+    // Format rides for driver display
+    const formattedRides = pendingRides.map(ride => ({
+      _id: ride._id,
+      rideId: ride.rideId,
+      bookingId: ride.bookingId,
+      userName: ride.userName,
+      userPhone: ride.userPhone,
+      pickupLocation: ride.pickupLocation,
+      dropLocation: ride.dropLocation,
+      vehicleType: ride.vehicleType,
+      distance: ride.distance,
+      // Send driver fare, not customer fare
+      fare: ride.driverFare || ride.fare,
+      estimatedFare: ride.driverFare || ride.fare,
+      startOTP: ride.startOTP,
+      endOTP: ride.endOTP,
+      status: ride.status,
+      timestamp: ride.timestamp,
+      bookingSource: ride.bookingSource
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        rides: formattedRides,
+        count: formattedRides.length
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching pending rides:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending rides',
       error: error.message
     });
   }

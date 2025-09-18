@@ -24,16 +24,77 @@ const DriverRideHistory = ({
   const formatDate = (timestamp) => {
     const date = new Date(timestamp);
     return {
-      date: date.toLocaleDateString('en-US', { 
-        month: 'short', 
+      date: date.toLocaleDateString('en-US', {
+        month: 'short',
         day: 'numeric',
         year: 'numeric'
       }),
-      time: date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
+      time: date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
         minute: '2-digit'
       })
     };
+  };
+
+  // Helper function to get driver's earnings (base fare only, no GST/commission)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field if available
+    if (ride.driverFare && ride.driverFare > 0) {
+      return ride.driverFare;
+    }
+
+    // Priority 2: Calculate pure base fare from distance and vehicle type
+    if (ride.distance && ride.vehicleType) {
+      return calculatePureBaseFare(ride.distance, ride.vehicleType);
+    }
+
+    // Priority 3: Use existing fare field (often contains driver earnings in older data)
+    if (ride.fare && ride.fare > 0) {
+      // For legacy data, fare field often contains driver earnings
+      return ride.fare;
+    }
+
+    // Priority 4: Reverse calculate from customer total (conservative estimate)
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      // Remove estimated surge + commission + GST (divide by ~1.7)
+      return Math.round(ride.estimatedFare / 1.7);
+    }
+
+    // Priority 5: Use actualFare as last resort
+    if (ride.actualFare && ride.actualFare > 0) {
+      return Math.round(ride.actualFare / 1.7);
+    }
+
+    // Last resort: return minimum fare for vehicle type
+    return getMinimumFareForVehicle(ride.vehicleType || 'auto');
+  };
+
+  // Calculate pure base fare based on distance and vehicle type
+  const calculatePureBaseFare = (distance, vehicleType) => {
+    const fareConfig = {
+      auto: { baseFare: 40, baseKm: 2, perKmRate: 17, minFare: 40 },
+      bike: { baseFare: 25, baseKm: 2, perKmRate: 12, minFare: 25 },
+      car: { baseFare: 60, baseKm: 2, perKmRate: 20, minFare: 60 }
+    };
+
+    const config = fareConfig[vehicleType] || fareConfig.auto;
+    let fare = config.baseFare;
+
+    if (distance > config.baseKm) {
+      fare += (distance - config.baseKm) * config.perKmRate;
+    }
+
+    return Math.max(Math.round(fare), config.minFare);
+  };
+
+  // Get minimum fare for vehicle type
+  const getMinimumFareForVehicle = (vehicleType) => {
+    const minFares = {
+      auto: 40,
+      bike: 25,
+      car: 60
+    };
+    return minFares[vehicleType] || 40;
   };
 
   const getStatusBadge = (status) => {
@@ -182,10 +243,8 @@ const DriverRideHistory = ({
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            <div className="text-sm font-bold text-green-600">₹{ride.actualFare}</div>
-                            {ride.estimatedFare !== ride.actualFare && (
-                              <div className="text-xs text-gray-500">Est: ₹{ride.estimatedFare}</div>
-                            )}
+                            <div className="text-sm font-bold text-green-600">₹{getDriverEarnings(ride)}</div>
+                            <div className="text-xs text-gray-500">Your earnings</div>
                           </td>
                           <td className="py-3 px-4">
                             {getStatusBadge(ride.status)}
@@ -217,7 +276,8 @@ const DriverRideHistory = ({
                         <div className="text-sm text-gray-500">{date} at {time}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-lg font-bold text-green-600">₹{ride.actualFare}</div>
+                        <div className="text-lg font-bold text-green-600">₹{getDriverEarnings(ride)}</div>
+                        <div className="text-xs text-gray-500">Your earnings</div>
                         {getStatusBadge(ride.status)}
                       </div>
                     </div>

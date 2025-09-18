@@ -99,6 +99,7 @@ class RideLifecycleService {
         distance: rideRequest.distance,
         estimatedFare: rideRequest.estimatedFare,
         actualFare: rideRequest.actualFare || rideRequest.fare,
+        driverFare: rideRequest.driverFare, // FIXED: Copy driver fare from original request
         
         // Status and completion
         status: completionData.status || 'completed',
@@ -145,7 +146,8 @@ class RideLifecycleService {
         driverId: rideHistory.driverId,
         driverName: rideHistory.driverName,
         driverPhone: rideHistory.driverPhone,
-        driverVehicleNo: rideHistory.driverVehicleNo
+        driverVehicleNo: rideHistory.driverVehicleNo,
+        driverFare: rideHistory.driverFare // Log driver fare too
       });
       
       // Update user statistics
@@ -164,6 +166,7 @@ class RideLifecycleService {
       logRideEvent(rideRequest.rideId, 'ride_completed', {
         status: rideHistoryData.status,
         actualFare: rideHistoryData.actualFare,
+        driverFare: rideHistoryData.driverFare, // Log driver fare in events too
         duration: rideHistoryData.journeyStats.totalDuration
       });
       

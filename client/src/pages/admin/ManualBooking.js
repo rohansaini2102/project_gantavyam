@@ -54,7 +54,7 @@ const ManualBooking = () => {
         icon: <FaMotorcycle />,
         available: true,
         eta: '2 mins away',
-        price: fareEstimates?.estimates?.bike?.totalFare || (fareEstimates ? 'Calculating...' : 25)
+        price: fareEstimates?.estimates?.bike?.customerTotalFare || fareEstimates?.estimates?.bike?.totalFare || (fareEstimates ? 'Calculating...' : 25)
       },
       { 
         type: 'auto', 
@@ -62,7 +62,7 @@ const ManualBooking = () => {
         icon: <FaTaxi />,
         available: true,
         eta: '3 mins away',
-        price: fareEstimates?.estimates?.auto?.totalFare || (fareEstimates ? 'Calculating...' : 40)
+        price: fareEstimates?.estimates?.auto?.customerTotalFare || fareEstimates?.estimates?.auto?.totalFare || (fareEstimates ? 'Calculating...' : 40)
       },
       { 
         type: 'car', 
@@ -70,7 +70,7 @@ const ManualBooking = () => {
         icon: <FaCar />,
         available: true,
         eta: '5 mins away',
-        price: fareEstimates?.estimates?.car?.totalFare || (fareEstimates ? 'Calculating...' : 80)
+        price: fareEstimates?.estimates?.car?.customerTotalFare || fareEstimates?.estimates?.car?.totalFare || (fareEstimates ? 'Calculating...' : 80)
       }
     ];
   };
@@ -89,7 +89,7 @@ const ManualBooking = () => {
     return {
       ...baseVehicle,
       available: true,
-      price: fareEstimates?.estimates?.[vehicleType]?.totalFare || (fareEstimates ? 'Calculating...' : (vehicleType === 'bike' ? 25 : vehicleType === 'auto' ? 40 : 80))
+      price: fareEstimates?.estimates?.[vehicleType]?.customerTotalFare || fareEstimates?.estimates?.[vehicleType]?.totalFare || (fareEstimates ? 'Calculating...' : (vehicleType === 'bike' ? 25 : vehicleType === 'auto' ? 40 : 80))
     };
   };
 
@@ -1534,7 +1534,23 @@ const ManualBooking = () => {
                         <div className="text-sm text-gray-600">
                           {vehicle.eta}
                         </div>
-                        {fareEstimates?.estimates?.[vehicle.type] && (
+                        {fareEstimates?.estimates?.[vehicle.type] && fareEstimates.detailed && (
+                          <div className="text-xs text-gray-500 mt-1 space-y-1 border-t pt-1">
+                            <div>Distance: {fareEstimates.distance}km</div>
+                            <div className="space-y-0.5">
+                              <div>Driver Fare: ₹{fareEstimates.estimates[vehicle.type].driverFare}</div>
+                              <div>GST (5%): ₹{fareEstimates.estimates[vehicle.type].gstAmount}</div>
+                              <div>Commission (10%): ₹{fareEstimates.estimates[vehicle.type].commissionAmount}</div>
+                              {fareEstimates.estimates[vehicle.type].nightChargeAmount > 0 && (
+                                <div>Night (20%): ₹{fareEstimates.estimates[vehicle.type].nightChargeAmount}</div>
+                              )}
+                              <div className="font-semibold text-green-700 pt-1">
+                                Total: ₹{fareEstimates.estimates[vehicle.type].customerTotalFare}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {fareEstimates?.estimates?.[vehicle.type] && !fareEstimates.detailed && (
                           <div className="text-xs text-gray-500 mt-1">
                             Distance: {fareEstimates.distance}km
                           </div>
@@ -1581,7 +1597,17 @@ const ManualBooking = () => {
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
                     <p><strong>Vehicle:</strong> {selectedVehicle?.label}</p>
-                    <p><strong>Fare:</strong> ₹{selectedVehicle?.price}</p>
+                    <p><strong>Customer Fare:</strong> ₹{selectedVehicle?.price}</p>
+                    {fareEstimates?.detailed && fareEstimates?.estimates?.[selectedVehicle?.type] && (
+                      <div className="text-xs mt-1 space-y-0.5">
+                        <p>Driver: ₹{fareEstimates.estimates[selectedVehicle.type].driverFare}</p>
+                        <p>GST: ₹{fareEstimates.estimates[selectedVehicle.type].gstAmount}</p>
+                        <p>Commission: ₹{fareEstimates.estimates[selectedVehicle.type].commissionAmount}</p>
+                        {fareEstimates.estimates[selectedVehicle.type].nightChargeAmount > 0 && (
+                          <p>Night: ₹{fareEstimates.estimates[selectedVehicle.type].nightChargeAmount}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <p><strong>From:</strong> {currentBooth.name}</p>

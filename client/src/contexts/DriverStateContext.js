@@ -541,12 +541,51 @@ export const DriverStateProvider = ({ children }) => {
         }
       };
 
-      // Listen for queue position updates
+      // Listen for queue position updates (with stability validation)
       const handleQueuePositionUpdate = (data) => {
-        console.log('[DriverState] Queue position updated:', data);
-        if (data.queuePosition !== undefined) {
-          dispatch({ type: DRIVER_STATE_ACTIONS.SET_QUEUE_POSITION, payload: data.queuePosition });
+        console.log('[DriverState] Queue position update received:', data);
+
+        if (data.queuePosition === undefined) {
+          console.log('[DriverState] Ignoring queue update - no position data');
+          return;
         }
+
+        const currentPosition = state.queuePosition;
+        const newPosition = data.queuePosition;
+
+        // Stability check: validate position change is reasonable
+        if (currentPosition !== null && newPosition !== null) {
+          const positionChange = Math.abs(newPosition - currentPosition);
+
+          // Warn about large position jumps (potential issue)
+          if (positionChange > 10) {
+            console.warn(`[DriverState] ⚠️ Large queue position change detected: ${currentPosition} -> ${newPosition} (change: ${positionChange})`);
+            console.warn(`[DriverState] Action: ${data.action}, Previous: ${data.previousPosition}, Timestamp: ${data.timestamp}`);
+
+            // For very large jumps, require user confirmation in development
+            if (positionChange > 20 && window.location.hostname === 'localhost') {
+              const confirmUpdate = window.confirm(
+                `Queue position changed dramatically: ${currentPosition} → ${newPosition}\n\n` +
+                `This might indicate a queue management issue.\n` +
+                `Accept this position update?`
+              );
+
+              if (!confirmUpdate) {
+                console.log('[DriverState] User rejected large position change');
+                return;
+              }
+            }
+          }
+        }
+
+        // Skip update if position hasn't actually changed
+        if (currentPosition === newPosition) {
+          console.log(`[DriverState] Queue position unchanged (${newPosition}) - skipping update`);
+          return;
+        }
+
+        console.log(`[DriverState] Updating queue position: ${currentPosition || 'none'} -> ${newPosition}`);
+        dispatch({ type: DRIVER_STATE_ACTIONS.SET_QUEUE_POSITION, payload: newPosition });
       };
 
       // Listen for driver status updates (from other sources)

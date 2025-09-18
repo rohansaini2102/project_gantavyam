@@ -20,6 +20,23 @@ const vehicleConfigSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 0
+  },
+  // New fields for commission system
+  baseKilometers: {
+    type: Number,
+    default: 2 // First 2 km included in base fare
+  },
+  gstPercentage: {
+    type: Number,
+    default: 5,
+    min: 0,
+    max: 100
+  },
+  commissionPercentage: {
+    type: Number,
+    default: 10,
+    min: 0,
+    max: 100
   }
 });
 
@@ -92,6 +109,31 @@ const fareConfigSchema = new mongoose.Schema({
   },
   surgeTimes: [surgeTimeSchema],
   dynamicPricing: [dynamicPricingSchema],
+  // Night charge settings
+  nightCharge: {
+    isActive: {
+      type: Boolean,
+      default: true
+    },
+    startHour: {
+      type: Number,
+      default: 23, // 11 PM
+      min: 0,
+      max: 23
+    },
+    endHour: {
+      type: Number,
+      default: 5, // 5 AM
+      min: 0,
+      max: 23
+    },
+    percentage: {
+      type: Number,
+      default: 20, // 20% night charge
+      min: 0,
+      max: 100
+    }
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -131,22 +173,31 @@ fareConfigSchema.statics.getActiveConfig = async function() {
     config = await this.create({
       vehicleConfigs: {
         bike: {
-          baseFare: 15,
-          perKmRate: 8,
-          minimumFare: 20,
-          waitingChargePerMin: 1
+          baseFare: 30, // For first 2 km
+          perKmRate: 12, // After 2 km
+          minimumFare: 30,
+          waitingChargePerMin: 1,
+          baseKilometers: 2,
+          gstPercentage: 5,
+          commissionPercentage: 10
         },
         auto: {
-          baseFare: 25,
-          perKmRate: 17,
-          minimumFare: 30,
-          waitingChargePerMin: 2
+          baseFare: 40, // For first 2 km
+          perKmRate: 17, // After 2 km
+          minimumFare: 40,
+          waitingChargePerMin: 2,
+          baseKilometers: 2,
+          gstPercentage: 5,
+          commissionPercentage: 10
         },
         car: {
-          baseFare: 50,
-          perKmRate: 18,
+          baseFare: 60, // For first 2 km
+          perKmRate: 25, // After 2 km
           minimumFare: 60,
-          waitingChargePerMin: 3
+          waitingChargePerMin: 3,
+          baseKilometers: 2,
+          gstPercentage: 5,
+          commissionPercentage: 10
         }
       },
       surgeTimes: [
@@ -209,6 +260,12 @@ fareConfigSchema.statics.getActiveConfig = async function() {
           description: 'Less than 1 request per driver'
         }
       ],
+      nightCharge: {
+        isActive: true,
+        startHour: 23,
+        endHour: 5,
+        percentage: 20
+      },
       isActive: true
     });
   }

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaSearch, FaFilter, FaEye, FaMapMarkerAlt, FaClock, FaUser, FaCar } from 'react-icons/fa';
+import { FaSearch, FaFilter, FaEye, FaMapMarkerAlt, FaClock, FaUser, FaCar, FaChartLine } from 'react-icons/fa';
 import { MdRefresh, MdDownload } from 'react-icons/md';
 import * as api from '../../services/api';
 import socketService from '../../services/socket';
 import DriverStatusIndicator from '../../components/admin/DriverStatusIndicator';
 import RideStatusTimeline from '../../components/admin/RideStatusTimeline';
+import RideFinancialDetails from '../../components/admin/RideFinancialDetails';
+import FinancialSummary from '../../components/admin/FinancialSummary';
 
 const RideManagement = () => {
   const [rides, setRides] = useState([]);
@@ -36,6 +38,7 @@ const RideManagement = () => {
     cancelled: 0
   });
   const [statsLoading, setStatsLoading] = useState(false);
+  const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
   const socketRef = useRef(null);
 
   // Initialize socket connection for real-time updates
@@ -49,15 +52,15 @@ const RideManagement = () => {
 
       console.log('🔌 [Ride Management] Initializing admin socket connection');
       socketRef.current = socketService;
-      
+
       try {
         // socketService.initialize() returns a Promise that resolves to the socket
         const socket = await socketService.initialize(adminToken);
-        
+
         if (socket && socket.connected) {
           console.log('✅ [Ride Management] Socket initialized successfully');
           setSocketConnected(true);
-          
+
           // Set up event listeners for admin-specific events
           // Primary event: rideUpdate (sent to admins room)
           socket.on('rideUpdate', (updateData) => {
@@ -68,1350 +71,905 @@ const RideManagement = () => {
             // updateData structure: { type: eventType, data: eventData, timestamp: ... }
             handleRealTimeUpdate(updateData);
           });
-          
+
           // Fallback: Listen to direct events as well (for compatibility)
           socket.on('newRideRequest', (data) => {
             console.log('📢 [Ride Management] Direct newRideRequest received:', data);
             console.log('🚨 [NEW RIDE DEBUG] Admin received new ride via direct event:', data);
             handleRealTimeUpdate({ type: 'newRideRequest', data });
           });
-          
+
           socket.on('rideAccepted', (data) => {
             console.log('📢 [Ride Management] Direct rideAccepted received:', data);
             handleRealTimeUpdate({ type: 'rideAccepted', data });
           });
-          
+
           socket.on('rideStarted', (data) => {
             console.log('📢 [Ride Management] Direct rideStarted received:', data);
             handleRealTimeUpdate({ type: 'rideStarted', data });
           });
-          
+
           socket.on('rideCompleted', (data) => {
             console.log('📢 [Ride Management] Direct rideCompleted received:', data);
             handleRealTimeUpdate({ type: 'rideCompleted', data });
           });
-          
+
           socket.on('rideEnded', (data) => {
             console.log('📢 [Ride Management] Direct rideEnded received:', data);
             handleRealTimeUpdate({ type: 'rideEnded', data });
           });
-          
+
           socket.on('rideCancelled', (data) => {
             console.log('📢 [Ride Management] Direct rideCancelled received:', data);
             handleRealTimeUpdate({ type: 'rideCancelled', data });
           });
-          
-          // Listen to driver status events
-          socket.on('driverOnline', (data) => {
-            console.log('📢 [Ride Management] Driver online notification:', data);
-            handleRealTimeUpdate({ type: 'driverOnline', data });
-          });
-          
-          socket.on('driverOffline', (data) => {
-            console.log('📢 [Ride Management] Driver offline notification:', data);
-            handleRealTimeUpdate({ type: 'driverOffline', data });
-          });
-          
-          // Listen to registration events
-          socket.on('userRegistered', (data) => {
-            console.log('📢 [Ride Management] User registration notification:', data);
-            handleRealTimeUpdate({ type: 'userRegistered', data });
-          });
-          
-          socket.on('driverRegistered', (data) => {
-            console.log('📢 [Ride Management] Driver registration notification:', data);
-            handleRealTimeUpdate({ type: 'driverRegistered', data });
-          });
-          
-          // Listen to manual booking events
-          socket.on('manualBookingCreated', (data) => {
-            console.log('📢 [Ride Management] Manual booking created:', data);
-            handleRealTimeUpdate({ type: 'manualBookingCreated', data });
-          });
-          
-          socket.on('rideAssigned', (data) => {
-            console.log('📢 [Ride Management] Ride assigned to driver:', data);
-            handleRealTimeUpdate({ type: 'rideAssigned', data });
-          });
-          
-          socket.on('connectionSuccess', (data) => {
-            console.log('✅ [Ride Management] Admin socket authenticated:', data);
-            setSocketConnected(true);
-          });
 
           socket.on('connect', () => {
-            console.log('✅ [Ride Management] Socket connected');
+            console.log('✅ [Ride Management] Socket reconnected');
             setSocketConnected(true);
           });
 
-          socket.on('disconnect', (reason) => {
-            console.warn('❌ [Ride Management] Socket disconnected:', reason);
+          socket.on('disconnect', () => {
+            console.log('🔌 [Ride Management] Socket disconnected');
             setSocketConnected(false);
           });
-          
-          socket.on('connect_error', (error) => {
-            console.error('❌ [Ride Management] Socket connection error:', error);
-            setSocketConnected(false);
-          });
-          
         } else {
-          console.error('❌ [Ride Management] Failed to initialize socket or socket not connected');
+          console.warn('⚠️ [Ride Management] Socket initialized but not connected');
           setSocketConnected(false);
         }
       } catch (error) {
-        console.error('❌ [Ride Management] Error initializing socket:', error);
+        console.error('❌ [Ride Management] Failed to initialize socket:', error);
         setSocketConnected(false);
       }
     };
 
-    // Initialize socket connection
     initializeAdminSocket();
-    
-    // Cleanup function
+
+    // Cleanup on unmount
     return () => {
-      if (socketRef.current) {
-        console.log('🔌 [Ride Management] Cleaning up socket connection');
-        const socket = socketService.getSocket();
-        if (socket) {
-          // Remove only the listeners we added
-          socket.off('rideUpdate');
-          socket.off('newRideRequest');
-          socket.off('rideAccepted');
-          socket.off('rideStarted');
-          socket.off('rideCompleted');
-          socket.off('rideEnded');
-          socket.off('rideCancelled');
-          socket.off('driverOnline');
-          socket.off('driverOffline');
-          socket.off('userRegistered');
-          socket.off('driverRegistered');
-          socket.off('manualBookingCreated');
-          socket.off('rideAssigned');
-          socket.off('connectionSuccess');
-          socket.off('connect');
-          socket.off('disconnect');
-          socket.off('connect_error');
-        }
-        // Don't disconnect the socket as it might be used by other components
+      if (socketRef.current && socketRef.current.socket) {
+        console.log('🔌 [Ride Management] Cleaning up socket listeners');
+        socketRef.current.socket.off('rideUpdate');
+        socketRef.current.socket.off('newRideRequest');
+        socketRef.current.socket.off('rideAccepted');
+        socketRef.current.socket.off('rideStarted');
+        socketRef.current.socket.off('rideCompleted');
+        socketRef.current.socket.off('rideEnded');
+        socketRef.current.socket.off('rideCancelled');
+        socketRef.current.socket.off('connect');
+        socketRef.current.socket.off('disconnect');
       }
     };
   }, []);
 
-  // Load initial data
+  // Handle real-time updates from socket
+  const handleRealTimeUpdate = (updateData) => {
+    console.log('🔄 [Ride Management] Processing real-time update:', updateData.type);
+
+    const { type, data } = updateData;
+
+    switch (type) {
+      case 'newRideRequest':
+        // Add new ride to the beginning of the list
+        setRides(prevRides => {
+          // Check if ride already exists (prevent duplicates)
+          const existingIndex = prevRides.findIndex(r =>
+            (r._id === data._id) ||
+            (r.rideId === data.rideId)
+          );
+
+          if (existingIndex !== -1) {
+            // Update existing ride
+            const updatedRides = [...prevRides];
+            updatedRides[existingIndex] = data;
+            return updatedRides;
+          } else {
+            // Add new ride
+            return [data, ...prevRides];
+          }
+        });
+
+        // Update stats
+        setRideStats(prev => ({
+          ...prev,
+          total: prev.total + 1,
+          active: prev.active + 1
+        }));
+        break;
+
+      case 'rideAccepted':
+      case 'rideStarted':
+      case 'rideCompleted':
+      case 'rideEnded':
+      case 'rideCancelled':
+        // Update existing ride in the list
+        setRides(prevRides => prevRides.map(ride => {
+          if ((ride._id === data._id) || (ride.rideId === data.rideId)) {
+            return { ...ride, ...data };
+          }
+          return ride;
+        }));
+
+        // Update selected ride if it's the one being updated
+        if (selectedRide && ((selectedRide._id === data._id) || (selectedRide.rideId === data.rideId))) {
+          setSelectedRide(prev => ({ ...prev, ...data }));
+        }
+
+        // Update stats based on status changes
+        if (type === 'rideCompleted' || type === 'rideEnded') {
+          setRideStats(prev => ({
+            ...prev,
+            active: Math.max(0, prev.active - 1),
+            completed: prev.completed + 1
+          }));
+        } else if (type === 'rideCancelled') {
+          setRideStats(prev => ({
+            ...prev,
+            active: Math.max(0, prev.active - 1),
+            cancelled: prev.cancelled + 1
+          }));
+        }
+        break;
+
+      default:
+        console.log('Unknown update type:', type);
+    }
+
+    setLastUpdate(new Date());
+  };
+
+  // Fetch booths
   useEffect(() => {
-    loadRides();
-    loadBooths();
-    loadRideStatistics();
+    fetchBooths();
   }, []);
-  
-  // Reset retry count when filters change
-  useEffect(() => {
-    setRetryCount(0);
-  }, [filters]);
 
-  // Reload rides when filters change
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadRides(true); // Reset pagination
-      loadRideStatistics(); // Refresh statistics when filters change
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [filters]);
-
-  const loadRides = async (resetPagination = false, isRetry = false) => {
+  const fetchBooths = async () => {
     try {
-      setLoading(true);
-      if (!isRetry) {
-        setError(null);
-      }
-      
-      // Check authentication first
-      const adminToken = localStorage.getItem('adminToken');
-      if (!adminToken) {
-        console.error('🔍 [Ride Management] No admin token found');
-        setError('Authentication required. Redirecting to login...');
-        setTimeout(() => {
-          window.location.href = '/admin/login';
-        }, 2000);
-        return;
-      }
-
-      // Build query params - only include non-empty filters
-      const queryParams = {
-        limit: pagination.limit,
-        skip: resetPagination ? 0 : pagination.skip
-      };
-      
-      // Only add filters that have actual values
-      if (filters.booth && filters.booth !== 'all') {
-        queryParams.booth = filters.booth;
-      }
-      if (filters.status && filters.status !== 'all') {
-        queryParams.status = filters.status;
-      }
-      if (filters.startDate && filters.startDate.trim()) {
-        queryParams.startDate = filters.startDate;
-      }
-      if (filters.endDate && filters.endDate.trim()) {
-        queryParams.endDate = filters.endDate;
-      }
-      if (filters.searchQuery && filters.searchQuery.trim()) {
-        queryParams.searchQuery = filters.searchQuery;
-      }
-
-      console.log('🔍 [Ride Management] Loading rides with filters:', queryParams);
-      console.log('🔍 [Ride Management] Original filters state:', filters);
-      console.log('🔍 [Ride Management] Query will include date filters:', !!queryParams.startDate || !!queryParams.endDate);
-
-      const response = await api.admin.getRides(queryParams);
-      
-      console.log('🔍 [Ride Management] API Response:', response);
-      console.log('🔍 [Ride Management] Response type:', typeof response);
-      console.log('🔍 [Ride Management] Response keys:', Object.keys(response || {}));
-      
-      // Initialize with safe defaults
-      let ridesData = [];
-      let paginationData = { total: 0, hasMore: false };
-      
-      // Parse standardized response: { success: true, data: { rides: [...], pagination: {...} } }
-      if (response && response.success && response.data) {
-        ridesData = Array.isArray(response.data.rides) ? response.data.rides : [];
-        paginationData = response.data.pagination || { total: ridesData.length, hasMore: false };
-        
-        console.log('🔍 [Ride Management] Parsed response:', {
-          ridesCount: ridesData.length,
-          totalRides: paginationData.total,
-          hasMore: paginationData.hasMore
-        });
-        
-        // DEBUG: Log destination data for rides
-        console.log('🔍 [DEBUG] Frontend ride destinations:');
-        ridesData.slice(0, 3).forEach((ride, index) => {
-          console.log(`  Ride ${index + 1}:`, {
-            id: ride._id,
-            destination: ride.destination,
-            hasDestination: !!ride.destination,
-            dropLocation: ride.dropLocation,
-            pickupLocation: ride.pickupLocation
-          });
-        });
-      } else {
-        console.error('🔍 [Ride Management] Invalid response format:', response);
-        ridesData = [];
-        paginationData = { total: 0, hasMore: false };
-      }
-      
-      console.log('🔍 [Ride Management] Processed rides:', ridesData.length);
-      console.log('🔍 [Ride Management] Sample ride:', ridesData[0]);
-      
-      if (resetPagination) {
-        // Ensure ridesData is an array before setting state and deduplicate
-        const safeRidesData = Array.isArray(ridesData) ? ridesData : [];
-        setRides(deduplicateRides(safeRidesData));
-        setPagination(prev => ({
-          ...prev,
-          skip: 0,
-          total: paginationData.total || safeRidesData.length,
-          hasMore: paginationData.hasMore || false
-        }));
-      } else {
-        setRides(prev => {
-          // Ensure both prev and ridesData are arrays before spreading
-          const safePrev = Array.isArray(prev) ? prev : [];
-          const safeRidesData = Array.isArray(ridesData) ? ridesData : [];
-          const combined = [...safePrev, ...safeRidesData];
-          return deduplicateRides(combined);
-        });
-        setPagination(prev => ({
-          ...prev,
-          skip: (prev?.skip || 0) + (Array.isArray(ridesData) ? ridesData.length : 0),
-          total: paginationData.total || ((prev?.total || 0) + (Array.isArray(ridesData) ? ridesData.length : 0)),
-          hasMore: paginationData.hasMore || false
-        }));
+      const response = await api.getMetroStations();
+      if (response.success && response.data.stations) {
+        setBooths(response.data.stations);
       }
     } catch (error) {
-      console.error('🔍 [Ride Management] Error loading rides:', error);
-      
-      // Handle specific error types
-      if (error.status === 401) {
-        console.error('🔍 [Ride Management] Authentication failed - redirecting to login');
-        localStorage.removeItem('adminToken');
-        // Clear invalid state
-        setRides([]);
-        setPagination({ total: 0, limit: 50, skip: 0, hasMore: false });
-        window.location.href = '/admin/login';
-        return;
-      }
-      
-      // Set error state for user feedback
-      const errorMsg = error.status === 500 
-        ? 'Server error. Please try again in a moment.'
-        : 'Failed to load rides. Please check your connection.';
-      setError(errorMsg);
-      
-      // Reset to safe state on error
-      if (resetPagination) {
-        setRides([]);
-        setPagination({ total: 0, limit: 50, skip: 0, hasMore: false });
-      }
-      
-      // Auto-retry logic
-      if (retryCount < 2) {
-        console.log('🔍 [Ride Management] Auto-retrying in 3 seconds...', retryCount + 1);
-        setTimeout(() => {
-          setRetryCount(prev => prev + 1);
-          loadRides(resetPagination, true);
-        }, 3000);
-      }
-    } finally {
-      setLoading(false);
+      console.error('Error fetching booths:', error);
     }
   };
 
-  const loadBooths = async () => {
-    try {
-      console.log('🏢 [Ride Management] Loading booths...');
-      const response = await api.admin.getBoothsList();
-      console.log('🏢 [Ride Management] Booths response:', response);
-      
-      // Simple, robust parsing for booths
-      let boothsData = [];
-      
+  // Fetch rides with filters
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchRidesWithRetry = async (attemptCount = 0) => {
+      if (!isMounted) return;
+
       try {
-        if (response && response.data && response.data.success) {
-          boothsData = Array.isArray(response.data.data?.booths) ? response.data.data.booths : [];
-        } else if (response && response.success) {
-          boothsData = Array.isArray(response.data?.booths) ? response.data.booths : [];
-        } else if (Array.isArray(response)) {
-          boothsData = response;
-        } else {
-          console.error('🏢 [Ride Management] Unexpected booths response structure:', response);
-          boothsData = [];
-        }
-        
-        // Ensure boothsData is always an array
-        if (!Array.isArray(boothsData)) {
-          console.warn('🏢 [Ride Management] boothsData is not an array, defaulting to empty array:', boothsData);
-          boothsData = [];
-        }
-        
-      } catch (parseError) {
-        console.error('🏢 [Ride Management] Error parsing booths response:', parseError);
-        boothsData = [];
-      }
-      
-      setBooths(boothsData);
-      console.log('🏢 [Ride Management] Booths loaded:', boothsData.length);
-    } catch (error) {
-      console.error('🏢 [Ride Management] Error loading booths:', error);
-      
-      if (error.status === 401) {
-        console.error('🏢 [Ride Management] Authentication failed for booths');
-        localStorage.removeItem('adminToken');
-        window.location.href = '/admin/login';
-        return;
-      }
-      
-      // Continue with empty booths list on error  
-      setBooths([]);
-      console.warn('🏢 [Ride Management] Continuing with empty booths list due to error');
-    }
-  };
+        setLoading(true);
+        setError(null);
 
-  const loadRideStatistics = async () => {
+        console.log(`🔍 [Ride Management] Fetching rides (attempt ${attemptCount + 1})...`);
+
+        const params = {
+          ...filters,
+          skip: pagination.skip,
+          limit: pagination.limit
+        };
+
+        const response = await api.getAdminRides(params);
+
+        if (response.success) {
+          if (isMounted) {
+            // Ensure rides is always an array
+            const ridesData = Array.isArray(response.data?.rides) ? response.data.rides :
+              Array.isArray(response.data) ? response.data : [];
+
+            console.log(`✅ [Ride Management] Successfully loaded ${ridesData.length} rides`);
+
+            setRides(ridesData);
+
+            // Update pagination
+            if (response.data?.pagination) {
+              setPagination(prev => ({
+                ...prev,
+                total: response.data.pagination.total || ridesData.length,
+                hasMore: response.data.pagination.hasMore || false
+              }));
+            }
+
+            // Update stats
+            if (response.data?.stats) {
+              setRideStats(response.data.stats);
+            }
+
+            setError(null);
+            setRetryCount(0);
+          }
+        } else {
+          throw new Error(response.message || 'Failed to fetch rides');
+        }
+      } catch (error) {
+        console.error(`❌ [Ride Management] Error fetching rides:`, error);
+
+        if (isMounted) {
+          if (attemptCount < 2) {
+            console.log(`🔄 [Ride Management] Retrying in 2 seconds...`);
+            setTimeout(() => {
+              if (isMounted) {
+                setRetryCount(attemptCount + 1);
+                fetchRidesWithRetry(attemptCount + 1);
+              }
+            }, 2000);
+          } else {
+            setError(`Failed to load rides: ${error.message}. Please refresh the page.`);
+            setRides([]);
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchRidesWithRetry(0);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [filters, pagination.skip, pagination.limit]);
+
+  // Fetch ride stats
+  useEffect(() => {
+    fetchRideStats();
+    const interval = setInterval(fetchRideStats, 30000); // Refresh every 30 seconds
+    return () => clearInterval(interval);
+  }, [filters]);
+
+  const fetchRideStats = async () => {
     try {
       setStatsLoading(true);
-      console.log('📊 [Ride Management] Loading ride statistics...');
-      
-      // Use the ride analytics endpoint to get accurate counts
-      const response = await api.admin.getRideAnalytics();
-      console.log('📊 [Ride Management] Statistics response:', response);
-      
-      if (response && response.success && response.data) {
-        const stats = response.data;
-        const ridesByStatus = stats.ridesByStatus || {};
-        
-        // Calculate active rides (pending + driver_assigned + ride_started)
-        const activeRides = (ridesByStatus.pending || 0) + 
-                           (ridesByStatus.driver_assigned || 0) + 
-                           (ridesByStatus.ride_started || 0);
-        
-        // Calculate completed rides (ride_ended + completed)
-        const completedRides = (ridesByStatus.ride_ended || 0) + 
-                              (ridesByStatus.completed || 0);
-        
-        setRideStats({
-          total: stats.totalRides || 0,
-          completed: completedRides,
-          active: activeRides,
-          cancelled: ridesByStatus.cancelled || 0
-        });
-        
-        console.log('📊 [Ride Management] Statistics loaded:', {
-          total: stats.totalRides,
-          completed: completedRides,
-          active: activeRides,
-          cancelled: ridesByStatus.cancelled || 0,
-          ridesByStatus: ridesByStatus
-        });
-      } else {
-        // Fallback: try direct rides endpoint to get counts
-        console.log('📊 [Ride Management] Analytics endpoint structure unexpected, using fallback...');
-        
-        // Get total count from main rides endpoint
-        const totalResponse = await api.admin.getRides({ limit: 1 });
-        const totalRides = totalResponse?.data?.pagination?.total || 0;
-        
-        // If we have rides, estimate the distribution (this is a fallback)
-        if (totalRides > 0) {
-          // Load first page to get a sample of statuses
-          const sampleResponse = await api.admin.getRides({ limit: 100 });
-          const sampleRides = sampleResponse?.data?.rides || [];
-          
-          // Count statuses in sample
-          const statusCounts = sampleRides.reduce((acc, ride) => {
-            const status = ride.status || 'unknown';
-            acc[status] = (acc[status] || 0) + 1;
-            return acc;
-          }, {});
-          
-          // Calculate based on sample (rough estimate)
-          const sampleSize = sampleRides.length;
-          const ratio = totalRides / Math.max(sampleSize, 1);
-          
-          const activeCount = Math.round(
-            ((statusCounts.pending || 0) + 
-             (statusCounts.driver_assigned || 0) + 
-             (statusCounts.ride_started || 0)) * ratio
-          );
-          
-          const completedCount = Math.round(
-            ((statusCounts.ride_ended || 0) + 
-             (statusCounts.completed || 0)) * ratio
-          );
-          
-          const cancelledCount = Math.round((statusCounts.cancelled || 0) * ratio);
-          
-          setRideStats({
-            total: totalRides,
-            completed: completedCount,
-            active: activeCount,
-            cancelled: cancelledCount
-          });
-          
-          console.log('📊 [Ride Management] Estimated statistics from sample:', {
-            total: totalRides,
-            sampleSize,
-            ratio,
-            statusCounts
-          });
-        } else {
-          // No rides found
-          setRideStats({
-            total: 0,
-            completed: 0,
-            active: 0,
-            cancelled: 0
-          });
-        }
+      const response = await api.getRideStats(filters);
+      if (response.success) {
+        setRideStats(response.data);
       }
     } catch (error) {
-      console.error('📊 [Ride Management] Error loading ride statistics:', error);
-      
-      if (error.status === 401) {
-        localStorage.removeItem('adminToken');
-        window.location.href = '/admin/login';
-        return;
-      }
-      
-      // Keep existing stats or set to zero
-      console.warn('📊 [Ride Management] Keeping existing statistics due to error');
+      console.error('Error fetching ride stats:', error);
     } finally {
       setStatsLoading(false);
     }
   };
 
-  const handleFilterChange = (key, value) => {
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
     setFilters(prev => ({
       ...prev,
-      [key]: value
+      [name]: value
     }));
+    setPagination(prev => ({ ...prev, skip: 0 }));
   };
 
-  const clearFilters = () => {
-    setFilters({
-      booth: 'all',
-      status: 'all',
-      startDate: '',
-      endDate: '',
-      searchQuery: ''
-    });
-  };
-
-  // Handle real-time ride updates
-  const handleRealTimeUpdate = (updateData) => {
-    const { type, data } = updateData;
-    console.log('🔄 [Ride Management] Processing real-time update:', type, data);
-    
-    // Update last update time
-    setLastUpdate(new Date());
-    
-    switch (type) {
-      case 'newRideRequest':
-        console.log('🚨 [NEW RIDE DEBUG] Received new ride request:', data);
-        console.log('🚨 [NEW RIDE DEBUG] Current filters:', filters);
-        console.log('🚨 [NEW RIDE DEBUG] Should show ride:', shouldShowRide(data));
-        
-        // Add new ride to the beginning of the list if it matches current filters
-        if (shouldShowRide(data)) {
-          console.log('✅ [NEW RIDE DEBUG] Adding ride to list');
-          setRides(prev => {
-            const safePrev = Array.isArray(prev) ? prev : [];
-            // Check if ride already exists to avoid duplicates - check multiple ID fields
-            const exists = safePrev.some(ride => 
-              ride._id === data.rideId || 
-              ride._id === data._id ||
-              ride.rideId === data.rideId ||
-              ride.rideId === data.uniqueRideId
-            );
-            console.log('🚨 [NEW RIDE DEBUG] Ride already exists:', exists);
-            if (!exists) {
-              const newRide = formatRideData(data);
-              console.log('🚨 [NEW RIDE DEBUG] Formatted new ride:', newRide);
-              const updatedRides = [newRide, ...safePrev];
-              const deduplicatedRides = deduplicateRides(updatedRides);
-              console.log('🚨 [NEW RIDE DEBUG] Final rides count:', deduplicatedRides.length);
-              return deduplicatedRides;
-            }
-            return deduplicateRides(safePrev);
-          });
-          
-          // Update pagination total
-          setPagination(prev => ({
-            ...prev,
-            total: (prev.total || 0) + 1
-          }));
-        } else {
-          console.log('🚨 [NEW RIDE DEBUG] Ride doesn\'t match current filters, but force refreshing...');
-        }
-        
-        // IMMEDIATE REFRESH: Reload rides list to ensure new ride is visible
-        console.log('🔄 [NEW RIDE DEBUG] Refreshing rides list for new ride...');
-        loadRides(true); // Reset pagination and reload immediately
-        
-        // Update ride statistics - new ride means +1 total, +1 active (pending)
-        setRideStats(prev => ({
-          ...prev,
-          total: prev.total + 1,
-          active: prev.active + 1
-        }));
-        break;
-        
-      case 'rideAccepted':
-      case 'rideStarted':
-      case 'rideStatusUpdated':
-        // Update existing ride in the list
-        setRides(prev => {
-          const safePrev = Array.isArray(prev) ? prev : [];
-          const updatedRides = safePrev.map(ride => {
-            if (ride._id === data.rideId || ride.rideId === data.uniqueRideId) {
-              return {
-                ...ride,
-                status: data.status || data.newStatus,
-                driverName: data.driverName || ride.driverName,
-                updatedAt: data.timestamp || data.updatedAt || new Date().toISOString(),
-                queueNumber: data.queueNumber || ride.queueNumber
-              };
-            }
-            return ride;
-          });
-          return deduplicateRides(updatedRides);
-        });
-        // No statistics change for status updates (still active)
-        break;
-        
-      case 'rideCompleted':
-      case 'rideEnded':
-        // Update existing ride in the list
-        setRides(prev => {
-          const safePrev = Array.isArray(prev) ? prev : [];
-          const updatedRides = safePrev.map(ride => {
-            if (ride._id === data.rideId || ride.rideId === data.uniqueRideId) {
-              return {
-                ...ride,
-                status: data.status || 'ride_ended', // Use the status from data if available
-                driverName: data.driverName || ride.driverName,
-                updatedAt: data.timestamp || data.updatedAt || new Date().toISOString(),
-                queueNumber: data.queueNumber || ride.queueNumber
-              };
-            }
-            return ride;
-          });
-          return deduplicateRides(updatedRides);
-        });
-        
-        // Update statistics - ride completed/ended means -1 active, +1 completed
-        setRideStats(prev => ({
-          ...prev,
-          active: Math.max(0, prev.active - 1),
-          completed: prev.completed + 1
-        }));
-        break;
-        
-      case 'rideCancelled':
-        // Update existing ride in the list
-        setRides(prev => {
-          const safePrev = Array.isArray(prev) ? prev : [];
-          const updatedRides = safePrev.map(ride => {
-            if (ride._id === data.rideId || ride.rideId === data.uniqueRideId) {
-              return {
-                ...ride,
-                status: 'cancelled',
-                driverName: data.driverName || ride.driverName,
-                updatedAt: data.timestamp || data.updatedAt || new Date().toISOString(),
-                queueNumber: data.queueNumber || ride.queueNumber
-              };
-            }
-            return ride;
-          });
-          return deduplicateRides(updatedRides);
-        });
-        
-        // Update statistics - ride cancelled means -1 active, +1 cancelled
-        setRideStats(prev => ({
-          ...prev,
-          active: Math.max(0, prev.active - 1),
-          cancelled: prev.cancelled + 1
-        }));
-        break;
-        
-      case 'driverOnline':
-        console.log('🚗 [Ride Management] Driver came online:', data);
-        // Could refresh driver statistics or show notification
-        break;
-        
-      case 'driverOffline':
-        console.log('🚗 [Ride Management] Driver went offline:', data);
-        // Could refresh driver statistics or show notification
-        break;
-        
-      case 'userRegistered':
-        console.log('👤 [Ride Management] New user registered:', data);
-        // Could refresh user statistics or show notification
-        break;
-        
-      case 'driverRegistered':
-        console.log('🚚 [Ride Management] New driver registered:', data);
-        // Could refresh driver statistics or show notification
-        break;
-        
-      case 'manualBookingCreated':
-        console.log('📋 [Ride Management] Manual booking created:', data);
-        // Refresh the rides list to show the new manual booking
-        loadRides(true);
-        
-        // Update statistics - new manual booking means +1 total, +1 active
-        setRideStats(prev => ({
-          ...prev,
-          total: prev.total + 1,
-          active: prev.active + 1
-        }));
-        break;
-        
-      case 'rideAssigned':
-        console.log('🚗 [Ride Management] Ride assigned to driver:', data);
-        // Update existing ride in the list to show driver assignment
-        setRides(prev => {
-          const safePrev = Array.isArray(prev) ? prev : [];
-          const updatedRides = safePrev.map(ride => {
-            if (ride._id === data.rideId || ride.rideId === data.bookingId) {
-              return {
-                ...ride,
-                status: 'driver_assigned',
-                driverId: data.driverId ? { 
-                  name: data.driverName || 'Assigned Driver',
-                  _id: data.driverId 
-                } : ride.driverId,
-                driverName: data.driverName || ride.driverName,
-                updatedAt: data.timestamp || new Date().toISOString(),
-                queueNumber: data.queueNumber || ride.queueNumber,
-                assignedAt: data.assignedAt || new Date().toISOString()
-              };
-            }
-            return ride;
-          });
-          return deduplicateRides(updatedRides);
-        });
-        break;
-        
-      default:
-        console.log('🔄 [Ride Management] Unknown update type:', type);
-    }
-  };
-
-  // Check if a ride should be shown based on current filters
-  const shouldShowRide = (rideData) => {
-    const { booth, status } = filters;
-    
-    // Check booth filter
-    if (booth && booth !== 'all') {
-      const rideBooth = typeof rideData.pickupLocation === 'object' 
-        ? rideData.pickupLocation.boothName 
-        : rideData.pickupLocation;
-      if (rideBooth !== booth) return false;
-    }
-    
-    // Check status filter
-    if (status && status !== 'all') {
-      if (rideData.status !== status) return false;
-    }
-    
-    return true;
-  };
-
-  // Format ride data from real-time updates to match expected structure
-  // Deduplicate rides array based on multiple ID fields
-  const deduplicateRides = (rides) => {
-    const seen = new Set();
-    return rides.filter(ride => {
-      const id = ride._id || ride.rideId;
-      if (seen.has(id)) {
-        console.warn('🔍 [Ride Management] Removing duplicate ride:', id);
-        return false;
-      }
-      seen.add(id);
-      return true;
-    });
-  };
-
-  const formatRideData = (data) => {
-    const formattedData = {
-      _id: data.rideId || data._id,
-      rideId: data.uniqueRideId || data.rideId,
-      status: data.status,
-      pickupLocation: data.pickupLocation,
-      destination: data.dropLocation?.address || data.destination,
-      userId: { name: data.userName, phone: data.userPhone },
-      driverId: data.driverName ? { name: data.driverName } : null,
-      estimatedFare: data.estimatedFare,
-      distance: data.distance,
-      vehicleType: data.vehicleType,
-      queueNumber: data.queueNumber,
-      createdAt: data.createdAt || new Date().toISOString()
-    };
-    
-    // DEBUG: Log real-time ride data formatting
-    console.log('🔍 [DEBUG] Formatting real-time ride data:', {
-      originalDropLocation: data.dropLocation,
-      originalDestination: data.destination,
-      formattedDestination: formattedData.destination,
-      hasDropLocationAddress: !!data.dropLocation?.address
-    });
-    
-    return formattedData;
+  const handleSearch = (e) => {
+    setFilters(prev => ({
+      ...prev,
+      searchQuery: e.target.value
+    }));
+    setPagination(prev => ({ ...prev, skip: 0 }));
   };
 
   const viewRideDetails = async (rideId) => {
     try {
-      const response = await api.admin.getRideDetails(rideId);
-      
-      // Handle different response structures
-      let rideData;
-      
-      if (response?.data?.success) {
-        rideData = response.data.data;
-      } else if (response?.success) {
-        rideData = response.data || response;
-      } else if (response?._id) {
-        rideData = response;
+      console.log('👁️ [Ride Management] Viewing ride details:', rideId);
+
+      // First try to find the ride in our local list
+      const localRide = rides.find(r => r._id === rideId);
+
+      if (localRide) {
+        setSelectedRide(localRide);
+        setShowDetails(true);
       } else {
-        console.error('Unexpected ride details response:', response);
-        alert('Failed to load ride details');
-        return;
+        // If not found locally, fetch from server
+        const response = await api.getRideDetails(rideId);
+        if (response.success) {
+          setSelectedRide(response.data);
+          setShowDetails(true);
+        } else {
+          console.error('Failed to fetch ride details:', response.message);
+        }
       }
-      
-      setSelectedRide(rideData);
-      setShowDetails(true);
     } catch (error) {
-      console.error('Error loading ride details:', error);
-      
-      if (error.status === 401) {
-        localStorage.removeItem('adminToken');
-        window.location.href = '/admin/login';
-        return;
-      }
-      
-      alert('Failed to load ride details. Please try again.');
+      console.error('Error viewing ride details:', error);
     }
   };
 
+  // Safe Fare Calculation Helper Functions
+  const safeNumber = (value, defaultValue = 0) => {
+    const num = parseFloat(value);
+    return isNaN(num) || num === null || num === undefined ? defaultValue : num;
+  };
+
+  const getBaseFare = (ride) => {
+    if (!ride) return 0;
+    const fare = safeNumber(ride.driverFare) || safeNumber(ride.fare) || safeNumber(ride.actualFare);
+    return Math.max(0, fare);
+  };
+
+  const getCustomerTotal = (ride) => {
+    if (!ride) return 0;
+    const total = safeNumber(ride.customerFare) || safeNumber(ride.estimatedFare) || safeNumber(ride.totalFare) || safeNumber(ride.fare);
+    return Math.max(0, total);
+  };
+
+  // Get the best available fare amount - prioritize customer fare for admin view
+  const getFareAmount = (ride) => {
+    if (!ride) return 0;
+
+    // For admin panel, prioritize customer fare (what customer actually pays)
+    // Fallback to estimated fare or other fare fields for older rides
+    const possibleFares = [
+      ride.customerFare,          // What customer pays (includes GST, commission)
+      ride.estimatedFare,         // Initial estimate (fallback for older rides)
+      ride.actualFare,           // Actual completed fare
+      ride.totalFare,            // Total fare
+      ride.fareBreakdown?.total, // Fare breakdown total
+      ride.fare,                 // Legacy fare field (driver earnings)
+      ride.driverFare            // Driver earnings (last resort)
+    ];
+
+    // Find the first non-zero, valid fare value
+    for (const fare of possibleFares) {
+      const value = safeNumber(fare);
+      if (value > 0) {
+        return value;
+      }
+    }
+
+    return 0;
+  };
+
+  const calculateCommission = (ride) => {
+    if (!ride) return 0;
+
+    // Use existing commission if available
+    if (ride.commissionAmount !== undefined && ride.commissionAmount !== null) {
+      return Math.max(0, safeNumber(ride.commissionAmount));
+    }
+
+    // Calculate 10% commission on base fare
+    const baseFare = getBaseFare(ride);
+    return Math.round(baseFare * 0.1);
+  };
+
+  const calculateGST = (ride) => {
+    if (!ride) return 0;
+
+    // Use existing GST if available
+    if (ride.gstAmount !== undefined && ride.gstAmount !== null) {
+      return Math.max(0, safeNumber(ride.gstAmount));
+    }
+
+    // Calculate 5% GST on (base fare + commission)
+    const baseFare = getBaseFare(ride);
+    const commission = calculateCommission(ride);
+    return Math.round((baseFare + commission) * 0.05);
+  };
+
+  const getNightCharge = (ride) => {
+    if (!ride) return 0;
+    return Math.max(0, safeNumber(ride.nightChargeAmount));
+  };
+
+  const calculatePlatformEarnings = (ride) => {
+    if (!ride) return 0;
+
+    const commission = calculateCommission(ride);
+    const gst = calculateGST(ride);
+    const nightCharge = getNightCharge(ride);
+
+    return commission + gst + nightCharge;
+  };
+
+  const getSurgeFactor = (ride) => {
+    if (!ride || !ride.surgeFactor) return 1.0;
+    const factor = safeNumber(ride.surgeFactor, 1.0);
+    return Math.max(1.0, factor);
+  };
+
+  const getDistance = (ride) => {
+    if (!ride || !ride.distance) return 'N/A';
+    const distance = safeNumber(ride.distance);
+    return distance > 0 ? `${distance.toFixed(2)} km` : 'N/A';
+  };
+
+  const formatCurrency = (amount) => {
+    const value = safeNumber(amount);
+    if (value === 0) return '₹0';
+    if (value < 0) return '-₹' + Math.abs(value);
+    return '₹' + value;
+  };
+
+  const fareHasError = (ride) => {
+    if (!ride) return true;
+
+    const baseFare = getBaseFare(ride);
+    const customerTotal = getCustomerTotal(ride);
+    const platformEarnings = calculatePlatformEarnings(ride);
+
+    // Check if calculations make sense
+    if (baseFare === 0 && customerTotal === 0) return true;
+    if (customerTotal > 0 && baseFare === 0) return true;
+
+    // Check if platform earnings + driver fare roughly equals customer total
+    const calculatedTotal = baseFare + platformEarnings;
+    const difference = Math.abs(calculatedTotal - customerTotal);
+
+    // Allow small rounding differences (up to ₹5)
+    if (customerTotal > 0 && difference > 5) {
+      return true;
+    }
+
+    return false;
+  };
   const getStatusBadge = (status) => {
-    const statusColors = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      driver_assigned: 'bg-blue-100 text-blue-800',
-      ride_started: 'bg-green-100 text-green-800',
-      ride_ended: 'bg-orange-100 text-orange-800',
-      completed: 'bg-green-100 text-green-800',
-      cancelled: 'bg-red-100 text-red-800'
+    const statusConfig = {
+      pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: '⏳' },
+      driver_assigned: { bg: 'bg-blue-100', text: 'text-blue-800', icon: '👤' },
+      ride_started: { bg: 'bg-indigo-100', text: 'text-indigo-800', icon: '🚗' },
+      ride_ended: { bg: 'bg-purple-100', text: 'text-purple-800', icon: '📍' },
+      completed: { bg: 'bg-green-100', text: 'text-green-800', icon: '✅' },
+      cancelled: { bg: 'bg-red-100', text: 'text-red-800', icon: '❌' }
     };
 
-    const statusLabels = {
-      pending: 'Pending',
-      driver_assigned: 'Driver Assigned',
-      ride_started: 'In Progress',
-      ride_ended: 'Ended',
-      completed: 'Completed',
-      cancelled: 'Cancelled'
-    };
+    const config = statusConfig[status] || { bg: 'bg-gray-100', text: 'text-gray-800', icon: '❓' };
 
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[status] || 'bg-gray-100 text-gray-800'}`}>
-        {statusLabels[status] || status}
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+        <span>{config.icon}</span>
+        {status?.replace('_', ' ').charAt(0).toUpperCase() + status?.slice(1).replace('_', ' ')}
       </span>
     );
   };
 
   const formatDateTime = (dateString) => {
-    if (!dateString) return 'No date';
-    
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) {
-        return 'Invalid date';
-      }
-      
-      return date.toLocaleString('en-IN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (error) {
-      console.error('Error formatting date:', dateString, error);
-      return 'Invalid date';
-    }
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
-  const loadMoreRides = () => {
-    if (pagination?.hasMore && !loading) {
-      loadRides(false);
-    }
+  const handleRefresh = () => {
+    setPagination(prev => ({ ...prev, skip: 0 }));
+    fetchRideStats();
   };
 
-  // Debug logging
-  console.log('🔍 [Ride Management] Component render:', {
-    rides: Array.isArray(rides) ? rides.length : 'NOT_ARRAY',
-    ridesType: typeof rides,
-    booths: Array.isArray(booths) ? booths.length : 'NOT_ARRAY',
-    boothsType: typeof booths,
-    loading,
-    filters,
-    pagination
-  });
+  const handleLoadMore = () => {
+    setPagination(prev => ({
+      ...prev,
+      skip: prev.skip + prev.limit
+    }));
+  };
 
   return (
-    <div className="p-4 bg-gray-50 min-h-screen max-w-full overflow-hidden">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="mb-4">
-        <div className="flex justify-between items-center mb-3">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-3xl font-bold text-gray-900">Ride Management</h1>
-            <div className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${socketConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-              <span className={`text-sm font-medium ${socketConnected ? 'text-green-600' : 'text-red-600'}`}>
-                {socketConnected ? 'Live' : 'Offline'}
-              </span>
-              {lastUpdate && socketConnected && (
-                <span className="text-xs text-gray-500">
-                  Updated {new Date(lastUpdate).toLocaleTimeString()}
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="px-4 sm:px-6 lg:px-8">
+          <div className="py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">Ride Management</h1>
+              {socketConnected ? (
+                <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  Live
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                  Offline
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowFinancialDashboard(!showFinancialDashboard)}
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 flex items-center gap-2 shadow-sm"
+              >
+                <FaChartLine />
+                {showFinancialDashboard ? 'Hide' : 'Show'} Financial Dashboard
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={loading}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <MdRefresh className={`text-lg ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              {lastUpdate && (
+                <span className="text-sm text-gray-500">
+                  Last updated: {formatDateTime(lastUpdate)}
                 </span>
               )}
             </div>
           </div>
-          <div className="flex space-x-3">
-            <button
-              onClick={() => {
-                loadRides(true);
-                loadRideStatistics();
-              }}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <MdRefresh />
-              <span>Refresh</span>
-            </button>
-            <button className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-              <MdDownload />
-              <span>Export</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-          <div className="bg-white p-3 rounded-lg shadow relative">
-            {statsLoading && (
-              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-900"></div>
-              </div>
-            )}
-            <div className="text-xl font-bold text-gray-900">{rideStats.total}</div>
-            <div className="text-xs text-gray-600">Total Rides</div>
-          </div>
-          <div className="bg-white p-3 rounded-lg shadow relative">
-            {statsLoading && (
-              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
-              </div>
-            )}
-            <div className="text-xl font-bold text-green-600">{rideStats.completed}</div>
-            <div className="text-xs text-gray-600">Completed</div>
-          </div>
-          <div className="bg-white p-3 rounded-lg shadow relative">
-            {statsLoading && (
-              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-              </div>
-            )}
-            <div className="text-xl font-bold text-blue-600">{rideStats.active}</div>
-            <div className="text-xs text-gray-600">Active</div>
-          </div>
-          <div className="bg-white p-3 rounded-lg shadow relative">
-            {statsLoading && (
-              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-600"></div>
-              </div>
-            )}
-            <div className="text-xl font-bold text-red-600">{rideStats.cancelled}</div>
-            <div className="text-xs text-gray-600">Cancelled</div>
-          </div>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-3 rounded-lg shadow mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          {/* Booth Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Booth</label>
-            <select
-              value={filters.booth}
-              onChange={(e) => handleFilterChange('booth', e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">All Booths</option>
-              {Array.isArray(booths) && booths.slice(0, 20).map((booth) => (
-                <option key={booth?.name || booth?.id || Math.random()} value={booth?.name || booth?.id}>
-                  {booth?.name || booth?.id || 'Unknown'} ({booth?.totalRides || 0})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Status Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={filters.status}
-              onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="driver_assigned">Driver Assigned</option>
-              <option value="ride_started">In Progress</option>
-              <option value="ride_ended">Ended</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-
-          {/* Date Range */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-            <input
-              type="date"
-              value={filters.startDate}
-              onChange={(e) => handleFilterChange('startDate', e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      <div className="px-4 sm:px-6 lg:px-8 py-6">
+        {/* Financial Dashboard */}
+        {showFinancialDashboard && (
+          <div className="mb-6">
+            <FinancialSummary
+              rides={rides}
+              onRefresh={handleRefresh}
+              loading={loading}
             />
           </div>
+        )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-            <input
-              type="date"
-              value={filters.endDate}
-              onChange={(e) => handleFilterChange('endDate', e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Rides</p>
+                <div className="text-xl font-bold text-gray-900">{rideStats.total}</div>
+              </div>
+              <div className="p-3 bg-gray-100 rounded-full">
+                <FaCar className="text-gray-600 text-lg" />
+              </div>
+            </div>
           </div>
 
-          {/* Clear Filters */}
-          <div className="flex items-end">
-            <button
-              onClick={clearFilters}
-              className="w-full px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-            >
-              Clear Filters
-            </button>
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Completed</p>
+                <div className="text-xl font-bold text-green-600">{rideStats.completed}</div>
+              </div>
+              <div className="p-3 bg-green-100 rounded-full">
+                <FaMapMarkerAlt className="text-green-600 text-lg" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Active</p>
+                <div className="text-xl font-bold text-blue-600">{rideStats.active}</div>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-full">
+                <FaClock className="text-blue-600 text-lg" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Cancelled</p>
+                <div className="text-xl font-bold text-red-600">{rideStats.cancelled}</div>
+              </div>
+              <div className="p-3 bg-red-100 rounded-full">
+                <FaUser className="text-red-600 text-lg" />
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Rides Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="table-responsive overflow-x-auto">
-          <table className="table-desktop w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">
-                  Ride Details
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
-                  User
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
-                  Driver
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
-                  Status
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
-                  Queue
-                </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {Array.isArray(rides) && rides.map((ride, index) => {
-                if (!ride || !ride._id) {
-                  console.warn('🔍 [Ride Management] Invalid ride data at index:', index, ride);
-                  return null;
-                }
-                
-                // Safe data extraction
-                const rideId = ride.rideId || ride._id?.slice(-8) || 'Unknown';
-                const destination = ride.destination || 'No destination';
-                const pickupLocation = ride.pickupLocation;
-                const locationName = typeof pickupLocation === 'object' 
-                  ? (pickupLocation?.boothName || 'Unknown') 
-                  : (pickupLocation || 'Unknown');
-                const userName = ride.userId?.name || ride.user?.name || 'Unknown User';
-                const userPhone = ride.userId?.phone || ride.user?.phone || '';
-                const driverName = ride.driverId?.name || ride.driverId?.fullName || ride.driver?.name || ride.driverName || '';
-                const vehicleNumber = ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driver?.vehicleNumber || ride.driverVehicleNo || '';
-                const status = ride.status || 'unknown';
-                const queueNumber = ride.queueNumber || '';
-                const queuePosition = ride.queuePosition || '';
-                const createdAt = ride.createdAt || ride.bookingTime || null;
-                
-                return (
-                <tr key={ride._id || ride.rideId || `ride-${index}`} className="hover:bg-gray-50">
-                  <td className="px-3 py-3">
-                    <div className="text-sm font-medium text-gray-900 truncate">
-                      #{rideId}
-                    </div>
-                    <div className="text-sm text-gray-500 truncate max-w-xs">
-                      To: {destination}
-                    </div>
-                    <div className="flex items-center space-x-2 mt-1">
-                      {ride.estimatedFare && (
-                        <span className="text-xs font-semibold text-green-600">
-                          ₹{ride.estimatedFare}
-                        </span>
-                      )}
-                      {ride.vehicleType && (
-                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                          {ride.vehicleType.charAt(0).toUpperCase() + ride.vehicleType.slice(1)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-400 mt-1 truncate">
-                      From: {locationName}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center">
-                      <FaUser className="text-blue-500 mr-2 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-gray-900 truncate">
-                          {userName}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-3">
-                    {ride.driverId ? (
-                      <DriverStatusIndicator 
-                        driver={{
-                          ...ride.driverId,
-                          fullName: ride.driverId.name || ride.driverId.fullName || driverName,
-                          mobileNo: ride.driverId.phone || ride.driverId.mobileNo,
-                          vehicleNo: ride.driverId.vehicleNumber || ride.driverId.vehicleNo,
-                          queuePosition: ride.queuePosition,
-                          currentRide: ride.status === 'ride_started' || ride.status === 'driver_assigned' ? ride._id : null,
-                          isOnline: true // Assume online if assigned to ride
-                        }}
-                        showDetails={false}
-                        size="small"
-                      />
-                    ) : (
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse flex-shrink-0"></div>
-                        <span className="text-sm text-orange-600 font-medium truncate">Searching...</span>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    {getStatusBadge(status)}
-                  </td>
-                  <td className="px-3 py-3">
-                    {queueNumber ? (
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">{queueNumber}</div>
-                        {queuePosition && (
-                          <div className="text-gray-500 text-xs">#{queuePosition}</div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-500">-</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-sm font-medium">
-                    <button
-                      onClick={() => viewRideDetails(ride._id)}
-                      className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
-                    >
-                      <FaEye />
-                      <span>View</span>
-                    </button>
-                  </td>
-                </tr>
-                );
-              }).filter(Boolean)}
-            </tbody>
-          </table>
-          
-          {/* Mobile Card Layout */}
-          <div className="table-mobile">
-            <div className="p-4 space-y-4">
-              {Array.isArray(rides) && rides.map((ride, index) => {
-                if (!ride || !ride._id) {
-                  console.warn('🔍 [Ride Management] Invalid ride data at index:', index, ride);
-                  return null;
-                }
-                
-                // Safe data extraction
-                const rideId = ride.rideId || ride._id?.slice(-8) || 'Unknown';
-                const destination = ride.destination || 'No destination';
-                const pickupLocation = ride.pickupLocation;
-                const locationName = typeof pickupLocation === 'object' 
-                  ? (pickupLocation?.boothName || 'Unknown') 
-                  : (pickupLocation || 'Unknown');
-                const userName = ride.userId?.name || ride.user?.name || 'Unknown User';
-                const userPhone = ride.userId?.phone || ride.user?.phone || '';
-                const driverName = ride.driverId?.name || ride.driverId?.fullName || ride.driver?.name || ride.driverName || '';
-                const vehicleNumber = ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driver?.vehicleNumber || ride.driverVehicleNo || '';
-                const status = ride.status || 'unknown';
-                const queueNumber = ride.queueNumber || '';
-                const queuePosition = ride.queuePosition || '';
-                const createdAt = ride.createdAt || ride.bookingTime || null;
-                
-                return (
-                  <div key={ride._id || ride.rideId || `ride-${index}`} className="table-card">
-                    <div className="table-card-header">
-                      <div>
-                        <div className="table-card-title">#{rideId}</div>
-                        <div className="table-card-subtitle">To: {destination}</div>
-                        <div className="flex items-center gap-2 mt-2">
-                          {ride.estimatedFare && (
-                            <span className="text-xs font-semibold text-green-600">
-                              ₹{ride.estimatedFare}
-                            </span>
-                          )}
-                          {ride.vehicleType && (
-                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                              {ride.vehicleType.charAt(0).toUpperCase() + ride.vehicleType.slice(1)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {getStatusBadge(status)}
-                      </div>
-                    </div>
-                    
-                    <div className="table-card-body">
-                      <div className="table-card-row">
-                        <span className="table-card-label">From</span>
-                        <span className="table-card-value">{locationName}</span>
-                      </div>
-                      
-                      <div className="table-card-row">
-                        <span className="table-card-label">User</span>
-                        <div className="table-card-value text-right">
-                          <div className="font-medium">{userName}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="table-card-row">
-                        <span className="table-card-label">Driver</span>
-                        <div className="table-card-value text-right">
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+          <div className="p-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex-1 min-w-[200px]">
+                <div className="relative">
+                  <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by ID, user, driver..."
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    value={filters.searchQuery}
+                    onChange={handleSearch}
+                  />
+                </div>
+              </div>
+
+              <select
+                name="booth"
+                value={filters.booth}
+                onChange={handleFilterChange}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="all">All Booths</option>
+                {booths.map(booth => (
+                  <option key={booth.id} value={booth.name}>
+                    {booth.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                name="status"
+                value={filters.status}
+                onChange={handleFilterChange}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="driver_assigned">Driver Assigned</option>
+                <option value="ride_started">Ride Started</option>
+                <option value="ride_ended">Ride Ended</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+
+              <input
+                type="date"
+                name="startDate"
+                value={filters.startDate}
+                onChange={handleFilterChange}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+
+              <input
+                type="date"
+                name="endDate"
+                value={filters.endDate}
+                onChange={handleFilterChange}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+
+              <button
+                onClick={() => setFilters({
+                  booth: 'all',
+                  status: 'all',
+                  startDate: '',
+                  endDate: '',
+                  searchQuery: ''
+                })}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2"
+              >
+                <FaFilter />
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Rides Table */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          {loading && rides.length === 0 ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-4 text-gray-600">Loading rides...</p>
+                {retryCount > 0 && (
+                  <p className="text-sm text-gray-500 mt-2">
+                    Retry attempt {retryCount}/3
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <p className="text-red-600 mb-4">{error}</p>
+                <button
+                  onClick={handleRefresh}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          ) : rides.length === 0 ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <FaCar className="text-6xl text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-600">No rides found</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Try adjusting your filters or check back later
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Ride ID
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      User
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      From → To
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Driver
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Fare
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Time
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {Array.isArray(rides) && rides.map((ride, index) => {
+                    if (!ride || !ride._id) {
+                      console.warn('🔍 [Ride Management] Invalid ride data at index:', index, ride);
+                      return null;
+                    }
+
+                    // Safe data extraction
+                    const rideId = ride.rideId || ride._id?.slice(-8) || 'Unknown';
+                    const destination = ride.destination || 'No destination';
+                    const pickupLocation = ride.pickupLocation;
+                    const locationName = typeof pickupLocation === 'object'
+                      ? (pickupLocation?.boothName || 'Unknown')
+                      : (pickupLocation || 'Unknown');
+                    const userName = ride.userId?.name || ride.user?.name || 'Unknown User';
+                    const userPhone = ride.userId?.phone || ride.user?.phone || '';
+                    const driverName = ride.driverId?.name || ride.driverId?.fullName || ride.driver?.name || ride.driverName || '';
+                    const vehicleNumber = ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driver?.vehicleNumber || ride.driverVehicleNo || '';
+                    const status = ride.status || 'unknown';
+                    // const queueNumber = ride.queueNumber || ''; // Not used in table layout
+                    const queuePosition = ride.queuePosition || '';
+                    const createdAt = ride.createdAt || ride.bookingTime || null;
+
+                    return (
+                      <tr key={ride._id || ride.rideId || `ride-${index}`} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">#{rideId}</div>
+                              {ride.vehicleType && (
+                                <div className="text-xs text-gray-500">
+                                  {ride.vehicleType.charAt(0).toUpperCase() + ride.vehicleType.slice(1)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{userName}</div>
+                          {userPhone && <div className="text-xs text-gray-500">{userPhone}</div>}
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">
+                            <div className="flex items-center">
+                              <FaMapMarkerAlt className="text-green-500 text-xs mr-1" />
+                              <span className="font-medium">{locationName}</span>
+                            </div>
+                            <div className="flex items-center mt-1">
+                              <FaMapMarkerAlt className="text-red-500 text-xs mr-1" />
+                              <span className="text-gray-600 text-xs">{destination}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
                           {ride.driverId ? (
-                            <DriverStatusIndicator 
-                              driver={{
-                                ...ride.driverId,
-                                fullName: ride.driverId.name || ride.driverId.fullName || driverName,
-                                mobileNo: ride.driverId.phone || ride.driverId.mobileNo,
-                                vehicleNo: ride.driverId.vehicleNumber || ride.driverId.vehicleNo,
-                                queuePosition: ride.queuePosition,
-                                currentRide: ride.status === 'ride_started' || ride.status === 'driver_assigned' ? ride._id : null,
-                                isOnline: true // Assume online if assigned to ride
-                              }}
-                              showDetails={false}
-                              size="small"
-                            />
+                            <div className="text-sm">
+                              <div className="font-medium text-gray-900">{driverName}</div>
+                              {vehicleNumber && <div className="text-xs text-gray-500">{vehicleNumber}</div>}
+                              {queuePosition && <div className="text-xs text-blue-600">Queue: #{queuePosition}</div>}
+                            </div>
                           ) : (
-                            <div className="flex items-center justify-end">
+                            <div className="flex items-center">
                               <div className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse"></div>
                               <span className="text-xs text-orange-600">Searching...</span>
                             </div>
                           )}
-                        </div>
-                      </div>
-                      
-                      {queueNumber && (
-                        <div className="table-card-row">
-                          <span className="table-card-label">Queue</span>
-                          <div className="table-card-value text-right">
-                            <div className="font-medium">{queueNumber}</div>
-                            {queuePosition && <div className="text-xs text-gray-500">#{queuePosition}</div>}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="table-card-actions">
-                      <button
-                        onClick={() => viewRideDetails(ride._id)}
-                        className="table-card-action-btn bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        <FaEye className="inline mr-2" />
-                        View Details
-                      </button>
-                    </div>
-                  </div>
-                );
-              }).filter(Boolean)}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {getStatusBadge(status)}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {(() => {
+                            const fareAmount = getFareAmount(ride);
+                            return fareAmount > 0 ? (
+                              <div className="text-sm font-semibold text-green-600">
+                                ₹{fareAmount}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-400">-</div>
+                            );
+                          })()}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {createdAt ? formatDateTime(createdAt) : 'N/A'}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <button
+                            onClick={() => viewRideDetails(ride._id)}
+                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-600 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                          >
+                            <FaEye className="mr-1" />
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
+
+          {/* Load More Button */}
+          {pagination.hasMore && !loading && (
+            <div className="p-4 border-t border-gray-200">
+              <button
+                onClick={handleLoadMore}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Load More Rides
+              </button>
+            </div>
+          )}
         </div>
-
-        {/* Load More Button */}
-        {!error && pagination?.hasMore && (
-          <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-            <button
-              onClick={loadMoreRides}
-              disabled={loading}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {loading ? 'Loading...' : `Load More Rides (${(pagination?.total || 0) - (Array.isArray(rides) ? rides.length : 0)} remaining)`}
-            </button>
-          </div>
-        )}
-
-        {/* Error State */}
-        {error && (
-          <div className="text-center py-12">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6 mx-4">
-              <h3 className="text-lg font-medium text-red-800 mb-2">Error Loading Data</h3>
-              <p className="text-red-600 mb-4">{error}</p>
-              {retryCount >= 2 && (
-                <button
-                  onClick={() => {
-                    setRetryCount(0);
-                    loadRides(true);
-                  }}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  Retry Now
-                </button>
-              )}
-              {retryCount < 2 && (
-                <p className="text-sm text-red-500">
-                  Retrying automatically... (Attempt {retryCount + 1}/3)
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading && !error && (!Array.isArray(rides) || rides.length === 0) && (
-          <div className="text-center py-12">
-            <FaSearch className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No rides found</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Try adjusting your search filters or check back later.
-            </p>
-            <button
-              onClick={() => loadRides(true)}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Refresh Data
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Ride Details Modal */}
       {showDetails && selectedRide && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-gray-900">
-                Ride Details - {selectedRide.rideId || selectedRide._id.slice(-8)}
-              </h3>
-              <button
-                onClick={() => setShowDetails(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              {/* Basic Info */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Status</label>
-                  <div className="mt-1">{getStatusBadge(selectedRide.status)}</div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Vehicle Type</label>
-                  <div className="mt-1 text-sm text-gray-900 capitalize">
-                    {selectedRide.vehicleType || 'N/A'}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Created</label>
-                  <div className="mt-1 text-sm text-gray-900">
-                    {formatDateTime(selectedRide.createdAt)}
-                  </div>
-                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">
+                  Ride Details - #{selectedRide.rideId || selectedRide._id?.slice(-8)}
+                </h2>
+                <button
+                  onClick={() => setShowDetails(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
               </div>
+            </div>
 
-              {/* Quick Summary */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-900 mb-2">Ride Summary</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-6 space-y-6">
+              {/* Status Timeline */}
+              <RideStatusTimeline ride={selectedRide} />
+
+              {/* Basic Info */}
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">Basic Information</h4>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-700">Ride ID</label>
                     <div className="mt-1 text-sm text-gray-900">
-                      #{selectedRide.rideId || selectedRide._id?.slice(-8)}
+                      {selectedRide.rideId || selectedRide._id}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Status</label>
+                    <div className="mt-1">
+                      {getStatusBadge(selectedRide.status)}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Vehicle Type</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {selectedRide.vehicleType?.charAt(0).toUpperCase() + selectedRide.vehicleType?.slice(1) || 'N/A'}
                     </div>
                   </div>
                   <div>
@@ -1423,46 +981,8 @@ const RideManagement = () => {
                 </div>
               </div>
 
-              {/* Financial Info */}
-              <div className="bg-green-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-900 mb-2">Financial Details</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Estimated Fare</label>
-                    <div className="mt-1 text-sm font-semibold text-green-600">
-                      ₹{selectedRide.estimatedFare || selectedRide.fare || 0}
-                    </div>
-                  </div>
-                  {selectedRide.actualFare && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Actual Fare</label>
-                      <div className="mt-1 text-sm font-semibold text-green-600">
-                        ₹{selectedRide.actualFare}
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Distance</label>
-                    <div className="mt-1 text-sm text-gray-900">
-                      {selectedRide.distance ? `${selectedRide.distance} km` : 'N/A'}
-                    </div>
-                  </div>
-                  {selectedRide.paymentStatus && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Payment Status</label>
-                      <div className="mt-1">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          selectedRide.paymentStatus === 'collected' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {selectedRide.paymentStatus}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+              {/* Financial Details using new component */}
+              <RideFinancialDetails ride={selectedRide} showSummary={true} />
 
               {/* Location Info */}
               <div className="bg-red-50 p-4 rounded-lg">
@@ -1471,8 +991,8 @@ const RideManagement = () => {
                   <div>
                     <label className="text-sm font-medium text-gray-700">📍 Pickup Location</label>
                     <div className="mt-1 text-sm text-gray-900">
-                      {typeof selectedRide.pickupLocation === 'object' 
-                        ? selectedRide.pickupLocation.boothName || 'Unknown' 
+                      {typeof selectedRide.pickupLocation === 'object'
+                        ? selectedRide.pickupLocation.boothName || 'Unknown'
                         : selectedRide.pickupLocation || 'Unknown'}
                     </div>
                   </div>
@@ -1500,101 +1020,105 @@ const RideManagement = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium text-gray-700">Queue Number</label>
-                      <div className="mt-1 text-sm text-gray-900">{selectedRide.queueNumber}</div>
+                      <div className="mt-1 text-sm text-gray-900">
+                        {selectedRide.queueNumber}
+                      </div>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Position</label>
-                      <div className="mt-1 text-sm text-gray-900">#{selectedRide.queuePosition}</div>
+                      <div className="mt-1 text-sm text-gray-900">
+                        #{selectedRide.queuePosition || 'N/A'}
+                      </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* User Info */}
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">User Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Name</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {selectedRide.userId?.name || selectedRide.userName || 'Unknown'}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Phone</label>
+                    <div className="mt-1 text-sm text-gray-900">
+                      {selectedRide.userId?.mobileNo || selectedRide.userPhone || 'N/A'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Driver Info */}
+              {selectedRide.driverId && (
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Driver Information</h4>
+                  <DriverStatusIndicator
+                    driver={{
+                      ...selectedRide.driverId,
+                      fullName: selectedRide.driverId.name || selectedRide.driverId.fullName || selectedRide.driverName,
+                      mobileNo: selectedRide.driverId.phone || selectedRide.driverId.mobileNo || selectedRide.driverPhone,
+                      vehicleNo: selectedRide.driverId.vehicleNumber || selectedRide.driverId.vehicleNo || selectedRide.driverVehicleNo,
+                      queuePosition: selectedRide.queuePosition,
+                      currentRide: selectedRide.status === 'ride_started' || selectedRide.status === 'driver_assigned' ? selectedRide._id : null,
+                      isOnline: true,
+                      vehicleType: selectedRide.driverId.vehicleType || selectedRide.vehicleType,
+                      lastActiveTime: selectedRide.driverId.lastActiveTime,
+                      totalRides: selectedRide.driverId.totalRides,
+                      completedRides: selectedRide.driverId.completedRides,
+                      rating: selectedRide.driverId.rating,
+                      isAvailable: selectedRide.driverId.isAvailable,
+                      paymentStatus: selectedRide.paymentStatus || 'pending'
+                    }}
+                    showDetails={true}
+                    size="large"
+                  />
                 </div>
               )}
 
               {/* OTP Info */}
-              {(selectedRide.startOTP || selectedRide.endOTP) && (
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">OTP Information</h4>
+              {selectedRide.otp && (
+                <div className="bg-orange-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Verification</h4>
                   <div className="grid grid-cols-2 gap-4">
-                    {selectedRide.startOTP && (
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">Start OTP</label>
-                        <div className="mt-1 text-sm font-mono text-gray-900">{selectedRide.startOTP}</div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">OTP</label>
+                      <div className="mt-1 text-lg font-mono font-bold text-orange-600">
+                        {selectedRide.otp}
                       </div>
-                    )}
-                    {selectedRide.endOTP && (
-                      <div>
-                        <label className="text-sm font-medium text-gray-700">End OTP</label>
-                        <div className="mt-1 text-sm font-mono text-gray-900">{selectedRide.endOTP}</div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Verified</label>
+                      <div className="mt-1 text-sm text-gray-900">
+                        {selectedRide.otpVerified ? 'Yes' : 'No'}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               )}
-
-              {/* User & Driver Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">User Information</h4>
-                  {selectedRide.userId ? (
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">{selectedRide.userId.name}</div>
-                      <div className="text-sm text-gray-600">📞 {selectedRide.userId.phone}</div>
-                      {selectedRide.userId.email && (
-                        <div className="text-sm text-gray-600">📧 {selectedRide.userId.email}</div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-500">User information not available</div>
-                  )}
-                </div>
-
-                <div className="bg-yellow-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-3">Driver Information</h4>
-                  {selectedRide.driverId ? (
-                    <DriverStatusIndicator 
-                      driver={{
-                        ...selectedRide.driverId,
-                        fullName: selectedRide.driverId.name || selectedRide.driverId.fullName,
-                        mobileNo: selectedRide.driverId.phone || selectedRide.driverId.mobileNo,
-                        vehicleNo: selectedRide.driverId.vehicleNumber || selectedRide.driverId.vehicleNo,
-                        queuePosition: selectedRide.queuePosition,
-                        currentRide: selectedRide.status === 'ride_started' || selectedRide.status === 'driver_assigned' ? selectedRide._id : null,
-                        isOnline: true, // Assume online if assigned to ride
-                        rating: selectedRide.driverId.rating || 0,
-                        totalRides: selectedRide.driverId.totalRides || 0,
-                        currentMetroBooth: selectedRide.pickupLocation?.boothName
-                      }}
-                      showDetails={true}
-                      size="medium"
-                    />
-                  ) : (
-                    <div className="text-sm text-gray-500">No driver assigned</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Ride Timeline */}
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-900 mb-3">Ride Timeline</h4>
-                <RideStatusTimeline 
-                  ride={{
-                    ...selectedRide,
-                    timestamp: selectedRide.createdAt || selectedRide.timestamp,
-                    assignedAt: selectedRide.acceptedAt || selectedRide.assignedAt,
-                    paymentStatus: selectedRide.paymentStatus || 'pending'
-                  }}
-                  showTimestamps={true}
-                />
-              </div>
             </div>
 
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setShowDetails(false)}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Close
-              </button>
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4">
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => window.open(`/api/admin/rides/${selectedRide._id}/invoice`, '_blank')}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2"
+                >
+                  <MdDownload />
+                  Download Invoice
+                </button>
+                <button
+                  onClick={() => setShowDetails(false)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

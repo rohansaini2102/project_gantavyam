@@ -49,6 +49,39 @@ const MinimalDriverDashboard = () => {
   const [earnings, setEarnings] = useState(0);
   const [tripsToday, setTripsToday] = useState(0);
 
+  // Helper function to get driver's earnings (base fare only, no GST/commission)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field (most accurate - what driver actually earns)
+    if (ride.driverFare && ride.driverFare > 0) {
+      return ride.driverFare;
+    }
+
+    // TEMPORARY FALLBACK: For existing ride requests without driverFare field
+    // This handles the transition period until all new requests have driverFare
+    if (ride.fare && ride.fare > 0) {
+      console.warn(`[MinimalDriverDashboard] Using fallback fare for ride ${ride._id} - driverFare missing`);
+      return ride.fare;
+    }
+
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      console.warn(`[MinimalDriverDashboard] Using fallback estimatedFare for ride ${ride._id} - driverFare missing`);
+      return ride.estimatedFare;
+    }
+
+    // Log warning if no fare data available
+    if (ride && ride._id) {
+      console.warn(`[MinimalDriverDashboard] No fare data available for ride ${ride._id}:`, {
+        rideId: ride._id,
+        driverFare: ride.driverFare,
+        fare: ride.fare,
+        estimatedFare: ride.estimatedFare,
+        status: ride.status
+      });
+    }
+
+    return 0;
+  };;
+
   // Initialize socket connection
   useEffect(() => {
     const initSocket = async () => {
@@ -94,7 +127,7 @@ const MinimalDriverDashboard = () => {
           actions.setActiveRide(null);
           setRideStage('assigned');
           setTripsToday(prev => prev + 1);
-          setEarnings(prev => prev + (data.fare || 0));
+          setEarnings(prev => prev + getDriverEarnings(data));
         },
         onDriverOnlineConfirmed: (data) => {
           console.log('Driver online confirmed:', data);

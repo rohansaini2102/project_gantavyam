@@ -51,6 +51,36 @@ const rideHistorySchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+
+  // New fare fields for commission system
+  driverFare: {
+    type: Number,
+    default: null // Driver's base earnings (without GST/commission)
+  },
+  customerFare: {
+    type: Number,
+    default: null // Total customer payment
+  },
+  gstAmount: {
+    type: Number,
+    default: 0
+  },
+  commissionAmount: {
+    type: Number,
+    default: 0
+  },
+  nightChargeAmount: {
+    type: Number,
+    default: 0
+  },
+  fareBreakdown: {
+    base: Number,
+    gst: Number,
+    commission: Number,
+    nightCharge: Number,
+    total: Number,
+    driverEarning: Number
+  },
   
   // Status and completion
   status: {

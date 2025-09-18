@@ -144,7 +144,23 @@ router.get('/', async (req, res) => {
     // Execute both queries in parallel
     const [activeRides, historyRides] = await Promise.all([activeRidesPromise, historyRidesPromise]);
 
-    // FIXED: Normalize RideRequest data to ensure destination field exists
+    // Helper function to calculate customer fare from driver fare
+    const calculateCustomerFareFromDriverFare = (driverFare, vehicleType = 'auto') => {
+      if (!driverFare || driverFare <= 0) return 0;
+
+      // Customer fare = driverFare + commission(~10%) + GST(~5%) + platform fee(~3%)
+      // Total markup ≈ 18-20%, so customer pays ≈ 1.18-1.2x driver fare
+      const markup = 1.18; // Conservative 18% markup
+      const customerFare = Math.round(driverFare * markup);
+
+      // Ensure minimum customer fare based on vehicle type
+      const minCustomerFares = { auto: 46, bike: 35, car: 70 };
+      const minFare = minCustomerFares[vehicleType] || 46;
+
+      return Math.max(customerFare, minFare);
+    };
+
+    // FIXED: Normalize RideRequest data to ensure destination field exists and include fare breakdown
     activeRides.forEach(ride => {
       // Ensure destination field is set from dropLocation.address
       if (!ride.destination && ride.dropLocation?.address) {
@@ -152,34 +168,66 @@ router.get('/', async (req, res) => {
       } else if (!ride.destination) {
         ride.destination = 'Not specified';
       }
+
+      // Ensure fare fields are properly set for admin view
+      if (!ride.driverFare && ride.fare) {
+        ride.driverFare = ride.fare; // Driver earnings
+      }
+      if (!ride.customerFare && ride.estimatedFare) {
+        ride.customerFare = ride.estimatedFare; // What customer pays
+      }
+
+      // Ensure GST, commission, and night charge amounts are included
+      ride.gstAmount = ride.gstAmount || 0;
+      ride.commissionAmount = ride.commissionAmount || 0;
+      ride.nightChargeAmount = ride.nightChargeAmount || 0;
     });
 
     // Normalize RideHistory data to match RideRequest format
-    const normalizedHistoryRides = historyRides.map(ride => ({
-      _id: ride._id,
-      rideId: ride.rideId,
-      status: ride.status === 'completed' ? 'completed' : ride.status,
-      pickupLocation: ride.pickupLocation?.boothName || ride.pickupLocation,
-      destination: ride.dropLocation?.address || 'Not specified',
-      userId: ride.userId,
-      driverId: ride.driverId,
-      // Use driver info from embedded fields if populate failed
-      driverName: ride.driverId?.name || ride.driverId?.fullName || ride.driverName,
-      driverPhone: ride.driverId?.phone || ride.driverId?.mobileNo || ride.driverPhone,
-      driverVehicleNo: ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driverVehicleNo,
-      estimatedFare: ride.estimatedFare,
-      actualFare: ride.actualFare,
-      distance: ride.distance,
-      vehicleType: ride.vehicleType,
-      queueNumber: ride.boothRideNumber,
-      createdAt: ride.timestamps?.requested || ride.createdAt,
-      completedAt: ride.timestamps?.completed,
-      paymentStatus: ride.paymentStatus,
-      paymentMethod: ride.paymentMethod,
-      // Include OTPs for history rides
-      startOTP: ride.startOTP,
-      endOTP: ride.endOTP
-    }));
+    const normalizedHistoryRides = historyRides.map(ride => {
+      // Calculate customer fare if missing (FIXED FOR ADMIN)
+      let customerFare = ride.customerFare;
+      if (!customerFare && ride.driverFare && ride.driverFare > 0) {
+        customerFare = calculateCustomerFareFromDriverFare(ride.driverFare, ride.vehicleType);
+      } else if (!customerFare && ride.estimatedFare && ride.estimatedFare > 0) {
+        // If estimatedFare exists but no customerFare, use estimatedFare as fallback
+        customerFare = ride.estimatedFare;
+      }
+
+      return {
+        _id: ride._id,
+        rideId: ride.rideId,
+        status: ride.status === 'completed' ? 'completed' : ride.status,
+        pickupLocation: ride.pickupLocation?.boothName || ride.pickupLocation,
+        destination: ride.dropLocation?.address || 'Not specified',
+        userId: ride.userId,
+        driverId: ride.driverId,
+        // Use driver info from embedded fields if populate failed
+        driverName: ride.driverId?.name || ride.driverId?.fullName || ride.driverName,
+        driverPhone: ride.driverId?.phone || ride.driverId?.mobileNo || ride.driverPhone,
+        driverVehicleNo: ride.driverId?.vehicleNumber || ride.driverId?.vehicleNo || ride.driverVehicleNo,
+        estimatedFare: customerFare, // Show customer fare as estimated fare for admin
+        actualFare: customerFare, // Show customer fare as actual fare for admin
+        // Include both driver and customer fares for admin (FIXED)
+        fare: ride.driverFare || ride.fare, // Driver earnings
+        driverFare: ride.driverFare || ride.fare, // Explicit driver earnings
+        customerFare: customerFare, // What customer pays (CALCULATED IF MISSING)
+        gstAmount: ride.gstAmount || Math.round((customerFare || 0) * 0.05), // Calculate 5% GST if missing
+        commissionAmount: ride.commissionAmount || Math.round((ride.driverFare || 0) * 0.10), // Calculate 10% commission if missing
+        nightChargeAmount: ride.nightChargeAmount || 0,
+        fareBreakdown: ride.fareBreakdown,
+        distance: ride.distance,
+        vehicleType: ride.vehicleType,
+        queueNumber: ride.boothRideNumber,
+        createdAt: ride.timestamps?.requested || ride.createdAt,
+        completedAt: ride.timestamps?.completed,
+        paymentStatus: ride.paymentStatus,
+        paymentMethod: ride.paymentMethod,
+        // Include OTPs for history rides
+        startOTP: ride.startOTP,
+        endOTP: ride.endOTP
+      };
+    });
 
     // Combine and sort all rides
     const allRides = [...activeRides, ...normalizedHistoryRides];

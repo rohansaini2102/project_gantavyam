@@ -157,25 +157,59 @@ router.get('/driver/detailed-history', protect, async (req, res) => {
     
     const totalRides = await RideHistory.countDocuments(filter);
     
+    // Helper function to calculate driver earnings from customer fare
+    const calculateDriverEarningsFromCustomerFare = (customerFare) => {
+      if (!customerFare || customerFare <= 0) return 0;
+      // Reverse calculation: customerFare ≈ driverFare × 1.155 (assuming no night charge)
+      const estimatedDriverFare = Math.round(customerFare / 1.155);
+      return Math.max(0, estimatedDriverFare);
+    };
+
+    // Get driver earnings from each ride
+    const getDriverEarnings = (ride) => {
+      if (ride.driverFare && ride.driverFare > 0) {
+        return ride.driverFare;
+      } else if (ride.estimatedFare && ride.estimatedFare > 0) {
+        return ride.estimatedFare;
+      } else if (ride.actualFare && ride.actualFare > 0) {
+        return calculateDriverEarningsFromCustomerFare(ride.actualFare);
+      }
+      return 0;
+    };
+
+    // Map ride history to show driver earnings
+    const mappedRideHistory = rideHistory.map(ride => ({
+      ...ride.toObject(),
+      fare: getDriverEarnings(ride),
+      actualFare: getDriverEarnings(ride),
+      estimatedFare: getDriverEarnings(ride),
+      driverFare: getDriverEarnings(ride),
+      // Hide customer-specific data
+      gstAmount: undefined,
+      commissionAmount: undefined,
+      nightChargeAmount: undefined,
+      customerFare: undefined
+    }));
+
     // Calculate summary statistics
     const completedRides = await RideHistory.find({ driverId: driverId, status: 'completed' });
     const analytics = {
       totalRides: totalRides,
       completedRides: completedRides.length,
       cancelledRides: totalRides - completedRides.length,
-      totalEarnings: completedRides.reduce((sum, ride) => sum + ride.actualFare, 0),
-      averageEarningsPerRide: completedRides.length > 0 ? 
+      totalEarnings: completedRides.reduce((sum, ride) => sum + getDriverEarnings(ride), 0),
+      averageEarningsPerRide: completedRides.length > 0 ?
         completedRides.reduce((sum, ride) => sum + ride.actualFare, 0) / completedRides.length : 0,
-      averageDistance: completedRides.length > 0 ? 
+      averageDistance: completedRides.length > 0 ?
         completedRides.reduce((sum, ride) => sum + ride.distance, 0) / completedRides.length : 0,
-      averageRideDuration: completedRides.length > 0 ? 
+      averageRideDuration: completedRides.length > 0 ?
         completedRides.reduce((sum, ride) => sum + (ride.journeyStats?.rideDuration || 0), 0) / completedRides.length : 0
     };
-    
+
     res.json({
       success: true,
       data: {
-        rideHistory: rideHistory,
+        rideHistory: mappedRideHistory,
         analytics: analytics,
         pagination: {
           currentPage: parseInt(page),

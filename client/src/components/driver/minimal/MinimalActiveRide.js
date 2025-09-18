@@ -77,6 +77,39 @@ const MinimalActiveRide = ({
     }
   };
 
+  // Helper function to get driver's earnings (base fare only, no GST/commission)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field (most accurate - what driver actually earns)
+    if (ride.driverFare && ride.driverFare > 0) {
+      return ride.driverFare;
+    }
+
+    // TEMPORARY FALLBACK: For existing ride requests without driverFare field
+    // This handles the transition period until all new requests have driverFare
+    if (ride.fare && ride.fare > 0) {
+      console.warn(`[MinimalActiveRide] Using fallback fare for ride ${ride._id} - driverFare missing`);
+      return ride.fare;
+    }
+
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      console.warn(`[MinimalActiveRide] Using fallback estimatedFare for ride ${ride._id} - driverFare missing`);
+      return ride.estimatedFare;
+    }
+
+    // Log warning if no fare data available
+    if (ride && ride._id) {
+      console.warn(`[MinimalActiveRide] No fare data available for ride ${ride._id}:`, {
+        rideId: ride._id,
+        driverFare: ride.driverFare,
+        fare: ride.fare,
+        estimatedFare: ride.estimatedFare,
+        status: ride.status
+      });
+    }
+
+    return 0;
+  };
+
   return (
     <div className="minimal-active-ride">
       {/* Stage Indicator */}
@@ -115,7 +148,7 @@ const MinimalActiveRide = ({
 
         {/* Fare Display */}
         <div className="text-2xl font-bold mb-4">
-          ₹{ride.estimatedFare || ride.fare || '0'}
+          ₹{getDriverEarnings(ride)}
         </div>
 
         {/* Locations */}

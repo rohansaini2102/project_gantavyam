@@ -37,21 +37,52 @@ const broadcastStateChange = (eventType, data) => {
     }
   }
   
-  // Notify all drivers about queue changes
+  // Notify all drivers about queue changes (with stability checks)
   if (eventType === 'queuePositionsUpdated') {
+    console.log(`📡 Broadcasting queue position updates to ${connectedClients.size} connected clients...`);
+
     connectedClients.forEach((socket, userId) => {
       if (socket.user && socket.user.role === 'driver') {
         const driverUpdate = data.queueUpdates?.find(q => q._id?.toString() === userId);
         if (driverUpdate) {
+          // Stability check: Only broadcast if position actually changed significantly
+          const lastBroadcastPosition = socket.lastBroadcastPosition || null;
+          const newPosition = driverUpdate.queuePosition;
+
+          // Skip broadcast if position hasn't changed
+          if (lastBroadcastPosition === newPosition) {
+            console.log(`📋 Skipping broadcast to ${socket.user.fullName} - position unchanged (${newPosition})`);
+            return;
+          }
+
+          // Add validation for reasonable position changes
+          if (lastBroadcastPosition !== null && newPosition !== null) {
+            const positionChange = Math.abs(newPosition - lastBroadcastPosition);
+
+            // Warn about large position changes (potential queue corruption)
+            if (positionChange > 10) {
+              console.warn(`⚠️ Large position change detected for ${socket.user.fullName}: ${lastBroadcastPosition} -> ${newPosition} (change: ${positionChange})`);
+              console.warn(`📋 Action: ${data.action}, Timestamp: ${data.timestamp}`);
+            }
+          }
+
+          console.log(`📡 Broadcasting to ${socket.user.fullName}: position ${lastBroadcastPosition || 'unknown'} -> ${newPosition}`);
+
           socket.emit('queuePositionUpdated', {
-            queuePosition: driverUpdate.queuePosition,
+            queuePosition: newPosition,
             totalOnline: data.totalOnline,
             timestamp: data.timestamp,
-            action: data.action
+            action: data.action,
+            previousPosition: lastBroadcastPosition
           });
+
+          // Store the last broadcast position for stability checks
+          socket.lastBroadcastPosition = newPosition;
         }
       }
     });
+
+    console.log('📡 Queue position broadcast completed');
   }
 };
 
@@ -170,88 +201,183 @@ const updateQueueAfterDriverAddition = async (addedDriverId) => {
 const validateQueueIntegrity = async () => {
   try {
     console.log('🔍 Validating queue integrity...');
-    
+
     const onlineDrivers = await Driver.find({
       isOnline: true,
       isVerified: true
-    }).sort({ 
-      queueEntryTime: 1,
-      lastActiveTime: 1
+    }).sort({
+      queuePosition: 1  // Sort by current position first to check integrity
     });
-    
-    let hasIssues = false;
+
+    let hasCriticalIssues = false;
     const issues = [];
-    
-    // Check for duplicate positions
+    const criticalIssues = [];
+
+    // Check for duplicate positions (CRITICAL - must fix immediately)
     const positions = onlineDrivers.map(d => d.queuePosition).filter(p => p !== null);
     const duplicates = positions.filter((pos, index) => positions.indexOf(pos) !== index);
     if (duplicates.length > 0) {
-      hasIssues = true;
-      issues.push(`Duplicate queue positions: ${duplicates.join(', ')}`);
+      hasCriticalIssues = true;
+      criticalIssues.push(`Duplicate queue positions: ${duplicates.join(', ')}`);
+      console.log(`🚨 CRITICAL: Found duplicate positions that MUST be fixed immediately: ${duplicates.join(', ')}`);
     }
-    
-    // Check for missing positions (gaps in sequence)
+
+    // Check for drivers without queue entry time (CRITICAL - must fix)
+    const driversWithoutEntryTime = onlineDrivers.filter(d => !d.queueEntryTime && d.queuePosition);
+    if (driversWithoutEntryTime.length > 0) {
+      console.log(`⚠️ Found ${driversWithoutEntryTime.length} drivers without queue entry time - setting now`);
+      // Fix missing entry times without reordering
+      await Promise.all(driversWithoutEntryTime.map(driver =>
+        Driver.findByIdAndUpdate(driver._id, {
+          queueEntryTime: driver.lastActiveTime || new Date()
+        })
+      ));
+      issues.push(`Fixed ${driversWithoutEntryTime.length} drivers without queue entry time`);
+    }
+
+    // Check for missing positions (NON-CRITICAL - gaps are OK temporarily)
     const expectedPositions = Array.from({ length: onlineDrivers.length }, (_, i) => i + 1);
     const missingPositions = expectedPositions.filter(pos => !positions.includes(pos));
     if (missingPositions.length > 0) {
-      hasIssues = true;
-      issues.push(`Missing queue positions: ${missingPositions.join(', ')}`);
+      issues.push(`Minor gaps in queue positions: ${missingPositions.join(', ')} (will auto-correct gradually)`);
+      console.log(`📋 Non-critical queue gaps detected: ${missingPositions.join(', ')} - allowing natural correction`);
     }
-    
-    // Check for drivers without queue entry time
-    const driversWithoutEntryTime = onlineDrivers.filter(d => !d.queueEntryTime);
-    if (driversWithoutEntryTime.length > 0) {
-      hasIssues = true;
-      issues.push(`${driversWithoutEntryTime.length} drivers without queue entry time`);
-    }
-    
-    if (hasIssues) {
-      console.log('⚠️ Queue integrity issues found:', issues);
-      await reorderQueueByEntryTime();
-      console.log('✅ Queue integrity issues fixed');
+
+    // Only reorder if there are CRITICAL issues (duplicates)
+    if (hasCriticalIssues) {
+      console.log('🚨 CRITICAL queue integrity issues found:', criticalIssues);
+      console.log('📋 Performing minimal correction for critical issues only...');
+      await fixCriticalQueueIssues();
+      console.log('✅ Critical queue integrity issues fixed');
       return false;
     }
-    
-    console.log('✅ Queue integrity validated - no issues found');
+
+    if (issues.length > 0) {
+      console.log('📋 Minor queue issues (no action needed):', issues);
+    } else {
+      console.log('✅ Queue integrity validated - no issues found');
+    }
     return true;
-    
+
   } catch (error) {
     console.error('❌ Error validating queue integrity:', error);
     return false;
   }
 };
 
-// Function to reorder queue by entry time (first-come-first-served)
-const reorderQueueByEntryTime = async () => {
+// Function to fix only critical queue issues (duplicates)
+const fixCriticalQueueIssues = async () => {
   try {
-    console.log('🔄 Reordering queue by entry time...');
-    
+    console.log('🔧 Fixing critical queue issues (duplicates only)...');
+
     // Get all online drivers sorted by queue entry time
     const onlineDrivers = await Driver.find({
       isOnline: true,
       isVerified: true
-    }).sort({ 
+    }).sort({
       queueEntryTime: 1,
       lastActiveTime: 1 // Fallback for drivers without queueEntryTime
     });
-    
+
+    console.log(`📋 Found ${onlineDrivers.length} online drivers to check for duplicates`);
+
+    // Find drivers with duplicate positions
+    const positions = onlineDrivers.map(d => d.queuePosition).filter(p => p !== null);
+    const duplicates = positions.filter((pos, index) => positions.indexOf(pos) !== index);
+
+    console.log(`📋 Current positions: [${positions.join(', ')}]`);
+    console.log(`📋 Duplicate positions detected: [${duplicates.join(', ')}]`);
+
+    if (duplicates.length > 0) {
+      console.log(`🚨 FIXING ${duplicates.length} duplicate positions:`, duplicates);
+
+      // Only update drivers that have duplicate positions
+      let nextAvailablePosition = Math.max(...positions) + 1;
+      console.log(`📋 Starting next available position at: ${nextAvailablePosition}`);
+
+      let fixedCount = 0;
+
+      for (const duplicatePos of [...new Set(duplicates)]) {
+        const driversAtPosition = onlineDrivers.filter(d => d.queuePosition === duplicatePos);
+        console.log(`📋 Found ${driversAtPosition.length} drivers at position ${duplicatePos}:`);
+        driversAtPosition.forEach((d, i) => {
+          console.log(`   ${i + 1}. ${d.fullName} (Entry: ${d.queueEntryTime || d.lastActiveTime})`);
+        });
+
+        // Keep the first driver (by entry time) at the original position
+        // Move others to new positions
+        for (let i = 1; i < driversAtPosition.length; i++) {
+          const driver = driversAtPosition[i];
+          console.log(`📋 MOVING ${driver.fullName}: position ${duplicatePos} → ${nextAvailablePosition}`);
+
+          const updateResult = await Driver.findByIdAndUpdate(driver._id, {
+            queuePosition: nextAvailablePosition
+          }, { new: true });
+
+          if (updateResult) {
+            console.log(`✅ Successfully moved ${driver.fullName} to position ${nextAvailablePosition}`);
+            fixedCount++;
+          } else {
+            console.error(`❌ Failed to update ${driver.fullName}`);
+          }
+
+          nextAvailablePosition++;
+        }
+      }
+
+      console.log(`✅ Critical queue issues fixed: ${fixedCount} drivers repositioned`);
+    } else {
+      console.log('📋 No duplicate positions found - no fixes needed');
+    }
+
+  } catch (error) {
+    console.error('❌ Error fixing critical queue issues:', error);
+    console.error('❌ Stack trace:', error.stack);
+  }
+};
+
+// Function to reorder queue by entry time (only used for complete rebuild)
+const reorderQueueByEntryTime = async () => {
+  try {
+    console.log('🔄 FULL REORDER: Rebuilding entire queue by entry time...');
+    console.log('⚠️ WARNING: This will change ALL driver positions!');
+
+    // Get all online drivers sorted by queue entry time
+    const onlineDrivers = await Driver.find({
+      isOnline: true,
+      isVerified: true
+    }).sort({
+      queueEntryTime: 1,
+      lastActiveTime: 1 // Fallback for drivers without queueEntryTime
+    });
+
+    // Log before changes
+    console.log('📋 Current queue state before reorder:');
+    onlineDrivers.forEach(driver => {
+      console.log(`   ${driver.fullName}: Position ${driver.queuePosition} (Entry: ${driver.queueEntryTime || driver.lastActiveTime})`);
+    });
+
     // Reassign positions based on sorted order
     const updatePromises = onlineDrivers.map((driver, index) => {
       const newPosition = index + 1;
-      console.log(`📋 Driver ${driver.fullName} -> Position ${newPosition} (Entry: ${driver.queueEntryTime || driver.lastActiveTime})`);
-      
+      const oldPosition = driver.queuePosition;
+
+      if (oldPosition !== newPosition) {
+        console.log(`📋 Driver ${driver.fullName}: ${oldPosition} -> ${newPosition} (Entry: ${driver.queueEntryTime || driver.lastActiveTime})`);
+      }
+
       // Set queue entry time if missing
       const updateData = { queuePosition: newPosition };
       if (!driver.queueEntryTime) {
-        updateData.queueEntryTime = driver.lastActiveTime;
+        updateData.queueEntryTime = driver.lastActiveTime || new Date();
       }
-      
+
       return Driver.findByIdAndUpdate(driver._id, updateData);
     });
-    
+
     await Promise.all(updatePromises);
-    console.log('✅ Queue reordered by entry time');
-    
+    console.log('✅ Complete queue reordered by entry time');
+
   } catch (error) {
     console.error('❌ Error reordering queue by entry time:', error);
   }
@@ -1159,9 +1285,12 @@ const initializeSocket = (server) => {
           // OTP information - CRITICAL for production
           startOTP: rideRequest.startOTP,
           endOTP: rideRequest.endOTP,
-          // Fare information - ensure both fields
-          estimatedFare: rideRequest.estimatedFare || rideRequest.fare,
-          fare: rideRequest.fare || rideRequest.estimatedFare,
+          // Fare information - Driver sees base fare only
+          driverFare: rideRequest.driverFare || rideRequest.fare,
+          estimatedFare: rideRequest.driverFare || rideRequest.fare,
+          fare: rideRequest.driverFare || rideRequest.fare,
+          // Customer fare for user notification (hidden from driver)
+          customerFare: rideRequest.customerFare || rideRequest.fare,
           // Status
           status: 'driver_assigned',
           acceptedAt: rideRequest.acceptedAt
@@ -1200,8 +1329,16 @@ const initializeSocket = (server) => {
           });
         }
 
-        // Notify the customer
-        io.to(`user_${rideRequest.userId}`).emit('rideAccepted', acceptanceData);
+        // Prepare customer data with customer fare
+        const customerAcceptanceData = {
+          ...acceptanceData,
+          // Customer sees total fare including GST, commission, etc.
+          fare: rideRequest.customerFare || rideRequest.fare,
+          estimatedFare: rideRequest.customerFare || rideRequest.estimatedFare
+        };
+
+        // Notify the customer with customer fare
+        io.to(`user_${rideRequest.userId}`).emit('rideAccepted', customerAcceptanceData);
         
         // Also send queue number to customer
         if (queueInfo && queueInfo.success) {
@@ -1653,8 +1790,17 @@ const initializeSocket = (server) => {
           };
           
           // Notify both parties of completion
+          // Send different fare data to user and driver
           io.to(`user_${rideRequest.userId}`).emit('rideCompleted', completionData);
-          io.to(`driver_${rideRequest.driverId}`).emit('rideCompleted', completionData);
+
+          // Driver sees only their earnings (base fare without GST/commission)
+          const driverCompletionData = {
+            ...completionData,
+            fare: rideRequest.driverFare || rideRequest.fare,
+            driverFare: rideRequest.driverFare || rideRequest.fare,
+            actualFare: rideRequest.driverFare || rideRequest.fare
+          };
+          io.to(`driver_${rideRequest.driverId}`).emit('rideCompleted', driverCompletionData);
           
           // Notify admins of ride completion
           notifyAdmins('rideCompleted', {
@@ -1941,8 +2087,17 @@ const initializeSocket = (server) => {
             completedAt: new Date().toISOString()
           };
           
+          // User sees full fare
           io.to(`user_${rideRequest.userId}`).emit('rideCompleted', completionNotification);
-          io.to(`driver_${rideRequest.driverId}`).emit('rideCompleted', completionNotification);
+
+          // Driver sees only their earnings
+          const driverCompletionNotification = {
+            ...completionNotification,
+            actualFare: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare,
+            fare: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare,
+            driverFare: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare
+          };
+          io.to(`driver_${rideRequest.driverId}`).emit('rideCompleted', driverCompletionNotification);
           
           console.log('📤 Both parties notified of ride completion');
           
@@ -2204,7 +2359,8 @@ const broadcastRideRequest = async (rideRequest) => {
 
   try {
     // Prepare ride data for broadcast
-    const rideData = {
+    // IMPORTANT: Drivers see base fare, customers see total with commission
+    const rideDataForDriver = {
       _id: rideRequest._id,
       rideId: rideRequest.rideId,
       pickupLocation: {
@@ -2218,8 +2374,10 @@ const broadcastRideRequest = async (rideRequest) => {
         longitude: rideRequest.dropLocation.longitude
       },
       vehicleType: rideRequest.vehicleType,
-      estimatedFare: rideRequest.estimatedFare,
-      fare: rideRequest.estimatedFare,  // Include fare as fallback
+      // FIXED: Include driverFare field and use correct fallback logic
+      driverFare: rideRequest.driverFare || rideRequest.fare || rideRequest.estimatedFare,
+      estimatedFare: rideRequest.driverFare || rideRequest.fare || rideRequest.estimatedFare,
+      fare: rideRequest.driverFare || rideRequest.fare || rideRequest.estimatedFare,
       distance: rideRequest.distance,
       startOTP: rideRequest.startOTP,
       endOTP: rideRequest.endOTP,  // Include endOTP if available
@@ -2228,6 +2386,21 @@ const broadcastRideRequest = async (rideRequest) => {
       status: 'pending',
       timestamp: rideRequest.timestamp || new Date()
     };
+
+    // Data for admin includes full breakdown
+    const rideDataForAdmin = {
+      ...rideDataForDriver,
+      // Admin sees everything
+      customerFare: rideRequest.customerFare || rideRequest.fare,
+      driverFare: rideRequest.driverFare || rideRequest.fare, // FIXED: Use correct driverFare field
+      gstAmount: rideRequest.gstAmount || 0,
+      commissionAmount: rideRequest.commissionAmount || 0,
+      nightChargeAmount: rideRequest.nightChargeAmount || 0,
+      fareBreakdown: rideRequest.fareBreakdown
+    };
+
+    // Use driver data as default
+    const rideData = rideDataForDriver;
     
     // Enhanced logging for production debugging
     console.log('📊 [BroadcastRideRequest] Data being sent:', {
@@ -2252,7 +2425,7 @@ const broadcastRideRequest = async (rideRequest) => {
     
     console.log(`📢 Broadcasting to ${adminsInRoom} admins in 'admin-room'`);
     io.to('admin-room').emit('customerRideRequest', {
-      ...rideData,
+      ...rideDataForAdmin, // Admin gets full breakdown
       message: 'New customer ride request',
       needsAssignment: true
     });
@@ -2345,7 +2518,10 @@ const sendRideRequestToDriver = async (rideRequest, driverId) => {
         longitude: rideRequest.dropLocation.longitude
       },
       vehicleType: rideRequest.vehicleType,
-      estimatedFare: rideRequest.estimatedFare,
+      // FIXED: Include driverFare field and use correct fallback logic
+      driverFare: rideRequest.driverFare || rideRequest.fare || rideRequest.estimatedFare,
+      estimatedFare: rideRequest.driverFare || rideRequest.fare || rideRequest.estimatedFare,
+      fare: rideRequest.driverFare || rideRequest.fare || rideRequest.estimatedFare,
       distance: rideRequest.distance,
       startOTP: rideRequest.startOTP,
       endOTP: rideRequest.endOTP,

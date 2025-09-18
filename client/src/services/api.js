@@ -479,6 +479,16 @@ export const drivers = {
     }
   },
 
+  getPendingRides: async () => {
+    const token = localStorage.getItem('driverToken');
+    const response = await fetch(`${API_URL}/drivers/pending-rides`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return response.json();
+  },
+
   getRideHistory: async (page = 1, limit = 10, status = 'all') => {
     const token = localStorage.getItem('driverToken');
     const response = await fetch(`${API_URL}/drivers/ride-history?page=${page}&limit=${limit}&status=${status}`, {
@@ -668,7 +678,11 @@ export const admin = {
   // Get fare estimates for manual booking (admin context)
   getFareEstimate: async (fareData) => {
     try {
-      const response = await apiClient.post('/fare/estimate', fareData);
+      // Admin always gets detailed breakdown
+      const response = await apiClient.post('/fare/estimate', {
+        ...fareData,
+        detailed: true // Admin gets full breakdown
+      });
       return response.data;
     } catch (error) {
       throw error;
@@ -744,6 +758,62 @@ export const admin = {
       return response.data;
     } catch (error) {
       console.error('Simulate fare error:', error);
+      throw error;
+    }
+  },
+
+  // Financial Management APIs
+  getFinancialSummary: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/admin/financial/summary?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      console.error('Get financial summary error:', error);
+      throw error;
+    }
+  },
+
+  getRevenueTrends: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/admin/financial/trends?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      console.error('Get revenue trends error:', error);
+      throw error;
+    }
+  },
+
+  getPaymentAnalytics: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/admin/financial/payment-analytics?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      console.error('Get payment analytics error:', error);
+      throw error;
+    }
+  },
+
+  getTopRoutes: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/admin/financial/top-routes?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      console.error('Get top routes error:', error);
+      throw error;
+    }
+  },
+
+  exportFinancialReport: async (params = {}) => {
+    try {
+      const queryParams = new URLSearchParams(params).toString();
+      const response = await apiClient.get(`/admin/financial/export?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      console.error('Export financial report error:', error);
       throw error;
     }
   },
@@ -989,6 +1059,12 @@ export const getAllUsers = admin.getAllUsers;
 export const getDriverById = admin.getDriverById;
 export const getUserById = admin.getUserById;
 export const registerDriver = admin.registerDriver;
+
+// Export additional functions used in RideManagement
+export const getMetroStations = users.getMetroStations;
+export const getAdminRides = admin.getRides;
+export const getRideStats = admin.getDashboardStats;
+export const getRideDetails = admin.getRideDetails;
 
 // Utility function to clear axios headers (for token cleanup)
 export const clearAxiosHeaders = () => {

@@ -578,27 +578,49 @@ router.post('/book-ride', protectUser, async (req, res) => {
       email: user.email
     });
     
-    // Calculate final fare (with fallback if needed)
+    // Calculate final fare with new commission structure
     let finalFare = estimatedFare;
-    if (estimatedFare === 0) {
-      console.log('⚠️ Fare is 0, calculating fallback fare...');
-      try {
-        const { calculateDistance } = require('../utils/fareCalculator');
-        const distance = calculateDistance(
-          station.lat, station.lng,
-          dropLocation.lat, dropLocation.lng
-        );
-        
-        // Use the same fare calculation logic as the main system for consistency
-        const { calculateFare } = require('../utils/fareCalculator');
-        const fareCalculation = await calculateFare(vehicleType, distance, true, 0);
-        finalFare = fareCalculation.totalFare;
-        
-        console.log(`✅ Calculated fallback fare: ₹${finalFare} for ${distance}km`);
-      } catch (fallbackError) {
-        console.error('❌ Fallback fare calculation failed:', fallbackError);
-        finalFare = vehicleType === 'bike' ? 20 : vehicleType === 'auto' ? 30 : 60; // Default minimum matching new fare structure
-      }
+    let customerFare = estimatedFare;
+    let fareBreakdown = null;
+    let gstAmount = 0;
+    let commissionAmount = 0;
+    let nightChargeAmount = 0;
+
+    // Always recalculate fare to get proper breakdown
+    try {
+      const { calculateDistance, calculateFare } = require('../utils/fareCalculator');
+      const distance = calculateDistance(
+        station.lat, station.lng,
+        processedDropLocation.lat, processedDropLocation.lng
+      );
+
+      const fareCalculation = await calculateFare(vehicleType, distance, true, 0);
+
+      // Driver fare (base amount)
+      finalFare = fareCalculation.driverFare || fareCalculation.totalFare;
+
+      // Customer fare (with GST, commission, night charge)
+      customerFare = fareCalculation.customerTotalFare || fareCalculation.totalFare;
+
+      // Store breakdown
+      fareBreakdown = fareCalculation.breakdown;
+      gstAmount = fareCalculation.gstAmount || 0;
+      commissionAmount = fareCalculation.commissionAmount || 0;
+      nightChargeAmount = fareCalculation.nightChargeAmount || 0;
+
+      console.log(`✅ Calculated fare breakdown:`, {
+        driverFare: finalFare,
+        customerFare: customerFare,
+        gst: gstAmount,
+        commission: commissionAmount,
+        nightCharge: nightChargeAmount,
+        distance: `${distance}km`
+      });
+    } catch (fareError) {
+      console.error('❌ Fare calculation failed:', fareError);
+      // Use provided fare as fallback
+      finalFare = estimatedFare || (vehicleType === 'bike' ? 30 : vehicleType === 'auto' ? 40 : 60);
+      customerFare = estimatedFare || finalFare;
     }
     
     // Generate unique ride ID and OTPs
@@ -645,13 +667,23 @@ router.post('/book-ride', protectUser, async (req, res) => {
       },
       vehicleType: vehicleType,
       distance: distance,
-      fare: finalFare,
-      estimatedFare: finalFare,
+      fare: finalFare, // Driver fare (backward compatible)
+      estimatedFare: finalFare, // Driver fare (backward compatible)
+      // New fare fields
+      driverFare: finalFare, // FIXED: Add missing driverFare field for driver earnings
+      customerFare: customerFare,
+      baseFare: finalFare,
+      gstAmount: gstAmount,
+      commissionAmount: commissionAmount,
+      nightChargeAmount: nightChargeAmount,
+      fareBreakdown: fareBreakdown,
       rideId: rideId,
       boothRideNumber: boothRideNumber,
       startOTP: startOTP,
       endOTP: endOTP,
-      status: 'pending'
+      status: 'pending',
+      // Mark booking source
+      bookingSource: adminBooked && bookingSource === 'manual' ? 'manual' : 'app'
     });
     
     console.log(`✅ Ride request created successfully:`, {

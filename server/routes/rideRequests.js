@@ -11,6 +11,7 @@ const MetroStation = require('../models/MetroStation');
 const { getIO, broadcastRideRequest } = require('../socket');
 const { generateRideId, generateRideOTPs } = require('../utils/otpUtils');
 const { logRideEvent, logUserAction } = require('../utils/rideLogger');
+const { calculateFare } = require('../utils/fareCalculator');
 
 // @desc    Create a new ride request
 // @route   POST /api/ride-requests/request
@@ -80,8 +81,11 @@ router.post('/request', protectUser, async (req, res) => {
     // Generate ride details
     const rideId = generateRideId();
     const { startOTP, endOTP } = generateRideOTPs();
-    
-    // Create ride request
+
+    // Calculate fare with commission structure
+    const fareDetails = await calculateFare(vehicleType, distance, true, 0);
+
+    // Create ride request with both driver and customer fares
     const rideRequest = new RideRequest({
       userId: user._id,
       user: user._id,
@@ -98,8 +102,15 @@ router.post('/request', protectUser, async (req, res) => {
         longitude: dropLocation.lng
       },
       vehicleType,
-      estimatedFare,
-      fare: estimatedFare,
+      estimatedFare: fareDetails.customerTotalFare, // What customer sees
+      fare: fareDetails.driverFare, // Driver earnings (base fare)
+      driverFare: fareDetails.driverFare, // Explicit driver earnings
+      customerFare: fareDetails.customerTotalFare, // What customer pays
+      baseFare: fareDetails.baseFare,
+      gstAmount: fareDetails.gstAmount,
+      commissionAmount: fareDetails.commissionAmount,
+      nightChargeAmount: fareDetails.nightChargeAmount,
+      fareBreakdown: fareDetails.breakdown,
       distance,
       startOTP,
       endOTP,
@@ -139,7 +150,8 @@ router.post('/request', protectUser, async (req, res) => {
         pickupLocation: rideRequest.pickupLocation,
         dropLocation: rideRequest.dropLocation,
         vehicleType: rideRequest.vehicleType,
-        estimatedFare: rideRequest.estimatedFare,
+        estimatedFare: rideRequest.customerFare || rideRequest.estimatedFare, // Customer sees total
+        fare: rideRequest.customerFare || rideRequest.estimatedFare, // For backward compatibility
         startOTP: rideRequest.startOTP
       }
     });

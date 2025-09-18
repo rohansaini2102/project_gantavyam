@@ -92,6 +92,39 @@ const ActiveRidePanel = ({
     }
   };
 
+  // Helper function to get driver's earnings (base fare only, no GST/commission)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field (most accurate - what driver actually earns)
+    if (ride.driverFare && ride.driverFare > 0) {
+      return ride.driverFare;
+    }
+
+    // TEMPORARY FALLBACK: For existing ride requests without driverFare field
+    // This handles the transition period until all new requests have driverFare
+    if (ride.fare && ride.fare > 0) {
+      console.warn(`[ActiveRidePanel] Using fallback fare for ride ${ride._id} - driverFare missing`);
+      return ride.fare;
+    }
+
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      console.warn(`[ActiveRidePanel] Using fallback estimatedFare for ride ${ride._id} - driverFare missing`);
+      return ride.estimatedFare;
+    }
+
+    // Log warning if no fare data available
+    if (ride && ride._id) {
+      console.warn(`[ActiveRidePanel] No fare data available for ride ${ride._id}:`, {
+        rideId: ride._id,
+        driverFare: ride.driverFare,
+        fare: ride.fare,
+        estimatedFare: ride.estimatedFare,
+        status: ride.status
+      });
+    }
+
+    return 0;
+  };
+
   const handleMoreDetails = () => {
     setShowBottomSheet(true);
   };
@@ -240,7 +273,7 @@ const ActiveRidePanel = ({
         
         <div className="bg-gray-50 rounded-lg p-3 text-center">
           <div className="text-gray-600 text-sm mb-1">Fare</div>
-          <div className="font-medium text-green-600">₹{activeRide.fare || activeRide.estimatedFare}</div>
+          <div className="font-medium text-green-600">₹{getDriverEarnings(activeRide)}</div>
         </div>
         
         <div className="bg-gray-50 rounded-lg p-3 text-center">
@@ -329,7 +362,7 @@ const ActiveRidePanel = ({
               </div>
             </div>
             <div className="text-right flex-shrink-0">
-              <div className="text-lg font-bold text-green-600">₹{activeRide.fare || activeRide.estimatedFare}</div>
+              <div className="text-lg font-bold text-green-600">₹{getDriverEarnings(activeRide)}</div>
               <div className="text-xs text-gray-500">{activeRide.distance || 'N/A'}km</div>
             </div>
           </div>

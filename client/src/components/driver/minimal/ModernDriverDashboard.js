@@ -79,6 +79,84 @@ const ModernDriverDashboard = () => {
 
   const isMobile = windowWidth < 768;
 
+  // Helper function to get driver's earnings (ONLY driver's base fare, no customer charges)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field if available (this is the pure driver earnings)
+    if (ride.driverFare && ride.driverFare > 0) {
+      console.log(`[getDriverEarnings] Using driverFare: ₹${ride.driverFare} for ${ride.userName || 'ride'}`);
+      return ride.driverFare;
+    }
+
+    // Priority 2: Calculate pure base fare from distance and vehicle type (driver earnings only)
+    if (ride.distance && ride.vehicleType) {
+      const baseFare = calculatePureBaseFare(ride.distance, ride.vehicleType);
+      console.log(`[getDriverEarnings] Calculated base fare: ₹${baseFare} for ${ride.distance}km ${ride.vehicleType}`);
+      return baseFare;
+    }
+
+    // Priority 3: For legacy data, carefully check if fare field contains driver earnings
+    // NOTE: Only use this if fare amount seems reasonable for driver earnings (not customer total)
+    if (ride.fare && ride.fare > 0) {
+      // Sanity check: driver fare should typically be 25-500 for most rides
+      if (ride.fare >= 25 && ride.fare <= 500) {
+        console.log(`[getDriverEarnings] Using legacy fare field: ₹${ride.fare} (seems like driver earnings)`);
+        return ride.fare;
+      } else {
+        console.log(`[getDriverEarnings] Legacy fare field too high (₹${ride.fare}), likely customer total - calculating from base`);
+        // If fare seems too high, it's probably customer total, so calculate base fare
+        return getMinimumFareForVehicle(ride.vehicleType || 'auto');
+      }
+    }
+
+    // Priority 4: Conservative calculation from customer total (remove charges)
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      // More conservative calculation: remove GST (18%) + commission (20%) + potential surge
+      const driverEarnings = Math.round(ride.estimatedFare * 0.6); // Driver gets ~60% of customer fare
+      console.log(`[getDriverEarnings] Calculated from estimatedFare: ₹${driverEarnings} (60% of ₹${ride.estimatedFare})`);
+      return Math.max(driverEarnings, getMinimumFareForVehicle(ride.vehicleType || 'auto'));
+    }
+
+    // Priority 5: Use actualFare as last resort (remove charges)
+    if (ride.actualFare && ride.actualFare > 0) {
+      const driverEarnings = Math.round(ride.actualFare * 0.6); // Driver gets ~60% of customer fare
+      console.log(`[getDriverEarnings] Calculated from actualFare: ₹${driverEarnings} (60% of ₹${ride.actualFare})`);
+      return Math.max(driverEarnings, getMinimumFareForVehicle(ride.vehicleType || 'auto'));
+    }
+
+    // Last resort: return minimum fare for vehicle type
+    const minFare = getMinimumFareForVehicle(ride.vehicleType || 'auto');
+    console.log(`[getDriverEarnings] No fare data available, using minimum fare: ₹${minFare} for ${ride.vehicleType || 'auto'}`);
+    return minFare;
+  };
+
+  // Calculate pure base fare based on distance and vehicle type (matches server FareConfig)
+  const calculatePureBaseFare = (distance, vehicleType) => {
+    const fareConfig = {
+      auto: { baseFare: 40, baseKm: 2, perKmRate: 17, minFare: 40 },
+      bike: { baseFare: 30, baseKm: 2, perKmRate: 12, minFare: 30 },
+      car: { baseFare: 60, baseKm: 2, perKmRate: 25, minFare: 60 }
+    };
+
+    const config = fareConfig[vehicleType] || fareConfig.auto;
+    let fare = config.baseFare;
+
+    if (distance > config.baseKm) {
+      fare += (distance - config.baseKm) * config.perKmRate;
+    }
+
+    return Math.max(Math.round(fare), config.minFare);
+  };
+
+  // Get minimum fare for vehicle type (matches server FareConfig)
+  const getMinimumFareForVehicle = (vehicleType) => {
+    const minFares = {
+      auto: 40,
+      bike: 30,
+      car: 60
+    };
+    return minFares[vehicleType] || 40;
+  };
+
   // Load driver data on mount and recover active ride if needed
   useEffect(() => {
     console.log('🚀 ModernDriverDashboard Component Loaded - New UI Active!');
@@ -129,6 +207,55 @@ const ModernDriverDashboard = () => {
     }
   }, []);
 
+  // Fetch pending rides on component mount
+  useEffect(() => {
+    const fetchPendingRides = async () => {
+      const token = localStorage.getItem('driverToken');
+      if (token && !activeRide) {  // Only fetch if no active ride
+        try {
+          console.log('[ModernDriverDashboard] Fetching pending rides...');
+          const result = await drivers.getPendingRides();
+
+          if (result.success && result.data && result.data.rides) {
+            console.log('[ModernDriverDashboard] Fetched pending rides:', result.data.rides);
+
+            // Format rides to match our component structure
+            const formattedRides = result.data.rides.map(ride => ({
+              _id: ride._id || ride.rideId,
+              rideId: ride.rideId,
+              bookingId: ride.bookingId,
+              userName: ride.userName,
+              userPhone: ride.userPhone,
+              pickupLocation: ride.pickupLocation,
+              dropLocation: ride.dropLocation,
+              vehicleType: ride.vehicleType,
+              distance: ride.distance,
+              fare: getDriverEarnings(ride),  // Driver sees their earnings
+              estimatedFare: getDriverEarnings(ride),  // Use driver fare
+              startOTP: ride.startOTP || null,
+              endOTP: ride.endOTP || null,
+              status: 'pending',
+              isManualBooking: ride.bookingSource === 'manual',
+              bookingSource: ride.bookingSource || 'app'
+            }));
+
+            // Only set rides if we have any
+            if (formattedRides.length > 0) {
+              setAssignedRides(formattedRides);
+              console.log(`[ModernDriverDashboard] Loaded ${formattedRides.length} pending rides`);
+            }
+          }
+        } catch (error) {
+          console.error('[ModernDriverDashboard] Error fetching pending rides:', error);
+        }
+      }
+    };
+
+    // Fetch pending rides after a slight delay to ensure socket is ready
+    const timer = setTimeout(fetchPendingRides, 500);
+    return () => clearTimeout(timer);
+  }, [activeRide]);  // Re-fetch if activeRide changes
+
   // Initialize socket connection
   useEffect(() => {
     const initSocket = async () => {
@@ -163,8 +290,7 @@ const ModernDriverDashboard = () => {
               hasEndOTP: !!data.endOTP,
               startOTP: data.startOTP,
               endOTP: data.endOTP,
-              estimatedFare: data.estimatedFare,
-              fare: data.fare,
+              driverFare: data.driverFare, // Driver's base earnings only
               distance: data.distance,
               vehicleType: data.vehicleType
             });
@@ -184,8 +310,8 @@ const ModernDriverDashboard = () => {
             dropLocation: data.dropLocation,
             vehicleType: data.vehicleType,
             distance: data.distance,
-            fare: data.estimatedFare || data.fare,
-            estimatedFare: data.estimatedFare || data.fare,
+            fare: getDriverEarnings(data),  // Driver sees their earnings (base fare)
+            estimatedFare: getDriverEarnings(data),  // Use driver fare preferentially
             startOTP: data.startOTP || null,
             endOTP: data.endOTP || null,
             status: 'pending',
@@ -209,7 +335,7 @@ const ModernDriverDashboard = () => {
           // Show notification
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('🚕 New Ride Request!', {
-              body: `${data.userName || 'Customer'} - ₹${data.estimatedFare}`,
+              body: `${data.userName || 'Customer'} - ₹${getDriverEarnings(data)}`,
               icon: '/favicon.ico'
             });
           }
@@ -234,8 +360,8 @@ const ModernDriverDashboard = () => {
               longitude: 0
             },
             vehicleType: data.vehicleType,
-            fare: data.estimatedFare,
-            estimatedFare: data.estimatedFare,
+            fare: getDriverEarnings(data),  // Use driver fare if available
+            estimatedFare: getDriverEarnings(data),  // Use driver fare if available
             startOTP: data.startOTP,
             endOTP: data.endOTP,
             status: 'assigned',
@@ -263,8 +389,7 @@ const ModernDriverDashboard = () => {
               uniqueRideId: data.uniqueRideId,
               startOTP: data.startOTP,
               endOTP: data.endOTP,
-              estimatedFare: data.estimatedFare,
-              fare: data.fare,
+              driverFare: data.driverFare, // Driver's base earnings only
               queueNumber: data.queueNumber,
               queuePosition: data.queuePosition,
               boothRideNumber: data.boothRideNumber
@@ -288,9 +413,9 @@ const ModernDriverDashboard = () => {
                 // CRITICAL: Ensure OTPs are properly set from the acceptance data
                 startOTP: data.startOTP || acceptedRide.startOTP || null,
                 endOTP: data.endOTP || acceptedRide.endOTP || null,
-                // Ensure fare is preserved
-                estimatedFare: data.estimatedFare || data.fare || acceptedRide.estimatedFare || acceptedRide.fare,
-                fare: data.fare || data.estimatedFare || acceptedRide.fare || acceptedRide.estimatedFare,
+                // Ensure fare is preserved (driver sees only their earnings)
+                estimatedFare: getDriverEarnings(data) || getDriverEarnings(acceptedRide),
+                fare: getDriverEarnings(data) || getDriverEarnings(acceptedRide),
                 // Other important fields
                 boothRideNumber: data.boothRideNumber || acceptedRide.boothRideNumber,
                 userName: acceptedRide.userName,
@@ -377,22 +502,23 @@ const ModernDriverDashboard = () => {
         },
         onRideCompleted: (data) => {
           console.log('[ModernDriverDashboard] Ride completed:', data);
-          
-          // Store completed ride details for animation
+
+          // Store completed ride details for animation (driver sees only their earnings)
+          const driverEarnings = getDriverEarnings(data.driverFare ? data : activeRide);
           const completedRide = {
             ...activeRide,
-            fare: data.fare || data.actualFare || activeRide.estimatedFare,
+            fare: driverEarnings,
             completedAt: new Date(),
             status: 'completed'
           };
           setCompletedRideDetails(completedRide);
-          
+
           // Show completion animation
           setShowCompletionAnimation(true);
-          
-          // Update stats with animation
+
+          // Update stats with animation (driver earnings only)
           setTripsToday(prev => prev + 1);
-          setEarnings(prev => prev + (data.fare || data.actualFare || 0));
+          setEarnings(prev => prev + driverEarnings);
           
           // Fetch updated ride history
           fetchRideHistory();
@@ -422,7 +548,21 @@ const ModernDriverDashboard = () => {
           actions.setActiveRide(null);
         },
         onQueuePositionUpdated: (data) => {
-          console.log('Queue position updated:', data);
+          console.log('[ModernDriverDashboard] Queue position update received:', data);
+          console.log('[ModernDriverDashboard] Current queue position:', queuePosition);
+          console.log('[ModernDriverDashboard] New queue position:', data.queuePosition);
+
+          // Add debug logging for production
+          if (window.location.hostname !== 'localhost') {
+            console.log('[PRODUCTION] Queue position change:', {
+              from: queuePosition,
+              to: data.queuePosition,
+              action: data.action,
+              timestamp: data.timestamp,
+              totalOnline: data.totalOnline
+            });
+          }
+
           actions.setQueuePosition(data.queuePosition);
         },
         onRideAcceptError: (data) => {
@@ -564,7 +704,7 @@ const ModernDriverDashboard = () => {
 ` +
       `Customer: ${activeRide.userName || 'Customer'}
 ` +
-      `Fare: ₹${activeRide.estimatedFare || activeRide.fare}
+      `Fare: ₹${getDriverEarnings(activeRide)}
 
 ` +
       `Note: Cancelling rides may affect your rating.`
@@ -689,16 +829,49 @@ const ModernDriverDashboard = () => {
     navigate('/driver/login');
   };
 
-  // Fetch ride history
+  // Fetch ride history - Show ONLY driver earnings, never customer fares
   const fetchRideHistory = async () => {
     try {
       setHistoryLoading(true);
-      const response = await drivers.getRideHistory(1, 5, 'all');
-      if (response.success && response.data) {
-        setRideHistory(response.data.rideHistory);
+      const response = await drivers.getRideHistory(1, 30, 'completed'); // Get more rides to filter
+
+      if (response.success && response.data && response.data.rideHistory) {
+        console.log(`[ModernDriverDashboard] Fetched ${response.data.rideHistory.length} total completed rides`);
+
+        // Primary filter: ONLY rides that have driverFare field (confirmed driver earnings)
+        const ridesWithDriverFare = response.data.rideHistory.filter(ride =>
+          ride.driverFare && ride.driverFare > 0
+        );
+
+        // Secondary option: Show rides where we can calculate driver earnings from distance/vehicle
+        // BUT mark them differently so user knows they're calculated
+        const calculableRides = response.data.rideHistory.filter(ride =>
+          (!ride.driverFare || ride.driverFare === 0) && // No driverFare
+          ride.distance && ride.vehicleType && // But has calculation data
+          ride.distance > 0 && ride.distance < 50 // Reasonable distance range
+        ).map(ride => ({
+          ...ride,
+          isCalculated: true, // Mark as calculated for UI display
+          calculatedDriverEarnings: calculatePureBaseFare(ride.distance, ride.vehicleType)
+        }));
+
+        // Combine both sets, prioritizing rides with actual driverFare
+        const allDriverEarningsRides = [
+          ...ridesWithDriverFare,
+          ...calculableRides.slice(0, 5) // Limit calculated rides
+        ];
+
+        console.log(`[ModernDriverDashboard] Driver earnings rides breakdown:`);
+        console.log(`  - With driverFare: ${ridesWithDriverFare.length}`);
+        console.log(`  - Calculated from distance: ${calculableRides.length}`);
+        console.log(`  - Total showing: ${allDriverEarningsRides.length}`);
+
+        // Take only the first 10 rides total
+        setRideHistory(allDriverEarningsRides.slice(0, 10));
       }
     } catch (error) {
       console.error('Error fetching ride history:', error);
+      setRideHistory([]); // Clear history on error
     } finally {
       setHistoryLoading(false);
     }
@@ -710,6 +883,25 @@ const ModernDriverDashboard = () => {
       fetchRideHistory();
     }
   }, [driver, socketConnected]);
+
+  // Debug: Track queue position changes
+  useEffect(() => {
+    if (queuePosition !== undefined) {
+      const timestamp = new Date().toISOString();
+      console.log(`[ModernDriverDashboard] Queue Position Change Detected:`, {
+        newPosition: queuePosition,
+        timestamp,
+        isOnline,
+        socketConnected,
+        driverId: driver?._id
+      });
+
+      // Production debug logging
+      if (window.location.hostname !== 'localhost') {
+        console.log(`[PRODUCTION] Queue position changed to: ${queuePosition} at ${timestamp}`);
+      }
+    }
+  }, [queuePosition]);
 
   return (
     <div className="h-screen w-full flex flex-col bg-gray-50">
@@ -824,7 +1016,7 @@ const ModernDriverDashboard = () => {
                   </a>
                 )}
               </div>
-              <div className="text-2xl font-bold">₹{activeRide.estimatedFare || activeRide.fare || '0'}</div>
+              <div className="text-2xl font-bold">₹{getDriverEarnings(activeRide)}</div>
             </div>
 
             {/* Locations */}
@@ -957,7 +1149,7 @@ const ModernDriverDashboard = () => {
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-2xl font-bold text-gray-800">₹{ride.estimatedFare || ride.fare}</p>
+                        <p className="text-2xl font-bold text-gray-800">₹{getDriverEarnings(ride)}</p>
                         <p className="text-sm text-gray-500">{ride.distance || 'N/A'} km</p>
                       </div>
                       <span className="px-3 py-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded-full">
@@ -1005,66 +1197,113 @@ const ModernDriverDashboard = () => {
         )}
       </div>
 
-      {/* Ride History Section */}
-      {!activeRide && rideHistory.length > 0 && (
+      {/* Recent Rides Section - ONLY rides with driver fare */}
+      {!activeRide && (
         <div className="m-4">
-          <div 
+          <div
             onClick={() => setShowHistory(!showHistory)}
             className="flex items-center justify-between bg-white rounded-xl shadow-sm p-4 cursor-pointer hover:bg-gray-50 transition-colors"
           >
             <div className="flex items-center">
               <FaHistory className="text-gray-600 mr-3" />
-              <h3 className="text-lg font-semibold text-gray-800">Recent Rides</h3>
-              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded-full">
-                {rideHistory.length}
-              </span>
+              <h3 className="text-lg font-semibold text-gray-800">Your Earnings History</h3>
+              {rideHistory.length > 0 && (
+                <span className="ml-2 px-2 py-1 bg-green-100 text-green-600 text-xs rounded-full">
+                  {rideHistory.length} rides • driver earnings only
+                </span>
+              )}
             </div>
-            {showHistory ? <FaChevronUp /> : <FaChevronDown />}
+            {rideHistory.length > 0 && (showHistory ? <FaChevronUp /> : <FaChevronDown />)}
           </div>
-          
+
           {/* Expandable History List */}
-          <div className={`transition-all duration-300 overflow-hidden ${
-            showHistory ? 'max-h-96 mt-3' : 'max-h-0'
-          }`}>
-            <div className="space-y-2">
-              {rideHistory.map((ride, index) => (
-                <div
-                  key={ride._id}
-                  className={`bg-white rounded-lg p-3 border border-gray-100 transform transition-all duration-500 ${
-                    index === 0 && showCompletionAnimation ? 'animate-pulse bg-green-50' : ''
-                  }`}
-                  style={{
-                    animation: index === 0 && showCompletionAnimation ? 'slideIn 0.5s ease-out' : 'none'
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center">
-                      <FaCheckCircle className="text-green-500 mr-2" />
-                      <span className="font-semibold text-gray-800">₹{ride.actualFare || ride.estimatedFare}</span>
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      {new Date(ride.createdAt || ride.completedAt).toLocaleTimeString('en-US', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-600 space-y-1">
-                    <div className="flex items-center">
-                      <FaRoute className="mr-1" />
-                      <span className="truncate">{ride.pickupLocation?.boothName || 'Pickup'} → {ride.dropLocation?.address || 'Drop'}</span>
-                    </div>
-                    {ride.userId && (
-                      <div className="flex items-center">
-                        <FaUser className="mr-1" />
-                        <span>{ride.userId.name || 'Customer'}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+          {historyLoading ? (
+            <div className="bg-white rounded-xl shadow-sm p-6 mt-3">
+              <div className="text-center text-gray-500">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
+                Loading recent rides...
+              </div>
             </div>
-          </div>
+          ) : rideHistory.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm p-6 mt-3">
+              <div className="text-center text-gray-500">
+                <FaHistory className="text-4xl text-gray-300 mx-auto mb-3" />
+                <p className="font-medium">No Earnings History Available</p>
+                <p className="text-sm mt-1">Complete rides to see your driver earnings here</p>
+                <p className="text-xs mt-2 text-blue-600">💡 Shows only your earnings, not customer fares</p>
+              </div>
+            </div>
+          ) : (
+            <div className={`transition-all duration-300 overflow-hidden ${
+              showHistory ? 'max-h-96 mt-3' : 'max-h-0'
+            }`}>
+              <div className="space-y-2">
+                {rideHistory.map((ride, index) => (
+                  <div
+                    key={ride._id}
+                    className={`bg-white rounded-lg p-3 border border-gray-100 transform transition-all duration-500 ${
+                      index === 0 && showCompletionAnimation ? 'animate-pulse bg-green-50' : ''
+                    }`}
+                    style={{
+                      animation: index === 0 && showCompletionAnimation ? 'slideIn 0.5s ease-out' : 'none'
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center">
+                        <FaCheckCircle className="text-green-500 mr-2" />
+                        {/* Show ONLY driver earnings - never customer fares */}
+                        {ride.driverFare && ride.driverFare > 0 ? (
+                          <>
+                            <span className="font-bold text-green-600 text-lg">₹{ride.driverFare}</span>
+                            <span className="ml-1 text-xs text-green-500 font-medium">driver earnings</span>
+                          </>
+                        ) : ride.isCalculated ? (
+                          <>
+                            <span className="font-bold text-blue-600 text-lg">₹{ride.calculatedDriverEarnings}</span>
+                            <span className="ml-1 text-xs text-blue-500 font-medium">calculated</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-green-600 text-lg">₹{getDriverEarnings(ride)}</span>
+                            <span className="ml-1 text-xs text-gray-500 font-medium">estimated</span>
+                          </>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {new Date(ride.createdAt || ride.completedAt).toLocaleTimeString('en-US', {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <div className="flex items-center">
+                        <FaRoute className="mr-1" />
+                        <span className="truncate">{ride.pickupLocation?.boothName || 'Pickup'} → {ride.dropLocation?.address || 'Drop'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <FaUser className="mr-1" />
+                          <span>{ride.userName || ride.userId?.name || 'Customer'}</span>
+                        </div>
+                        {ride.distance && (
+                          <span className="text-xs text-gray-500">{ride.distance}km</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Clarification about driver earnings display */}
+              <div className="mt-3 p-2 bg-green-50 rounded-lg border border-green-200">
+                <p className="text-xs text-green-700 text-center">
+                  <span className="font-medium">💰 Your Earnings Only</span>
+                  <br />Shows your base fare earnings, not customer total charges
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1092,7 +1331,7 @@ const ModernDriverDashboard = () => {
               <p className="text-gray-600 mb-4">Great job! You've earned</p>
               
               <div className="text-4xl font-bold text-green-600 mb-6 animate-pulse">
-                ₹{completedRideDetails.fare}
+                ₹{getDriverEarnings(completedRideDetails)}
               </div>
               
               <div className="space-y-2 text-sm text-gray-600">

@@ -74,56 +74,135 @@ const getCurrentSurgeFactor = async () => {
 };
 
 /**
- * Calculate fare for a specific vehicle type
+ * Check if current time is in night charge period
+ * @returns {boolean} Whether night charge applies
+ */
+const isNightTime = async () => {
+  const config = await getConfig();
+  const nightCharge = config.nightCharge;
+
+  if (!nightCharge || !nightCharge.isActive) {
+    return false;
+  }
+
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  if (nightCharge.startHour <= nightCharge.endHour) {
+    // Normal period (shouldn't happen for night, but handle it)
+    return currentHour >= nightCharge.startHour && currentHour <= nightCharge.endHour;
+  } else {
+    // Overnight period (e.g., 23 to 5)
+    return currentHour >= nightCharge.startHour || currentHour <= nightCharge.endHour;
+  }
+};
+
+/**
+ * Calculate fare for a specific vehicle type with new commission structure
  * @param {string} vehicleType - Type of vehicle (bike, auto, car)
  * @param {number} distance - Distance in kilometers
  * @param {boolean} applySurge - Whether to apply surge pricing
  * @param {number} waitingTime - Waiting time in minutes
- * @returns {Object} Fare calculation details
+ * @returns {Object} Fare calculation details with customer and driver amounts
  */
 const calculateFare = async (vehicleType, distance, applySurge = true, waitingTime = 0) => {
   const dbConfig = await getConfig();
   const config = dbConfig.vehicleConfigs[vehicleType];
-  
+
   if (!config) {
     throw new Error(`Invalid vehicle type: ${vehicleType}`);
   }
-  
-  // Base calculation
-  const baseFare = config.baseFare;
-  const distanceFare = distance * config.perKmRate;
+
+  // Calculate base fare according to requirements
+  // For auto: ₹40 for up to 2km, then ₹17 per km after that
+  let baseFareAmount = config.baseFare; // ₹40 for auto
+  let distanceFare = 0;
+
+  if (distance > config.baseKilometers) {
+    // Add per km rate only for distance beyond base kilometers
+    distanceFare = (distance - config.baseKilometers) * config.perKmRate; // ₹17 per km for auto
+  }
+
   const waitingCharges = waitingTime * config.waitingChargePerMin;
-  
-  let totalFare = baseFare + distanceFare + waitingCharges;
-  
+
+  // Driver's base fare (what driver earns - no GST, no commission)
+  let driverBaseFare = baseFareAmount + distanceFare + waitingCharges;
+
   // Apply minimum fare
-  totalFare = Math.max(totalFare, config.minimumFare);
-  
-  // Apply surge pricing if enabled
+  driverBaseFare = Math.max(driverBaseFare, config.minimumFare);
+
+  // Round driver base fare before applying surge
+  driverBaseFare = Math.round(driverBaseFare);
+
+  // CRITICAL: Save pure driver base fare BEFORE any surge calculations
+  // Driver should see ONLY base fare (₹40 + ₹17/km) - no surge, no GST, no commission
+  const pureDriverFare = driverBaseFare;
+
+  // Calculate commission (10%) on BASE fare only (not surged)
+  const commissionAmount = Math.round(driverBaseFare * (config.commissionPercentage || 10) / 100);
+
+  // Apply surge pricing if enabled (surge applies to customer pricing, not driver earnings)
   let surgeFactor = 1.0;
+  let surgedFare = driverBaseFare;
   if (applySurge) {
     surgeFactor = await getCurrentSurgeFactor();
-    totalFare = totalFare * surgeFactor;
+    surgedFare = Math.round(driverBaseFare * surgeFactor);
   }
-  
-  // Round to nearest rupee
-  totalFare = Math.round(totalFare);
-  
+
+  // Calculate GST (5%) on (base fare + commission + surge if any)
+  const totalBeforeGST = surgedFare + commissionAmount;
+  const gstAmount = Math.round(totalBeforeGST * (config.gstPercentage || 5) / 100);
+
+  // Calculate night charge if applicable (on total before night charge)
+  let nightChargeAmount = 0;
+  const isNight = await isNightTime();
+  if (isNight && dbConfig.nightCharge && dbConfig.nightCharge.isActive) {
+    const subtotal = surgedFare + commissionAmount + gstAmount;
+    nightChargeAmount = Math.round(subtotal * (dbConfig.nightCharge.percentage || 20) / 100);
+  }
+
+  // Calculate customer total (what customer pays)
+  // Customer pays: base fare (with surge if any) + commission + GST + night charge
+  const customerTotalFare = surgedFare + commissionAmount + gstAmount + nightChargeAmount;
+
+  // Driver earns ONLY the pure base fare (no surge, no GST, no commission, no night charge)
+  // This ensures drivers always see consistent base earnings regardless of surge/demand
+  const driverFare = pureDriverFare;
+
+  // Backward compatibility: totalFare is driver's earning (pure base fare)
+  const totalFare = pureDriverFare;
+
   return {
     vehicleType,
     distance: parseFloat(distance.toFixed(2)),
-    baseFare,
+    baseFare: baseFareAmount,
     distanceFare: parseFloat(distanceFare.toFixed(2)),
     waitingCharges: parseFloat(waitingCharges.toFixed(2)),
     surgeFactor: parseFloat(surgeFactor.toFixed(2)),
-    totalFare,
+    totalFare, // Driver fare for backward compatibility
+    customerTotalFare, // What customer pays (includes all charges)
+    driverFare: pureDriverFare, // What driver earns (pure base fare, no surge/GST/commission)
     minimumFare: config.minimumFare,
+    // New breakdown for admin/records
     breakdown: {
-      baseFare,
+      baseFare: baseFareAmount,
       distanceFare: parseFloat(distanceFare.toFixed(2)),
       waitingCharges: parseFloat(waitingCharges.toFixed(2)),
-      surgeAmount: parseFloat(((totalFare / surgeFactor) * (surgeFactor - 1)).toFixed(2))
-    }
+      surgeAmount: parseFloat((surgedFare - driverBaseFare).toFixed(2)),
+      driverTotal: pureDriverFare,
+      surgedFare: surgedFare,
+      gstAmount,
+      commissionAmount,
+      nightChargeAmount,
+      customerTotal: customerTotalFare,
+      platformEarnings: commissionAmount + gstAmount + nightChargeAmount,
+      isNightCharge: isNight
+    },
+    // Additional fields for clarity
+    gstAmount,
+    commissionAmount,
+    nightChargeAmount,
+    isNightCharge: isNight
   };
 };
 

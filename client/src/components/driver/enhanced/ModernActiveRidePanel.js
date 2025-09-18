@@ -49,6 +49,39 @@ const ModernActiveRidePanel = ({
     }
   };
 
+  // Helper function to get driver's earnings (base fare only, no GST/commission)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field (most accurate - what driver actually earns)
+    if (ride.driverFare && ride.driverFare > 0) {
+      return ride.driverFare;
+    }
+
+    // TEMPORARY FALLBACK: For existing ride requests without driverFare field
+    // This handles the transition period until all new requests have driverFare
+    if (ride.fare && ride.fare > 0) {
+      console.warn(`[ModernActiveRidePanel] Using fallback fare for ride ${ride._id} - driverFare missing`);
+      return ride.fare;
+    }
+
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      console.warn(`[ModernActiveRidePanel] Using fallback estimatedFare for ride ${ride._id} - driverFare missing`);
+      return ride.estimatedFare;
+    }
+
+    // Log warning if no fare data available
+    if (ride && ride._id) {
+      console.warn(`[ModernActiveRidePanel] No fare data available for ride ${ride._id}:`, {
+        rideId: ride._id,
+        driverFare: ride.driverFare,
+        fare: ride.fare,
+        estimatedFare: ride.estimatedFare,
+        status: ride.status
+      });
+    }
+
+    return 0;
+  };
+
   const statusInfo = getRideStatusInfo(activeRide.status);
 
   // OTP Input Component
@@ -173,7 +206,7 @@ const ModernActiveRidePanel = ({
             </div>
             {activeRide.estimatedFare && (
               <div className="text-right">
-                <p className="text-2xl font-bold">₹{activeRide.estimatedFare}</p>
+                <p className="text-2xl font-bold">₹{getDriverEarnings(activeRide)}</p>
                 <p className="text-xs text-white/80">Estimated</p>
               </div>
             )}
@@ -284,7 +317,7 @@ const ModernActiveRidePanel = ({
             <div className="space-y-3">
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <p className="text-yellow-800 text-sm font-medium text-center">
-                  Collect ₹{activeRide.estimatedFare} from customer
+                  Collect ₹{getDriverEarnings(activeRide)} from customer
                 </p>
               </div>
               <motion.button
@@ -342,7 +375,7 @@ const ModernActiveRidePanel = ({
                   Confirm Payment Collection
                 </h3>
                 <p className="text-gray-500">
-                  Have you collected ₹{activeRide.estimatedFare} from {activeRide.userName}?
+                  Have you collected ₹{getDriverEarnings(activeRide)} from {activeRide.userName}?
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-3">

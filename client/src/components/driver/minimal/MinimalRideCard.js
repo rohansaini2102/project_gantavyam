@@ -43,11 +43,44 @@ const MinimalRideCard = ({ ride, onAccept, onReject, isAccepting = false }) => {
   const formatTime = (time) => {
     if (!time) return '';
     const date = new Date(time);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
       minute: '2-digit',
-      hour12: true 
+      hour12: true
     });
+  };
+
+  // Helper function to get driver's earnings (base fare only, no GST/commission)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field (most accurate - what driver actually earns)
+    if (ride.driverFare && ride.driverFare > 0) {
+      return ride.driverFare;
+    }
+
+    // TEMPORARY FALLBACK: For existing ride requests without driverFare field
+    // This handles the transition period until all new requests have driverFare
+    if (ride.fare && ride.fare > 0) {
+      console.warn(`[MinimalRideCard] Using fallback fare for ride ${ride._id} - driverFare missing`);
+      return ride.fare;
+    }
+
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      console.warn(`[MinimalRideCard] Using fallback estimatedFare for ride ${ride._id} - driverFare missing`);
+      return ride.estimatedFare;
+    }
+
+    // Log warning if no fare data available
+    if (ride && ride._id) {
+      console.warn(`[MinimalRideCard] No fare data available for ride ${ride._id}:`, {
+        rideId: ride._id,
+        driverFare: ride.driverFare,
+        fare: ride.fare,
+        estimatedFare: ride.estimatedFare,
+        status: ride.status
+      });
+    }
+
+    return 0;
   };
 
   return (
@@ -66,7 +99,7 @@ const MinimalRideCard = ({ ride, onAccept, onReject, isAccepting = false }) => {
       <div className="minimal-ride-card-header">
         <div>
           <div className="minimal-ride-fare">
-            ₹{ride.estimatedFare || ride.fare || '0'}
+            ₹{getDriverEarnings(ride)}
           </div>
           <div className="minimal-ride-distance">
             {formatDistance(ride.distance)}

@@ -224,8 +224,8 @@ const SimplifiedDriverDashboard = () => {
             dropLocation: data.dropLocation,
             vehicleType: data.vehicleType,
             distance: data.distance,
-            fare: data.estimatedFare,
-            estimatedFare: data.estimatedFare,
+            fare: getDriverEarnings(data),
+            estimatedFare: getDriverEarnings(data),
             startOTP: data.startOTP,
             endOTP: data.endOTP || null, // May be provided for manual bookings
             status: 'pending',
@@ -253,7 +253,7 @@ const SimplifiedDriverDashboard = () => {
           const bookingInfo = data.isManualBooking ? `\nBooking ID: ${data.bookingId}\nPayment: Already Collected` : '';
           
           // Always show an alert for immediate attention
-          alert(`${notificationTitle}\n\n${notificationBody}\n\nFare: ₹${data.estimatedFare}${bookingInfo}`);
+          alert(`${notificationTitle}\n\n${notificationBody}\n\nFare: ₹${getDriverEarnings(data)}${bookingInfo}`);
           
           // Also try browser notification
           if ('Notification' in window && Notification.permission === 'granted') {
@@ -345,8 +345,8 @@ const SimplifiedDriverDashboard = () => {
             },
             vehicleType: data.vehicleType,
             distance: 0,
-            fare: data.estimatedFare,
-            estimatedFare: data.estimatedFare,
+            fare: getDriverEarnings(data),
+            estimatedFare: getDriverEarnings(data),
             startOTP: data.startOTP,
             endOTP: data.endOTP,
             status: 'assigned',
@@ -662,6 +662,39 @@ const SimplifiedDriverDashboard = () => {
     }
   };
 
+  // Helper function to get driver's earnings (base fare only, no GST/commission)
+  const getDriverEarnings = (ride) => {
+    // Priority 1: Use driverFare field (most accurate - what driver actually earns)
+    if (ride.driverFare && ride.driverFare > 0) {
+      return ride.driverFare;
+    }
+
+    // TEMPORARY FALLBACK: For existing ride requests without driverFare field
+    // This handles the transition period until all new requests have driverFare
+    if (ride.fare && ride.fare > 0) {
+      console.warn(`[SimplifiedDashboard] Using fallback fare for ride ${ride._id} - driverFare missing`);
+      return ride.fare;
+    }
+
+    if (ride.estimatedFare && ride.estimatedFare > 0) {
+      console.warn(`[SimplifiedDashboard] Using fallback estimatedFare for ride ${ride._id} - driverFare missing`);
+      return ride.estimatedFare;
+    }
+
+    // Log warning if no fare data available
+    if (ride && ride._id) {
+      console.warn(`[SimplifiedDashboard] No fare data available for ride ${ride._id}:`, {
+        rideId: ride._id,
+        driverFare: ride.driverFare,
+        fare: ride.fare,
+        estimatedFare: ride.estimatedFare,
+        status: ride.status
+      });
+    }
+
+    return 0;
+  };;
+
   // Logout
   const handleLogout = () => {
     console.log('[SimplifiedDriverDashboard] Logging out...');
@@ -911,7 +944,7 @@ const SimplifiedDriverDashboard = () => {
                       <strong>Vehicle:</strong> {activeRide.vehicleType?.toUpperCase()}
                     </div>
                     <div>
-                      <strong>Fare:</strong> ₹{activeRide.fare || activeRide.estimatedFare}
+                      <strong>Fare:</strong> ₹{getDriverEarnings(activeRide)}
                     </div>
                   </div>
                 </div>
@@ -969,7 +1002,7 @@ const SimplifiedDriverDashboard = () => {
                       ✅ Ride Completed Successfully!
                     </div>
                     <div className="text-sm text-green-700 mt-2">
-                      Payment: ₹{activeRide.actualFare || activeRide.fare || activeRide.estimatedFare} (Cash)
+                      Payment: ₹{getDriverEarnings(activeRide)} (Cash)
                     </div>
                   </div>
                 )}
@@ -1077,7 +1110,7 @@ const SimplifiedDriverDashboard = () => {
                           )}
                         </div>
                         <div className="text-right">
-                          <div className="text-xl font-bold text-green-600">₹{ride.fare || ride.estimatedFare}</div>
+                          <div className="text-xl font-bold text-green-600">₹{getDriverEarnings(ride)}</div>
                           {activeRide?._id !== ride._id && (
                             <>
                               {ride.status === 'pending' ? (

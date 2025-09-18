@@ -81,6 +81,39 @@ const rideRequestSchema = new mongoose.Schema({
   actualFare: {
     type: Number
   },
+  // New fare fields for commission system
+  driverFare: {
+    type: Number,
+    default: null // Driver's base earnings (without GST/commission)
+  },
+  customerFare: {
+    type: Number,
+    default: null // Will be same as fare for old rides
+  },
+  baseFare: {
+    type: Number,
+    default: null
+  },
+  gstAmount: {
+    type: Number,
+    default: 0
+  },
+  commissionAmount: {
+    type: Number,
+    default: 0
+  },
+  nightChargeAmount: {
+    type: Number,
+    default: 0
+  },
+  fareBreakdown: {
+    base: Number,
+    gst: Number,
+    commission: Number,
+    nightCharge: Number,
+    total: Number,
+    driverEarning: Number
+  },
   driverName: String,
   driverPhone: String,
   driverVehicleNo: String,

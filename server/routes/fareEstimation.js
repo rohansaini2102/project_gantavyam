@@ -10,13 +10,14 @@ const RideRequest = require('../models/RideRequest');
 // Get fare estimates for a ride
 router.post('/estimate', async (req, res) => {
   try {
-    const { pickupLat, pickupLng, dropLat, dropLng, pickupStation } = req.body;
-    
+    const { pickupLat, pickupLng, dropLat, dropLng, pickupStation, detailed } = req.body;
+
     console.log('\n=== FARE ESTIMATION REQUEST ===');
     console.log('Pickup:', pickupLat, pickupLng);
     console.log('Drop:', dropLat, dropLng);
     console.log('Pickup Station:', pickupStation);
-    
+    console.log('Detailed:', detailed || false);
+
     // Validate input
     if (!pickupLat || !pickupLng || !dropLat || !dropLng) {
       return res.status(400).json({
@@ -24,70 +25,98 @@ router.post('/estimate', async (req, res) => {
         message: 'Missing required coordinates'
       });
     }
-    
+
     // Calculate fare estimates
     const fareEstimates = await calculateFareEstimates(pickupLat, pickupLng, dropLat, dropLng);
-    
+
     // Get dynamic pricing based on station demand
     let dynamicFactor = 1.0;
     if (pickupStation) {
       try {
         const station = await MetroStation.findOne({ name: pickupStation });
-        const onlineDrivers = await Driver.countDocuments({ 
-          isOnline: true, 
-          currentMetroBooth: pickupStation 
+        const onlineDrivers = await Driver.countDocuments({
+          isOnline: true,
+          currentMetroBooth: pickupStation
         });
-        const activeRequests = await RideRequest.countDocuments({ 
+        const activeRequests = await RideRequest.countDocuments({
           status: 'pending',
-          'pickupLocation.boothName': pickupStation 
+          'pickupLocation.boothName': pickupStation
         });
-        
+
         dynamicFactor = await getDynamicPricingFactor(pickupStation, onlineDrivers, activeRequests);
-        
+
         console.log(`📊 Station: ${pickupStation}, Online Drivers: ${onlineDrivers}, Active Requests: ${activeRequests}, Factor: ${dynamicFactor}`);
       } catch (error) {
         console.error('Error getting dynamic pricing:', error);
       }
     }
-    
+
     // Apply dynamic pricing to estimates
     const finalEstimates = {};
     Object.keys(fareEstimates.estimates).forEach(vehicleType => {
       const estimate = fareEstimates.estimates[vehicleType];
-      finalEstimates[vehicleType] = {
-        ...estimate,
-        totalFare: Math.round(estimate.totalFare * dynamicFactor),
-        dynamicFactor: dynamicFactor,
-        breakdown: {
-          ...estimate.breakdown,
-          dynamicPricing: Math.round((estimate.totalFare * dynamicFactor) - estimate.totalFare)
-        }
-      };
+
+      // Apply dynamic factor to both customer and driver fares
+      const dynamicCustomerFare = Math.round((estimate.customerTotalFare || estimate.totalFare) * dynamicFactor);
+      const dynamicDriverFare = Math.round((estimate.driverFare || estimate.totalFare) * dynamicFactor);
+
+      // For customer view (no breakdown unless detailed is requested)
+      if (!detailed) {
+        finalEstimates[vehicleType] = {
+          totalFare: dynamicCustomerFare, // Customer sees only total
+          // Minimal fields for customer
+          vehicleType: estimate.vehicleType,
+          distance: estimate.distance,
+          minimumFare: estimate.minimumFare,
+          surgeFactor: estimate.surgeFactor,
+          dynamicFactor: dynamicFactor
+        };
+      } else {
+        // For admin view (full breakdown)
+        finalEstimates[vehicleType] = {
+          ...estimate,
+          totalFare: dynamicCustomerFare, // Customer price
+          driverFare: dynamicDriverFare, // Driver earnings
+          customerTotalFare: dynamicCustomerFare,
+          dynamicFactor: dynamicFactor,
+          // Include full breakdown for admin
+          breakdown: {
+            ...estimate.breakdown,
+            dynamicFactor,
+            dynamicPricing: Math.round((dynamicDriverFare - estimate.driverFare)),
+            customerTotal: dynamicCustomerFare,
+            driverTotal: dynamicDriverFare
+          }
+        };
+      }
     });
-    
+
     const response = {
       success: true,
       distance: fareEstimates.distance,
       estimates: finalEstimates,
       surgeFactor: fareEstimates.surgeFactor,
       dynamicFactor: dynamicFactor,
-      timestamp: fareEstimates.timestamp
+      timestamp: fareEstimates.timestamp,
+      detailed: detailed || false
     };
-    
+
     // Log fare estimation
     logRideEvent('FARE-ESTIMATE', 'fare_calculated', {
       pickupStation,
       distance: fareEstimates.distance,
       dynamicFactor,
+      detailed: detailed || false,
       estimates: Object.keys(finalEstimates).map(type => ({
         type,
-        fare: finalEstimates[type].totalFare
+        customerFare: finalEstimates[type].totalFare,
+        driverFare: detailed ? finalEstimates[type].driverFare : undefined
       }))
     });
-    
+
     console.log('✅ Fare estimation completed');
     res.json(response);
-    
+
   } catch (error) {
     console.error('❌ Error calculating fare estimates:', error);
     res.status(500).json({
