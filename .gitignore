@@ -159,4 +159,22 @@ $RECYCLE_BIN/
 
 # Temporary files
 *.tmp
-*.temp 
+*.temp
+
+# Development and summary documentation files (auto-generated)
+*_SUMMARY.md
+*_FIX.md
+*_IMPROVEMENTS.md
+*_FIELDS.md
+*_VERIFICATION.md
+DRIVER_*.md
+PRODUCTION_*.md
+RECENT_*.md
+PURE_*.md
+
+# Claude AI configuration files
+claude_desktop_config.json
+claude.json
+
+# Temporary or invalid files
+--cwd 

@@ -1,11 +1,18 @@
 // Test sending OTP to specific number
+require('dotenv').config();
 const axios = require('axios');
 
-const API_KEY = 'ts2QDguSLK4e8VRp7BZCzAvMn1W3y9hbfHqiYOkamN06PUlFGwHy2Ob4GTSadpRKXDj35z7miUBnqexL';
-const TEST_MOBILE = '9358577653';
+const API_KEY = process.env.FAST2SMS_API_KEY || 'your_fast2sms_api_key_here';
+const TEST_MOBILE = process.env.TEST_MOBILE || '1234567890';
 const TEST_OTP = '1234';
 
 async function sendTestOTP() {
+  if (!process.env.FAST2SMS_API_KEY) {
+    console.log('❌ ERROR: FAST2SMS_API_KEY not found in environment variables');
+    console.log('Please add FAST2SMS_API_KEY to your .env file');
+    return;
+  }
+
   try {
     console.log('📱 Sending test OTP...');
     console.log('To:', TEST_MOBILE);

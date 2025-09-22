@@ -630,4 +630,131 @@ router.get('/manual-booking/:id', adminProtect, async (req, res) => {
   }
 });
 
+// Resend OTP via SMS for manual booking
+router.post('/resend-otp/:rideId', adminProtect, async (req, res) => {
+  try {
+    const { rideId } = req.params;
+
+    // Fetch ride details with populated user data
+    const ride = await RideRequest.findById(rideId)
+      .populate('user', 'name phone')
+      .populate('driver', 'fullName name');
+
+    if (!ride) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ride not found'
+      });
+    }
+
+    // Check if ride has OTPs
+    if (!ride.startOTP || !ride.endOTP) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTPs not available for this ride'
+      });
+    }
+
+    // Check if user phone is available
+    if (!ride.user || !ride.user.phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer phone number not available'
+      });
+    }
+
+    // Send resend OTP SMS if Twilio is configured
+    let smsResult = null;
+    if (twilioSmsService.isConfigured()) {
+      try {
+        // Validate phone number before sending SMS
+        const phoneValidation = twilioSmsService.validatePhoneNumber(ride.user.phone);
+        if (!phoneValidation.isValid) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid phone number: ${phoneValidation.error}`
+          });
+        }
+
+        console.log(`📱 Resending OTP SMS to ${phoneValidation.formatted}`);
+        smsResult = await twilioSmsService.sendResendOTP(
+          ride.user.phone,
+          ride.startOTP,
+          ride.endOTP,
+          {
+            rideId: ride._id,
+            adminId: req.admin?._id,
+            adminName: req.admin?.name,
+            resendBy: 'admin'
+          }
+        );
+
+        if (smsResult.success) {
+          console.log(`✅ Resend OTP SMS sent successfully to ${ride.user.phone}`);
+
+          // Log SMS success
+          logRideEvent(ride._id, 'sms_otp_resent', {
+            phone: ride.user.phone,
+            messageId: smsResult.messageId,
+            startOTP: ride.startOTP,
+            endOTP: ride.endOTP,
+            adminId: req.admin?._id,
+            adminName: req.admin?.name
+          });
+
+          res.json({
+            success: true,
+            message: 'OTP resent successfully via SMS',
+            phone: ride.user.phone,
+            messageId: smsResult.messageId
+          });
+        } else {
+          console.error(`❌ Failed to resend OTP SMS to ${ride.user.phone}:`, smsResult.error);
+
+          // Log SMS failure
+          logError(ride._id, 'sms_otp_resend_failed', {
+            phone: ride.user.phone,
+            error: smsResult.error,
+            errorCode: smsResult.errorCode,
+            adminId: req.admin?._id
+          });
+
+          res.status(500).json({
+            success: false,
+            message: 'Failed to send OTP via SMS',
+            error: smsResult.error
+          });
+        }
+      } catch (smsError) {
+        console.error('❌ SMS service error during OTP resend:', smsError.message);
+
+        // Log SMS service error
+        logError(ride._id, 'sms_otp_resend_service_error', {
+          phone: ride.user.phone,
+          error: smsError.message,
+          adminId: req.admin?._id
+        });
+
+        res.status(500).json({
+          success: false,
+          message: 'SMS service error',
+          error: smsError.message
+        });
+      }
+    } else {
+      res.status(503).json({
+        success: false,
+        message: 'SMS service not configured'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error resending OTP:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error resending OTP',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

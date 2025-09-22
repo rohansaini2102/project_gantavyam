@@ -42,6 +42,9 @@ const ManualBooking = () => {
   const [socketConnected, setSocketConnected] = useState(false);
   const [waitingForDriverResponse, setWaitingForDriverResponse] = useState(false);
 
+  // Resend OTP state
+  const [isResendingOTP, setIsResendingOTP] = useState(false);
+
   // Fixed pickup location (same as online booking)
   const currentBooth = FIXED_PICKUP_LOCATION;
 
@@ -675,6 +678,39 @@ const ManualBooking = () => {
     }
   };
 
+  // Handle resend OTP
+  const handleResendOTP = async () => {
+    if (!bookingDetails?._id) {
+      alert('No booking found to resend OTP');
+      return;
+    }
+
+    setIsResendingOTP(true);
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`/api/admin/resend-otp/${bookingDetails._id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert(`✅ OTP resent successfully to ${data.phone}`);
+      } else {
+        alert(`❌ Failed to resend OTP: ${data.message}`);
+      }
+    } catch (error) {
+      console.error('Error resending OTP:', error);
+      alert('❌ Error resending OTP. Please try again.');
+    } finally {
+      setIsResendingOTP(false);
+    }
+  };
+
   // State recovery functions
   const restoreBookingState = () => {
     const savedState = loadBookingState();
@@ -1061,6 +1097,35 @@ const ManualBooking = () => {
                   <strong>⚠️ Important:</strong> Share these OTPs with the customer. Driver will ask for them to start and complete the ride.
                 </p>
               </div>
+
+              {/* Resend OTP Button */}
+              {bookingDetails.user?.phone && (
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={handleResendOTP}
+                    disabled={isResendingOTP}
+                    className={`px-6 py-2 rounded-lg font-medium transition-all duration-200 ${
+                      isResendingOTP
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
+                    } text-white flex items-center gap-2 mx-auto`}
+                  >
+                    {isResendingOTP ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        📲 Resend OTP via SMS
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Send OTPs to customer: {bookingDetails.user?.phone}
+                  </p>
+                </div>
+              )}
             </div>
 
             {(bookingDetails.driver || bookingDetails.selectedDriver) && (
