@@ -1,6 +1,72 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { FaPaperPlane, FaSpinner, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
+import * as api from '../../services/api';
 
 const RideStatusTimeline = ({ ride, showTimestamps = true }) => {
+  const [resendOtpState, setResendOtpState] = useState({
+    loading: false,
+    success: false,
+    error: null,
+    lastSent: null
+  });
+
+  // Function to handle resend OTP
+  const handleResendOTP = async () => {
+    if (resendOtpState.loading) return;
+
+    try {
+      setResendOtpState(prev => ({ ...prev, loading: true, error: null }));
+
+      console.log(`📱 Resending OTP for ride: ${ride._id}`);
+
+      const response = await api.admin.post(`/resend-otp/${ride._id}`);
+
+      if (response.data.success) {
+        console.log('✅ OTP resent successfully:', response.data);
+        setResendOtpState({
+          loading: false,
+          success: true,
+          error: null,
+          lastSent: new Date().toLocaleTimeString()
+        });
+
+        // Clear success message after 5 seconds
+        setTimeout(() => {
+          setResendOtpState(prev => ({ ...prev, success: false }));
+        }, 5000);
+      } else {
+        throw new Error(response.data.error || 'Failed to resend OTP');
+      }
+    } catch (error) {
+      console.error('❌ Failed to resend OTP:', error);
+
+      let errorMessage = 'Failed to resend OTP';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setResendOtpState({
+        loading: false,
+        success: false,
+        error: errorMessage,
+        lastSent: null
+      });
+
+      // Clear error message after 10 seconds
+      setTimeout(() => {
+        setResendOtpState(prev => ({ ...prev, error: null }));
+      }, 10000);
+    }
+  };
+
+  // Check if OTP resend is available for current ride status
+  const canResendOTP = () => {
+    return ['pending', 'driver_assigned', 'ride_started'].includes(ride.status) &&
+           (ride.startOTP || ride.endOTP) &&
+           (ride.userPhone || ride.user?.phone);
+  };
   const statusSteps = [
     {
       key: 'pending',
@@ -172,10 +238,14 @@ const RideStatusTimeline = ({ ride, showTimestamps = true }) => {
                   <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
                     <div className="text-xs text-blue-700">
                       {step.key === 'driver_assigned' && ride.startOTP && (
-                        <div>Start OTP: <span className="font-mono font-bold">{ride.startOTP}</span></div>
+                        <div className="flex items-center justify-between">
+                          <span>Start OTP: <span className="font-mono font-bold">{ride.startOTP}</span></span>
+                        </div>
                       )}
                       {step.key === 'ride_started' && ride.endOTP && (
-                        <div>End OTP: <span className="font-mono font-bold">{ride.endOTP}</span></div>
+                        <div className="flex items-center justify-between">
+                          <span>End OTP: <span className="font-mono font-bold">{ride.endOTP}</span></span>
+                        </div>
                       )}
                       {step.key === 'ride_ended' && (
                         <div>Awaiting payment collection...</div>
@@ -188,6 +258,72 @@ const RideStatusTimeline = ({ ride, showTimestamps = true }) => {
           );
         })}
       </div>
+
+      {/* Resend OTP Section */}
+      {canResendOTP() && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-gray-700">
+              Customer OTP Management
+            </div>
+            <button
+              onClick={handleResendOTP}
+              disabled={resendOtpState.loading}
+              className={`flex items-center space-x-2 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                resendOtpState.loading
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : resendOtpState.success
+                  ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                  : resendOtpState.error
+                  ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+              }`}
+            >
+              {resendOtpState.loading ? (
+                <>
+                  <FaSpinner className="animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : resendOtpState.success ? (
+                <>
+                  <FaCheckCircle />
+                  <span>Sent!</span>
+                </>
+              ) : resendOtpState.error ? (
+                <>
+                  <FaExclamationTriangle />
+                  <span>Retry</span>
+                </>
+              ) : (
+                <>
+                  <FaPaperPlane />
+                  <span>Resend OTP</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Customer Phone Display */}
+          <div className="mt-2 text-xs text-gray-500">
+            <span>Customer: {ride.userPhone || ride.user?.phone || 'N/A'}</span>
+          </div>
+
+          {/* Status Messages */}
+          {resendOtpState.success && resendOtpState.lastSent && (
+            <div className="mt-2 p-2 bg-green-50 rounded text-xs text-green-700">
+              <FaCheckCircle className="inline mr-1" />
+              OTP sent successfully at {resendOtpState.lastSent}
+            </div>
+          )}
+
+          {resendOtpState.error && (
+            <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700">
+              <FaExclamationTriangle className="inline mr-1" />
+              Error: {resendOtpState.error}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Additional Status Info */}
       <div className="mt-4 pt-4 border-t border-gray-200">

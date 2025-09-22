@@ -23,6 +23,8 @@ const { router: rideManagementTools } = require('./admin/rideManagementTools');
 const driverInfoRecoveryRoutes = require('./admin/driverInfoRecovery');
 const manualBookingRoutes = require('./admin/manualBookingRoutes');
 const fareManagementRoutes = require('./admin/fareManagement');
+const twilioSmsService = require('../services/twilioSmsService');
+const RideRequest = require('../models/RideRequest');
 
 // Configure multer for multiple files
 const driverDocumentUpload = uploadDriverDocuments.fields([
@@ -113,6 +115,145 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: 'Server error' });
   }
+});
+
+// Resend OTP SMS endpoint
+router.post('/resend-otp/:rideId', adminProtect, async (req, res) => {
+  try {
+    const { rideId } = req.params;
+
+    console.log(`📱 Admin requesting OTP resend for ride: ${rideId}`);
+
+    // Find the ride request
+    const rideRequest = await RideRequest.findById(rideId).populate('user', 'phone name');
+
+    if (!rideRequest) {
+      return res.status(404).json({
+        success: false,
+        error: 'Ride not found'
+      });
+    }
+
+    // Check if ride is in a valid state for OTP resend
+    if (!['pending', 'driver_assigned', 'ride_started'].includes(rideRequest.status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot resend OTP for ride with status: ${rideRequest.status}`
+      });
+    }
+
+    // Check if customer phone number exists
+    const customerPhone = rideRequest.userPhone || rideRequest.user?.phone;
+    if (!customerPhone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Customer phone number not found'
+      });
+    }
+
+    // Check if SMS service is configured
+    if (!twilioSmsService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: 'SMS service not configured. Please check Twilio settings.',
+        errorCode: 'SMS_NOT_CONFIGURED'
+      });
+    }
+
+    // Send resend OTP SMS
+    console.log(`📤 Sending resend OTP SMS to ${customerPhone}`);
+    const smsResult = await twilioSmsService.sendResendOTP(
+      customerPhone,
+      rideRequest.startOTP,
+      rideRequest.endOTP,
+      {
+        rideId: rideRequest._id,
+        adminId: req.admin._id,
+        adminName: req.admin.name
+      }
+    );
+
+    // Log the attempt (success or failure)
+    const { logRideEvent, logError } = require('../utils/rideLogger');
+
+    if (smsResult.success) {
+      console.log(`✅ Resend OTP SMS sent successfully to ${customerPhone}`);
+
+      // Log successful resend
+      logRideEvent(rideRequest._id, 'sms_otp_resent', {
+        adminId: req.admin._id,
+        adminName: req.admin.name,
+        phone: customerPhone,
+        messageId: smsResult.messageId,
+        startOTP: rideRequest.startOTP,
+        endOTP: rideRequest.endOTP
+      });
+
+      return res.json({
+        success: true,
+        message: 'OTP SMS sent successfully',
+        data: {
+          phone: customerPhone,
+          messageId: smsResult.messageId,
+          status: smsResult.status,
+          timestamp: new Date().toISOString()
+        }
+      });
+
+    } else {
+      console.error(`❌ Failed to send resend OTP SMS to ${customerPhone}:`, smsResult.error);
+
+      // Log failed resend
+      logError(rideRequest._id, 'sms_otp_resend_failed', {
+        adminId: req.admin._id,
+        adminName: req.admin.name,
+        phone: customerPhone,
+        error: smsResult.error,
+        errorCode: smsResult.errorCode
+      });
+
+      return res.status(400).json({
+        success: false,
+        error: smsResult.error,
+        errorCode: smsResult.errorCode,
+        data: {
+          phone: customerPhone,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Resend OTP error:', error.message);
+
+    // Log system error
+    const { logError } = require('../utils/rideLogger');
+    logError(req.params.rideId, 'sms_resend_system_error', {
+      adminId: req.admin?._id,
+      adminName: req.admin?.name,
+      error: error.message,
+      stack: error.stack
+    });
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error while sending SMS',
+      errorCode: 'SYSTEM_ERROR'
+    });
+  }
+});
+
+// SMS service status endpoint (for debugging)
+router.get('/sms-status', adminProtect, (req, res) => {
+  const configStatus = twilioSmsService.getConfigStatus();
+
+  res.json({
+    success: true,
+    smsService: {
+      configured: configStatus.isConfigured,
+      details: configStatus
+    }
+  });
 });
 
 // Export router

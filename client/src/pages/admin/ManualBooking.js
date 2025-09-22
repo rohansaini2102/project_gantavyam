@@ -757,8 +757,19 @@ const ManualBooking = () => {
         throw new Error('Vehicle price is missing');
       }
       
+      // Enhanced phone validation
       if (!userPhone) {
         throw new Error('User phone is missing');
+      }
+      
+      if (userPhone.length !== 10) {
+        throw new Error('Phone number must be exactly 10 digits');
+      }
+      
+      // Validate phone number format (should start with 6-9)
+      const phoneRegex = /^[6-9]\d{9}$/;
+      if (!phoneRegex.test(userPhone)) {
+        throw new Error('Invalid phone number format. Must be 10 digits starting with 6-9');
       }
       
       if (!userName) {
@@ -868,7 +879,7 @@ const ManualBooking = () => {
       console.log('🔄 [Manual Booking] Setting loading to false');
       setLoading(false);
     }
-  };
+  };;
 
   const resetForm = () => {
     setCurrentStep(1);

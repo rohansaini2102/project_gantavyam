@@ -7,6 +7,7 @@ const BoothQueue = require('../../models/BoothQueue');
 const PickupLocation = require('../../models/PickupLocation');
 const { adminProtect } = require('../../middleware/auth');
 const { generateOTP } = require('../../utils/otpUtils');
+const twilioSmsService = require('../../services/twilioSmsService');
 const { getIO, sendRideRequestToDriver } = require('../../socket');
 const { v4: uuidv4 } = require('uuid');
 const { logRideEvent, logDriverAction, logStatusTransition, logSocketDelivery, logError } = require('../../utils/rideLogger');
@@ -29,6 +30,26 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
       bookingSource,
       paymentStatus
     } = req.body;
+
+    // Validate phone number
+    if (!userPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required'
+      });
+    }
+
+    // Check if phone number is valid (10 digits starting with 6-9)
+    const phoneRegex = /^[6-9]\d{9}$/;
+    if (!phoneRegex.test(userPhone)) {
+      console.error(`❌ Invalid phone number format: ${userPhone}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number. Must be 10 digits starting with 6-9'
+      });
+    }
+
+    console.log(`✅ Valid phone number received: ${userPhone}`);
 
     // Find or create user
     let user;
@@ -434,6 +455,75 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
       });
     }
     
+    // Send SMS to customer with OTPs if ride was successfully created
+    let smsResult = null;
+    if (targetDriver && twilioSmsService.isConfigured()) {
+      try {
+        // Validate phone number before sending SMS
+        const phoneValidation = twilioSmsService.validatePhoneNumber(user.phone);
+        if (!phoneValidation.isValid) {
+          console.warn(`⚠️ SMS skipped - invalid phone number: ${user.phone}`);
+          smsResult = {
+            success: false,
+            skipped: true,
+            reason: phoneValidation.error,
+            phone: user.phone
+          };
+
+          // Log the SMS skip but don't fail the booking
+          logError(populatedRide._id, 'sms_skipped_invalid_phone', {
+            phone: user.phone,
+            error: phoneValidation.error
+          });
+        } else {
+          console.log(`📱 Sending booking confirmation SMS to ${phoneValidation.formatted}`);
+          smsResult = await twilioSmsService.sendBookingOTP(
+            user.phone,
+            populatedRide.startOTP,
+            populatedRide.endOTP,
+            targetDriver.fullName,
+            {
+              rideId: populatedRide._id,
+              adminId: req.admin?._id,
+              adminName: req.admin?.name
+            }
+          );
+        }
+
+        if (smsResult.success) {
+          console.log(`✅ SMS sent successfully to ${user.phone}`);
+
+          // Log SMS success
+          logRideEvent(populatedRide._id, 'sms_booking_sent', {
+            phone: user.phone,
+            messageId: smsResult.messageId,
+            startOTP: populatedRide.startOTP,
+            endOTP: populatedRide.endOTP,
+            driverName: targetDriver.fullName
+          });
+        } else {
+          console.error(`❌ Failed to send SMS to ${user.phone}:`, smsResult.error);
+
+          // Log SMS failure
+          logError(populatedRide._id, 'sms_booking_failed', {
+            phone: user.phone,
+            error: smsResult.error,
+            errorCode: smsResult.errorCode
+          });
+        }
+      } catch (smsError) {
+        console.error('❌ SMS service error:', smsError.message);
+
+        // Log SMS service error
+        logError(populatedRide._id, 'sms_service_error', {
+          phone: user.phone,
+          error: smsError.message
+        });
+      }
+    } else if (!twilioSmsService.isConfigured()) {
+      console.warn('⚠️ SMS service not configured - skipping SMS');
+    }
+
     // Send success response
     res.json({
       success: true,
@@ -457,7 +547,11 @@ router.post('/manual-booking', adminProtect, async (req, res) => {
         } : null,
         userName: user.name,
         userPhone: user.phone,
-        bookingSource: 'manual'
+        bookingSource: 'manual',
+        smsStatus: smsResult ? {
+          sent: smsResult.success,
+          error: smsResult.success ? null : smsResult.error
+        } : null
       }
     });
 
