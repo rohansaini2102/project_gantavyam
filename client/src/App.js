@@ -41,7 +41,7 @@ import DriverView from './pages/test/DriverView';
 
 // Move these OUTSIDE the component to prevent recreation on each render
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
-const libraries = ["places", "geometry"]; // Static array prevents LoadScript reload warnings
+const libraries = ["places", "geometry", "routes"]; // Static array prevents LoadScript reload warnings
 
 function App() {
   return (

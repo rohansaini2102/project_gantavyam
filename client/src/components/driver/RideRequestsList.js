@@ -10,6 +10,7 @@ const RideRequestsList = ({
   onSelectRequest,
   onAcceptRide,
   onDeclineRide,
+  driverLocation = null,
   className = ''
 }) => {
   return (
@@ -72,6 +73,7 @@ const RideRequestsList = ({
                 onSelect={onSelectRequest}
                 onAccept={onAcceptRide}
                 onDecline={onDeclineRide}
+                driverLocation={driverLocation}
               />
             ))}
           </div>

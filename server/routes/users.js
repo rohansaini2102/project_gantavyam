@@ -436,7 +436,8 @@ router.post('/book-ride', protectUser, async (req, res) => {
             name: customerName,
             phone: customerPhone,
             password: customerPhone, // Default password
-            isPhoneVerified: true
+            isPhoneVerified: true,
+            createdBy: 'admin'
           });
           await user.save();
         }

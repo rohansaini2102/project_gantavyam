@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, Marker } from '@react-google-maps/api';
 import { drivers } from '../../services/api';
+import MapNavigationPanel from '../../components/driver/MapNavigationPanel';
 import { 
   initializeSocket, 
   subscribeToDriverUpdates, 
@@ -35,13 +36,16 @@ const SimplifiedDriverDashboard = () => {
   // OTP state
   const [showOTPInput, setShowOTPInput] = useState(null);
   const [otpInput, setOtpInput] = useState('');
-  
+
   // Error handling
   const [statusError, setStatusError] = useState('');
   const [rideError, setRideError] = useState('');
-  
+
   // Current tab (dashboard or assigned)
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Map navigation panel state
+  const [showMapPanel, setShowMapPanel] = useState(false);
 
   console.log('[SimplifiedDriverDashboard] Component mounted');
 
@@ -963,23 +967,35 @@ const SimplifiedDriverDashboard = () => {
 
                 {/* Action Buttons */}
                 {activeRide.status === 'assigned' && (
-                  <div className="text-center">
+                  <div className="text-center space-y-3">
                     <button
                       onClick={() => setShowOTPInput({ type: 'start', label: 'Ask customer for Start OTP' })}
                       className="w-full max-w-md px-6 py-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600"
                     >
                       🚀 Start Ride (Enter Start OTP)
                     </button>
+                    <button
+                      onClick={() => setShowMapPanel(true)}
+                      className="w-full max-w-md px-6 py-3 bg-indigo-500 text-white rounded-lg font-bold hover:bg-indigo-600 flex items-center justify-center gap-2"
+                    >
+                      🗺️ View Route & Navigate
+                    </button>
                   </div>
                 )}
 
                 {activeRide.status === 'ride_started' && (
-                  <div className="text-center">
+                  <div className="text-center space-y-3">
                     <button
                       onClick={completeRide}
                       className="w-full max-w-md px-6 py-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600"
                     >
                       🏁 Complete Ride (Enter End OTP)
+                    </button>
+                    <button
+                      onClick={() => setShowMapPanel(true)}
+                      className="w-full max-w-md px-6 py-3 bg-indigo-500 text-white rounded-lg font-bold hover:bg-indigo-600 flex items-center justify-center gap-2"
+                    >
+                      🗺️ View Route & Navigate
                     </button>
                   </div>
                 )}
@@ -1056,9 +1072,23 @@ const SimplifiedDriverDashboard = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Map Navigation Panel */}
+                <MapNavigationPanel
+                  isOpen={showMapPanel}
+                  onClose={() => setShowMapPanel(false)}
+                  pickupLocation={activeRide.pickupLocation}
+                  dropLocation={activeRide.dropLocation}
+                  driverLocation={driverLocation ? { latitude: driverLocation.lat, longitude: driverLocation.lng } : null}
+                  rideDetails={{
+                    fare: getDriverEarnings(activeRide),
+                    distance: activeRide.distance,
+                    vehicleType: activeRide.vehicleType,
+                  }}
+                />
               </div>
             )}
-            
+
             {/* Assigned Rides List */}
             <div className="bg-white p-6 rounded-lg shadow-md">
               <h3 className="text-lg font-bold text-gray-800 mb-4">

@@ -9,8 +9,9 @@ const UserSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    required: [true, 'Please add an email'],
+    required: false,
     unique: true,
+    sparse: true,
     match: [
       /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
       'Please add a valid email'
@@ -20,6 +21,23 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please add a phone number'],
     unique: true
+  },
+  isPhoneVerified: {
+    type: Boolean,
+    default: false
+  },
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
+  createdBy: {
+    type: String,
+    enum: ['self', 'admin'],
+    default: 'self'
+  },
+  firstLogin: {
+    type: Boolean,
+    default: true
   },
   password: {
     type: String,

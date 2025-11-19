@@ -20,9 +20,9 @@ import {
 } from 'react-icons/fa';
 
 // Import services and hooks
-import { 
-  initializeSocket, 
-  subscribeToDriverUpdates, 
+import {
+  initializeSocket,
+  subscribeToDriverUpdates,
   unsubscribeFromDriverUpdates,
   driverGoOnline,
   driverGoOffline,
@@ -33,6 +33,8 @@ import {
 } from '../../../services/socket';
 import { useDriverState } from '../../../contexts/DriverStateContext';
 import { drivers } from '../../../services/api';
+import MapNavigationPanel from '../MapNavigationPanel';
+import { openGoogleMapsNavigation } from '../../../services/mapNavigationService';
 
 const ModernDriverDashboard = () => {
   console.log('🚀 ModernDriverDashboard Component Loaded - New UI Active!');
@@ -69,6 +71,9 @@ const ModernDriverDashboard = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showCompletionAnimation, setShowCompletionAnimation] = useState(false);
   const [completedRideDetails, setCompletedRideDetails] = useState(null);
+
+  // Map navigation panel state
+  const [showMapPanel, setShowMapPanel] = useState(false);
 
   // Window resize listener
   useEffect(() => {
@@ -1119,7 +1124,21 @@ const ModernDriverDashboard = () => {
                 >
                   {rideStage === 'assigned' ? 'Start Ride' : 'Complete Ride'}
                 </button>
-                
+
+                {/* Open in Google Maps - Direct Launch */}
+                <button
+                  onClick={() => {
+                    openGoogleMapsNavigation(
+                      activeRide.pickupLocation,
+                      activeRide.dropLocation
+                    );
+                  }}
+                  className="w-full px-4 py-3 bg-slate-600 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <FaRoute className="text-lg" />
+                  <span>Open in Google Maps</span>
+                </button>
+
                 {/* Cancel button */}
                 <button
                   onClick={handleCancelRide}
@@ -1130,6 +1149,20 @@ const ModernDriverDashboard = () => {
                 </button>
               </div>
             )}
+
+            {/* Map Navigation Panel */}
+            <MapNavigationPanel
+              isOpen={showMapPanel}
+              onClose={() => setShowMapPanel(false)}
+              pickupLocation={activeRide.pickupLocation}
+              dropLocation={activeRide.dropLocation}
+              driverLocation={null}
+              rideDetails={{
+                fare: getDriverEarnings(activeRide),
+                distance: activeRide.distance,
+                vehicleType: activeRide.vehicleType,
+              }}
+            />
           </div>
         )}
 

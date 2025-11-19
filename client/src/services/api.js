@@ -666,6 +666,15 @@ export const admin = {
     }
   },
 
+  registerCustomer: async (customerData) => {
+    try {
+      const response = await apiClient.post('/admin/register-customer', customerData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   getManualBookingDetails: async (bookingId) => {
     try {
       const response = await apiClient.get(`/admin/manual-booking/${bookingId}`);

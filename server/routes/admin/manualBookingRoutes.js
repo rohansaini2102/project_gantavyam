@@ -67,7 +67,8 @@ router.post('/manual-booking', adminProtect, checkPermission(PERMISSIONS.RIDES_M
           phone: userPhone,
           password: userPhone, // Default password is phone number
           role: 'user',
-          isPhoneVerified: true
+          isPhoneVerified: true,
+          createdBy: 'admin'
         });
         await user.save();
       }
@@ -598,6 +599,78 @@ router.get('/check-user/:phone', adminProtect, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error checking user',
+      error: error.message
+    });
+  }
+});
+
+// Register new customer (quick registration during manual booking)
+router.post('/register-customer', adminProtect, checkPermission(PERMISSIONS.RIDES_MANUAL_BOOKING), async (req, res) => {
+  try {
+    const { phone, name, email } = req.body;
+
+    // Validate required fields
+    if (!phone || !name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number and name are required'
+      });
+    }
+
+    // Validate phone number format (10 digits starting with 6-9)
+    const phoneRegex = /^[6-9]\d{9}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number. Must be 10 digits starting with 6-9'
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ phone });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer with this phone number already exists',
+        user: {
+          _id: existingUser._id,
+          name: existingUser.name,
+          phone: existingUser.phone,
+          email: existingUser.email
+        }
+      });
+    }
+
+    // Create new user
+    const newUser = new User({
+      name,
+      phone,
+      email: email || undefined,
+      password: phone, // Default password is phone number
+      role: 'user',
+      isPhoneVerified: true,
+      createdBy: 'admin'
+    });
+
+    await newUser.save();
+
+    console.log(`✅ New customer registered by ${req.admin.name}: ${name} (${phone})`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Customer registered successfully',
+      user: {
+        _id: newUser._id,
+        name: newUser.name,
+        phone: newUser.phone,
+        email: newUser.email
+      }
+    });
+  } catch (error) {
+    console.error('Error registering customer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error registering customer',
       error: error.message
     });
   }

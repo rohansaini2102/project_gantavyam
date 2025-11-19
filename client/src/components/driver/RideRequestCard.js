@@ -1,5 +1,6 @@
-import React from 'react';
-import { FiPhone, FiMapPin, FiClock, FiNavigation, FiTruck, FiDollarSign, FiUser, FiCheck, FiX } from 'react-icons/fi';
+import React, { useState } from 'react';
+import { FiPhone, FiMapPin, FiClock, FiNavigation, FiTruck, FiDollarSign, FiUser, FiCheck, FiX, FiMap } from 'react-icons/fi';
+import MapNavigationPanel from './MapNavigationPanel';
 
 const RideRequestCard = ({
   request,
@@ -8,8 +9,11 @@ const RideRequestCard = ({
   onSelect,
   onAccept,
   onDecline,
-  className = ''
+  className = '',
+  driverLocation = null
 }) => {
+  const [showMapPanel, setShowMapPanel] = useState(false);
+
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -172,7 +176,7 @@ const RideRequestCard = ({
             }}
             disabled={isAccepting}
             className={`flex-1 py-4 px-4 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 min-h-[48px] touch-manipulation ${
-              isAccepting 
+              isAccepting
                 ? 'bg-gray-400 cursor-not-allowed text-white'
                 : 'bg-green-500 hover:bg-green-600 active:bg-green-700 text-white'
             }`}
@@ -189,7 +193,7 @@ const RideRequestCard = ({
               </>
             )}
           </button>
-          
+
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -202,7 +206,33 @@ const RideRequestCard = ({
             Decline
           </button>
         </div>
+
+        {/* View Route Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowMapPanel(true);
+          }}
+          className="w-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 min-h-[48px] touch-manipulation shadow-sm"
+        >
+          <FiMap className="w-4 h-4" />
+          <span>View Route in Map</span>
+        </button>
       </div>
+
+      {/* Map Navigation Panel */}
+      <MapNavigationPanel
+        isOpen={showMapPanel}
+        onClose={() => setShowMapPanel(false)}
+        pickupLocation={request.pickupLocation}
+        dropLocation={request.dropLocation}
+        driverLocation={driverLocation}
+        rideDetails={{
+          fare: getDriverEarnings(request),
+          distance: request.distance,
+          vehicleType: request.vehicleType,
+        }}
+      />
     </>
   );
 

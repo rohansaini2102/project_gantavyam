@@ -13,7 +13,6 @@ const ManualBooking = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
-  const [customerType, setCustomerType] = useState(''); // 'existing' or 'new'
   const [dropLocation, setDropLocation] = useState('');
   const [dropCoordinates, setDropCoordinates] = useState(null);
   const [dropLocationConfirmed, setDropLocationConfirmed] = useState(false);
@@ -22,7 +21,11 @@ const ManualBooking = () => {
   const [isCalculatingFare, setIsCalculatingFare] = useState(false);
   const [userPhone, setUserPhone] = useState('');
   const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
   const [existingUser, setExistingUser] = useState(null);
+  const [showRegistrationForm, setShowRegistrationForm] = useState(false);
+  const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false);
+  const [isRegisteringCustomer, setIsRegisteringCustomer] = useState(false);
   const [bookingDetails, setBookingDetails] = useState(null);
   const [autocomplete, setAutocomplete] = useState(null);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -109,7 +112,6 @@ const ManualBooking = () => {
     
     const state = {
       currentStep,
-      customerType,
       dropLocation,
       dropCoordinates,
       fareEstimates,
@@ -124,7 +126,9 @@ const ManualBooking = () => {
       } : null,
       userPhone,
       userName,
+      userEmail,
       existingUser,
+      showRegistrationForm,
       showMap,
       timestamp: Date.now()
     };
@@ -315,10 +319,10 @@ const ManualBooking = () => {
 
   // Auto-save state when important fields change
   useEffect(() => {
-    if (currentStep > 1 || customerType || dropLocation || userPhone) {
+    if (currentStep > 1 || dropLocation || userPhone) {
       saveBookingState();
     }
-  }, [currentStep, customerType, dropLocation, dropCoordinates, fareEstimates, selectedVehicle, userPhone, userName, existingUser]);
+  }, [currentStep, dropLocation, dropCoordinates, fareEstimates, selectedVehicle, userPhone, userName, userEmail, existingUser, showRegistrationForm]);
 
   // Calculate fare estimates automatically when drop location changes
   const calculateFareEstimates = async () => {
@@ -526,40 +530,80 @@ const ManualBooking = () => {
     nextStep();
   };
 
-  // Handle existing customer phone lookup
-  const handleExistingCustomer = async () => {
-    if (userPhone.length !== 10) {
-      alert('Please enter a valid 10-digit phone number');
+  // Handle phone lookup - auto-triggers when phone is 10 digits
+  const handlePhoneLookup = async (phone) => {
+    if (phone.length !== 10) {
       return;
     }
 
+    setIsLookingUpCustomer(true);
     try {
-      const response = await admin.checkUserByPhone(userPhone);
+      const response = await admin.checkUserByPhone(phone);
       if (response.exists) {
+        // Customer found - display their info
         setExistingUser(response.user);
         setUserName(response.user.name);
-        nextStep();
+        setUserEmail(response.user.email || '');
+        setShowRegistrationForm(false);
       } else {
-        alert('Customer not found. Please use "New Customer" option.');
+        // Customer not found - show registration form
+        setExistingUser(null);
+        setUserName('');
+        setUserEmail('');
+        setShowRegistrationForm(true);
       }
     } catch (error) {
       console.error('Error checking user:', error);
       alert('Failed to check customer details');
+    } finally {
+      setIsLookingUpCustomer(false);
     }
   };
 
-  // Handle new customer details
-  const handleNewCustomer = () => {
-    if (!userPhone || !userName) {
+  // Handle customer registration
+  const handleRegisterCustomer = async () => {
+    if (!userName || !userPhone) {
       alert('Please enter customer name and phone number');
       return;
     }
-    
+
     if (userPhone.length !== 10) {
       alert('Please enter a valid 10-digit phone number');
       return;
     }
-    
+
+    setIsRegisteringCustomer(true);
+    try {
+      // Register the customer
+      const response = await admin.registerCustomer({
+        phone: userPhone,
+        name: userName,
+        email: userEmail || undefined
+      });
+
+      if (response.success) {
+        // Immediately fetch from database to verify
+        const verifyResponse = await admin.checkUserByPhone(userPhone);
+        if (verifyResponse.exists) {
+          setExistingUser(verifyResponse.user);
+          setShowRegistrationForm(false);
+          alert('Customer registered successfully!');
+        }
+      }
+    } catch (error) {
+      console.error('Error registering customer:', error);
+      alert(error.response?.data?.message || 'Failed to register customer');
+    } finally {
+      setIsRegisteringCustomer(false);
+    }
+  };
+
+  // Handle proceeding to next step (only when customer is confirmed)
+  const handleProceedFromCustomer = () => {
+    if (!existingUser) {
+      alert('Please complete customer registration first');
+      return;
+    }
     nextStep();
   };
 
@@ -710,11 +754,14 @@ const ManualBooking = () => {
     const savedState = loadBookingState();
     if (savedState) {
       setCurrentStep(savedState.currentStep);
-      setCustomerType(savedState.customerType);
       setDropLocation(savedState.dropLocation);
       setDropCoordinates(savedState.dropCoordinates);
       setFareEstimates(savedState.fareEstimates);
-      
+      setUserPhone(savedState.userPhone || '');
+      setUserName(savedState.userName || '');
+      setUserEmail(savedState.userEmail || '');
+      setShowRegistrationForm(savedState.showRegistrationForm || false);
+
       // Restore selectedVehicle by recreating it with icons
       if (savedState.selectedVehicle) {
         const restoredVehicle = findVehicleByType(savedState.selectedVehicle.type);
@@ -885,7 +932,6 @@ const ManualBooking = () => {
 
   const resetForm = () => {
     setCurrentStep(1);
-    setCustomerType('');
     setDropLocation('');
     setDropCoordinates(null);
     setDropLocationConfirmed(false);
@@ -895,7 +941,9 @@ const ManualBooking = () => {
     setAvailableDrivers([]);
     setUserPhone('');
     setUserName('');
+    setUserEmail('');
     setExistingUser(null);
+    setShowRegistrationForm(false);
     setBookingDetails(null);
     clearBookingState();
   };
@@ -1216,96 +1264,132 @@ const ManualBooking = () => {
 
         {/* Main Content */}
         <div className="bg-white rounded-lg shadow-lg p-6">
-          {/* Step 1: Customer Type Selection */}
+          {/* Step 1: Customer Lookup */}
           {currentStep === 1 && (
-            <div className="text-center">
-              <h2 className="text-xl font-semibold mb-6">Choose Customer Type</h2>
-              <div className="grid grid-cols-2 gap-6 max-w-md mx-auto">
-                <button
-                  onClick={() => setCustomerType('existing')}
-                  className={`p-6 rounded-lg border-2 transition-all ${
-                    customerType === 'existing' 
-                      ? 'border-blue-500 bg-blue-50' 
-                      : 'border-gray-300 hover:border-blue-300'
-                  }`}
-                >
-                  <FaUser className="text-3xl mx-auto mb-3 text-blue-600" />
-                  <h3 className="font-medium text-lg">Existing Customer</h3>
-                  <p className="text-sm text-gray-600 mt-2">Customer has an account</p>
-                </button>
-                
-                <button
-                  onClick={() => setCustomerType('new')}
-                  className={`p-6 rounded-lg border-2 transition-all ${
-                    customerType === 'new' 
-                      ? 'border-green-500 bg-green-50' 
-                      : 'border-gray-300 hover:border-green-300'
-                  }`}
-                >
-                  <FaUserPlus className="text-3xl mx-auto mb-3 text-green-600" />
-                  <h3 className="font-medium text-lg">New Customer</h3>
-                  <p className="text-sm text-gray-600 mt-2">First-time customer</p>
-                </button>
+            <div className="max-w-2xl mx-auto">
+              <h2 className="text-xl font-semibold mb-6 text-center">Customer Information</h2>
+
+              {/* Phone Number Input */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FaPhone className="inline mr-2" />
+                  Customer Phone Number
+                </label>
+                <input
+                  type="tel"
+                  value={userPhone}
+                  onChange={(e) => {
+                    const phone = e.target.value;
+                    setUserPhone(phone);
+                    if (phone.length === 10) {
+                      handlePhoneLookup(phone);
+                    } else {
+                      setShowRegistrationForm(false);
+                      setExistingUser(null);
+                    }
+                  }}
+                  placeholder="Enter 10-digit phone number"
+                  maxLength="10"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                  disabled={isLookingUpCustomer || isRegisteringCustomer}
+                />
+                {isLookingUpCustomer && (
+                  <p className="text-sm text-blue-600 mt-2">
+                    <FaSpinner className="inline animate-spin mr-2" />
+                    Looking up customer...
+                  </p>
+                )}
               </div>
-              
-              {customerType && (
-                <div className="mt-8">
-                  {customerType === 'existing' ? (
-                    <div className="max-w-md mx-auto">
+
+              {/* Existing Customer Found */}
+              {existingUser && (
+                <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6">
+                  <div className="flex items-center mb-4">
+                    <FaCheckCircle className="text-green-600 text-2xl mr-3" />
+                    <h3 className="text-lg font-semibold text-green-800">Customer Found</h3>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    <p className="text-gray-700"><strong>Name:</strong> {existingUser.name}</p>
+                    <p className="text-gray-700"><strong>Phone:</strong> {existingUser.phone}</p>
+                    {existingUser.email && (
+                      <p className="text-gray-700"><strong>Email:</strong> {existingUser.email}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleProceedFromCustomer}
+                    className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  >
+                    <FaArrowRight className="inline mr-2" />
+                    Proceed to Trip Details
+                  </button>
+                </div>
+              )}
+
+              {/* Registration Form for New Customer */}
+              {showRegistrationForm && !existingUser && userPhone.length === 10 && (
+                <div className="bg-blue-50 border-2 border-blue-500 rounded-lg p-6">
+                  <div className="flex items-center mb-4">
+                    <FaUserPlus className="text-blue-600 text-2xl mr-3" />
+                    <h3 className="text-lg font-semibold text-blue-800">New Customer Registration</h3>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Customer not found. Please fill in their details to register:
+                  </p>
+
+                  <div className="space-y-4">
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Customer Phone Number
+                        Customer Name *
                       </label>
                       <input
-                        type="tel"
-                        value={userPhone}
-                        onChange={(e) => setUserPhone(e.target.value)}
-                        placeholder="Enter 10-digit phone number"
-                        maxLength="10"
+                        type="text"
+                        value={userName}
+                        onChange={(e) => setUserName(e.target.value)}
+                        placeholder="Enter customer name"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        disabled={isRegisteringCustomer}
                       />
-                      <button
-                        onClick={handleExistingCustomer}
-                        className="w-full mt-4 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        <FaSearch className="inline mr-2" />
-                        Find Customer
-                      </button>
                     </div>
-                  ) : (
-                    <div className="max-w-md mx-auto space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Customer Name
-                        </label>
-                        <input
-                          type="text"
-                          value={userName}
-                          onChange={(e) => setUserName(e.target.value)}
-                          placeholder="Enter customer name"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Phone Number
-                        </label>
-                        <input
-                          type="tel"
-                          value={userPhone}
-                          onChange={(e) => setUserPhone(e.target.value)}
-                          placeholder="Enter 10-digit phone number"
-                          maxLength="10"
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        />
-                      </div>
-                      <button
-                        onClick={handleNewCustomer}
-                        className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors"
-                      >
-                        Continue
-                      </button>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email (Optional)
+                      </label>
+                      <input
+                        type="email"
+                        value={userEmail}
+                        onChange={(e) => setUserEmail(e.target.value)}
+                        placeholder="Enter email address"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        disabled={isRegisteringCustomer}
+                      />
                     </div>
-                  )}
+
+                    <button
+                      onClick={handleRegisterCustomer}
+                      disabled={!userName || isRegisteringCustomer}
+                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                      {isRegisteringCustomer ? (
+                        <>
+                          <FaSpinner className="inline animate-spin mr-2" />
+                          Registering Customer...
+                        </>
+                      ) : (
+                        <>
+                          <FaUserPlus className="inline mr-2" />
+                          Register Customer
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Help Text */}
+              {!showRegistrationForm && !existingUser && userPhone.length < 10 && (
+                <div className="text-center text-gray-500 text-sm">
+                  Enter a 10-digit phone number to lookup or register a customer
                 </div>
               )}
             </div>
