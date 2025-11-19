@@ -7,8 +7,10 @@ import DriverStatusIndicator from '../../components/admin/DriverStatusIndicator'
 import RideStatusTimeline from '../../components/admin/RideStatusTimeline';
 import RideFinancialDetails from '../../components/admin/RideFinancialDetails';
 import FinancialSummary from '../../components/admin/FinancialSummary';
+import { useAdmin } from '../../contexts/AdminContext';
 
 const RideManagement = () => {
+  const { hasPermission, PERMISSIONS } = useAdmin();
   const [rides, setRides] = useState([]);
   const [booths, setBooths] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -571,13 +573,15 @@ const RideManagement = () => {
               )}
             </div>
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowFinancialDashboard(!showFinancialDashboard)}
-                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 flex items-center gap-2 shadow-sm"
-              >
-                <FaChartLine />
-                {showFinancialDashboard ? 'Hide' : 'Show'} Financial Dashboard
-              </button>
+              {hasPermission(PERMISSIONS.FINANCIAL_VIEW) && (
+                <button
+                  onClick={() => setShowFinancialDashboard(!showFinancialDashboard)}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 flex items-center gap-2 shadow-sm"
+                >
+                  <FaChartLine />
+                  {showFinancialDashboard ? 'Hide' : 'Show'} Financial Dashboard
+                </button>
+              )}
               <button
                 onClick={handleRefresh}
                 disabled={loading}
@@ -597,8 +601,8 @@ const RideManagement = () => {
       </div>
 
       <div className="px-4 sm:px-6 lg:px-8 py-6">
-        {/* Financial Dashboard */}
-        {showFinancialDashboard && (
+        {/* Financial Dashboard (only for users with financial view permission) */}
+        {hasPermission(PERMISSIONS.FINANCIAL_VIEW) && showFinancialDashboard && (
           <div className="mb-6">
             <FinancialSummary
               rides={rides}
@@ -981,8 +985,10 @@ const RideManagement = () => {
                 </div>
               </div>
 
-              {/* Financial Details using new component */}
-              <RideFinancialDetails ride={selectedRide} showSummary={true} />
+              {/* Financial Details (only for users with financial view permission) */}
+              {hasPermission(PERMISSIONS.FINANCIAL_VIEW) && (
+                <RideFinancialDetails ride={selectedRide} showSummary={true} />
+              )}
 
               {/* Location Info */}
               <div className="bg-red-50 p-4 rounded-lg">

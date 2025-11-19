@@ -2,10 +2,11 @@ const express = require('express');
 const router = express.Router();
 const FareConfig = require('../../models/FareConfig');
 const { adminProtect } = require('../../middleware/auth');
+const { checkPermission, PERMISSIONS } = require('../../middleware/permissions');
 const { calculateFare, calculateDistance } = require('../../utils/fareCalculator');
 
-// Get current fare configuration
-router.get('/fare-config', adminProtect, async (req, res) => {
+// Get current fare configuration (view permission required)
+router.get('/fare-config', adminProtect, checkPermission(PERMISSIONS.FARE_VIEW), async (req, res) => {
   try {
     const config = await FareConfig.getActiveConfig();
     
@@ -23,8 +24,8 @@ router.get('/fare-config', adminProtect, async (req, res) => {
   }
 });
 
-// Update vehicle-specific pricing
-router.put('/fare-config/vehicle/:vehicleType', adminProtect, async (req, res) => {
+// Update vehicle-specific pricing (edit permission required)
+router.put('/fare-config/vehicle/:vehicleType', adminProtect, checkPermission(PERMISSIONS.FARE_EDIT), async (req, res) => {
   try {
     const { vehicleType } = req.params;
     const { baseFare, perKmRate, minimumFare, waitingChargePerMin } = req.body;
@@ -91,8 +92,8 @@ router.put('/fare-config/vehicle/:vehicleType', adminProtect, async (req, res) =
   }
 });
 
-// Update all vehicle pricing at once
-router.put('/fare-config/vehicles', adminProtect, async (req, res) => {
+// Update all vehicle pricing at once (edit permission required)
+router.put('/fare-config/vehicles', adminProtect, checkPermission(PERMISSIONS.FARE_EDIT), async (req, res) => {
   try {
     const { vehicleConfigs } = req.body;
     
@@ -142,8 +143,8 @@ router.put('/fare-config/vehicles', adminProtect, async (req, res) => {
   }
 });
 
-// Update surge pricing rules
-router.put('/fare-config/surge', adminProtect, async (req, res) => {
+// Update surge pricing rules (edit permission required)
+router.put('/fare-config/surge', adminProtect, checkPermission(PERMISSIONS.FARE_EDIT), async (req, res) => {
   try {
     const { surgeTimes } = req.body;
     
@@ -202,8 +203,8 @@ router.put('/fare-config/surge', adminProtect, async (req, res) => {
   }
 });
 
-// Update dynamic pricing thresholds
-router.put('/fare-config/dynamic', adminProtect, async (req, res) => {
+// Update dynamic pricing thresholds (edit permission required)
+router.put('/fare-config/dynamic', adminProtect, checkPermission(PERMISSIONS.FARE_EDIT), async (req, res) => {
   try {
     const { dynamicPricing } = req.body;
     
@@ -262,7 +263,7 @@ router.put('/fare-config/dynamic', adminProtect, async (req, res) => {
   }
 });
 
-// Get fare config history
+// Get fare config history (view permission required)
 router.get('/fare-config/history', adminProtect, async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
@@ -295,7 +296,7 @@ router.get('/fare-config/history', adminProtect, async (req, res) => {
   }
 });
 
-// Simulate fare calculation with new config
+// Simulate fare calculation with new config (view permission required)
 router.post('/fare-config/simulate', adminProtect, async (req, res) => {
   try {
     const { 
@@ -400,8 +401,8 @@ router.post('/fare-config/simulate', adminProtect, async (req, res) => {
   }
 });
 
-// Restore a previous config
-router.post('/fare-config/restore/:configId', adminProtect, async (req, res) => {
+// Restore a previous config (edit permission required)
+router.post('/fare-config/restore/:configId', adminProtect, checkPermission(PERMISSIONS.FARE_EDIT), async (req, res) => {
   try {
     const { configId } = req.params;
     

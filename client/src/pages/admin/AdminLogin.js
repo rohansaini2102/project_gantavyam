@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminLogin } from '../../services/api';
 import { API_URL } from '../../config';
+import { useAdmin } from '../../contexts/AdminContext';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { updateAdmin } = useAdmin();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -33,9 +35,15 @@ const AdminLogin = () => {
       
       const response = await adminLogin({ email, password });
       console.log('🔐 [Admin Login] Login response:', response);
-      
-      if (response.success && response.token) {
-        console.log('🔐 [Admin Login] Login successful, navigating to admin');
+
+      if (response.success && response.token && response.admin) {
+        console.log('🔐 [Admin Login] Login successful');
+        console.log('🔐 [Admin Login] Admin role:', response.admin.role);
+        console.log('🔐 [Admin Login] Admin permissions:', response.admin.permissions);
+
+        // Update admin context with user data
+        updateAdmin(response.admin);
+
         console.log('🔐 [Admin Login] Token stored:', !!localStorage.getItem('adminToken'));
         navigate('/admin');
       } else {

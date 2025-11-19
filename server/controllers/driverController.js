@@ -2,6 +2,7 @@
 const Driver = require('../models/Driver');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const config = require('../config/config');
 const path = require('path');
 const mongoose = require('mongoose');
 
@@ -277,12 +278,13 @@ exports.registerDriver = async (req, res) => {
     }
 
     // Generate JWT token
+    const config = require('../config/config');
     const token = jwt.sign(
-      { 
+      {
         id: savedDriver._id,
         role: 'driver'
       },
-      process.env.JWT_SECRET || 'your_jwt_secret',
+      config.jwtSecret,
       { expiresIn: '30d' }
     );
 
@@ -449,11 +451,11 @@ exports.loginDriver = async (req, res) => {
 
     // Create token
     const token = jwt.sign(
-      { 
+      {
         id: driver._id,
         role: 'driver'
       },
-      process.env.JWT_SECRET || 'your_jwt_secret',
+      config.jwtSecret,
       { expiresIn: '30d' }
     );
     

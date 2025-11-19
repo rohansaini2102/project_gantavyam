@@ -758,12 +758,13 @@ router.post('/create-test-driver', async (req, res) => {
       console.log('Test driver already exists:', existingDriver._id);
       
       // Generate JWT token for existing driver
+      const config = require('../config/config');
       const token = jwt.sign(
-        { 
+        {
           id: existingDriver._id,
           role: 'driver'
         },
-        process.env.JWT_SECRET || 'your_jwt_secret',
+        config.jwtSecret,
         { expiresIn: '30d' }
       );
       
@@ -811,11 +812,11 @@ router.post('/create-test-driver', async (req, res) => {
     
     // Generate JWT token
     const token = jwt.sign(
-      { 
+      {
         id: testDriver._id,
         role: 'driver'
       },
-      process.env.JWT_SECRET || 'your_jwt_secret',
+      config.jwtSecret,
       { expiresIn: '30d' }
     );
     

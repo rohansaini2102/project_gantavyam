@@ -64,14 +64,16 @@ const mongoOptions = {
 
 mongoose.connect(process.env.MONGO_URL, mongoOptions)
 .then(async () => {
-  logger.info('MongoDB Connected successfully', { 
+  logger.info('MongoDB Connected successfully', {
     mongoUrl: process.env.MONGO_URL?.replace(/:([^:@]{1,})@/, ':***@') // Hide password in logs
   });
   // Print database statistics on startup
   printDriverStats();
   // Ensure default admin exists
   await Admin.createDefaultAdmin();
-  
+  // Update existing admin permissions to match current role definitions
+  await Admin.updateAdminPermissions();
+
   // Seed metro stations if not present
   try {
     const MetroStation = require('./models/MetroStation');

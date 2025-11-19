@@ -1,39 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { FaUserPlus, FaUsers, FaCar, FaUser, FaHome, FaTachometerAlt, FaChartBar, FaCog, FaRoute, FaMapMarkerAlt, FaListOl, FaHandHoldingHeart, FaMoneyBillWave, FaBars, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { useSidebar } from '../../contexts/SidebarContext';
+import { useAdmin } from '../../contexts/AdminContext';
 
-const navLinks = [
-  { to: '/admin', label: 'Dashboard', icon: <FaTachometerAlt />, isExact: true },
+const getAllNavLinks = (PERMISSIONS) => [
+  { to: '/admin', label: 'Dashboard', icon: <FaTachometerAlt />, isExact: true, permission: null }, // Always visible
   {
     category: 'Operations',
     items: [
-      { to: '/admin/rides', label: 'Ride Management', icon: <FaRoute /> },
-      { to: '/admin/manual-booking', label: 'Manual Booking', icon: <FaHandHoldingHeart /> },
-      { to: '/admin/queue', label: 'Queue Management', icon: <FaListOl /> },
-      { to: '/admin/booths', label: 'Booth Management', icon: <FaMapMarkerAlt /> },
-      { to: '/admin/fare-management', label: 'Fare Management', icon: <FaMoneyBillWave /> },
+      { to: '/admin/rides', label: 'Ride Management', icon: <FaRoute />, permission: PERMISSIONS.RIDES_VIEW },
+      { to: '/admin/manual-booking', label: 'Manual Booking', icon: <FaHandHoldingHeart />, permission: PERMISSIONS.RIDES_MANUAL_BOOKING },
+      { to: '/admin/queue', label: 'Queue Management', icon: <FaListOl />, permission: PERMISSIONS.QUEUE_VIEW },
+      { to: '/admin/fare-management', label: 'Fare Management', icon: <FaMoneyBillWave />, permission: PERMISSIONS.FARE_VIEW },
     ]
   },
   {
     category: 'Data',
     items: [
-      { to: '/admin/drivers', label: 'All Drivers', icon: <FaUsers /> },
-      { to: '/admin/view-users', label: 'All Users', icon: <FaUser /> },
+      { to: '/admin/drivers', label: 'All Drivers', icon: <FaUsers />, permission: PERMISSIONS.DRIVERS_VIEW },
+      { to: '/admin/view-users', label: 'All Users', icon: <FaUser />, permission: PERMISSIONS.USERS_VIEW },
     ]
   },
-  { 
+  {
     category: 'Management',
     items: [
-      { to: '/admin/register-driver', label: 'Register Driver', icon: <FaCar /> },
-      { to: '/admin/add-user', label: 'Add User', icon: <FaUserPlus /> },
+      { to: '/admin/register-driver', label: 'Register Driver', icon: <FaCar />, permission: PERMISSIONS.DRIVERS_CREATE },
+      { to: '/admin/add-user', label: 'Add User', icon: <FaUserPlus />, permission: PERMISSIONS.USERS_CREATE },
     ]
   },
   {
     category: 'System',
     items: [
-      { to: '/admin/reports', label: 'Reports', icon: <FaChartBar /> },
-      { to: '/admin/settings', label: 'Settings', icon: <FaCog /> },
+      { to: '/admin/reports', label: 'Reports', icon: <FaChartBar />, permission: PERMISSIONS.FINANCIAL_VIEW },
+      { to: '/admin/settings', label: 'Settings', icon: <FaCog />, permission: PERMISSIONS.SETTINGS_VIEW },
     ]
   }
 ];
@@ -41,7 +41,39 @@ const navLinks = [
 const AdminSidebar = () => {
   const location = useLocation();
   const { isCollapsed, toggleSidebar } = useSidebar();
+  const { admin, hasPermission, PERMISSIONS } = useAdmin();
   const [hoveredItem, setHoveredItem] = useState(null);
+
+  // Filter nav links based on user permissions
+  const navLinks = useMemo(() => {
+    const allLinks = getAllNavLinks(PERMISSIONS);
+
+    // If admin is not loaded yet, show empty array (loading state)
+    if (!admin) {
+      return [];
+    }
+
+    // For ALL roles, filter based on permissions consistently
+    // The hasPermission function handles role-based auto-approval (admin/super-admin get all permissions)
+    return allLinks.map(section => {
+      if (section.category) {
+        // Filter items in the category
+        const filteredItems = section.items.filter(item => {
+          // If no permission required, always show
+          if (!item.permission) return true;
+          // Check if user has the required permission
+          return hasPermission(item.permission);
+        });
+
+        // Only include category if it has items
+        return filteredItems.length > 0 ? { ...section, items: filteredItems } : null;
+      } else {
+        // Single item - check permission
+        if (!section.permission) return section;
+        return hasPermission(section.permission) ? section : null;
+      }
+    }).filter(Boolean); // Remove null entries
+  }, [admin, hasPermission, PERMISSIONS]);
 
   const isActiveLink = (to, isExact = false) => {
     if (isExact) {

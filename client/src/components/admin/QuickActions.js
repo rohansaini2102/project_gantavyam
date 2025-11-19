@@ -2,9 +2,11 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaPlus, FaUserPlus, FaCar, FaUsers, FaUser, FaFileExport, FaChartLine, FaCog } from 'react-icons/fa';
 import ModernCard from './ModernCard';
+import { useAdmin } from '../../contexts/AdminContext';
 
 const QuickActions = () => {
   const navigate = useNavigate();
+  const { hasPermission, PERMISSIONS } = useAdmin();
 
   const quickActions = [
     {
@@ -12,35 +14,40 @@ const QuickActions = () => {
       description: 'Add a new driver to the system',
       icon: <FaCar className="text-blue-600" />,
       onClick: () => navigate('/admin/register-driver'),
-      color: 'blue'
+      color: 'blue',
+      permission: PERMISSIONS.DRIVERS_CREATE
     },
     {
       title: 'Add New User',
       description: 'Create a new user account',
       icon: <FaUserPlus className="text-green-600" />,
       onClick: () => navigate('/admin/add-user'),
-      color: 'green'
+      color: 'green',
+      permission: PERMISSIONS.USERS_CREATE
     },
     {
       title: 'View All Drivers',
       description: 'Manage and verify drivers',
       icon: <FaUsers className="text-purple-600" />,
       onClick: () => navigate('/admin/drivers'),
-      color: 'purple'
+      color: 'purple',
+      permission: PERMISSIONS.DRIVERS_VIEW
     },
     {
       title: 'View All Users',
       description: 'Manage user accounts',
       icon: <FaUser className="text-orange-600" />,
       onClick: () => navigate('/admin/view-users'),
-      color: 'orange'
+      color: 'orange',
+      permission: PERMISSIONS.USERS_VIEW
     },
     {
       title: 'Generate Reports',
       description: 'View analytics and reports',
       icon: <FaChartLine className="text-indigo-600" />,
       onClick: () => navigate('/admin/reports'),
-      color: 'indigo'
+      color: 'indigo',
+      permission: PERMISSIONS.FINANCIAL_VIEW
     },
     {
       title: 'Export Data',
@@ -50,9 +57,10 @@ const QuickActions = () => {
         // Export functionality
         alert('Export functionality coming soon!');
       },
-      color: 'teal'
+      color: 'teal',
+      permission: PERMISSIONS.FINANCIAL_EXPORT
     }
-  ];
+  ].filter(action => !action.permission || hasPermission(action.permission));
 
   const getColorClasses = (color) => {
     const colorMap = {
@@ -70,13 +78,15 @@ const QuickActions = () => {
     <div className="mb-8">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Quick Actions</h2>
-        <button
-          onClick={() => navigate('/admin/settings')}
-          className="flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
-        >
-          <FaCog className="h-4 w-4" />
-          <span className="text-sm">Settings</span>
-        </button>
+        {hasPermission(PERMISSIONS.SETTINGS_VIEW) && (
+          <button
+            onClick={() => navigate('/admin/settings')}
+            className="flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            <FaCog className="h-4 w-4" />
+            <span className="text-sm">Settings</span>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

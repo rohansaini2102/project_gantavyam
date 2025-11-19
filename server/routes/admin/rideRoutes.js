@@ -5,13 +5,16 @@ const RideHistory = require('../../models/RideHistory');
 const BoothQueue = require('../../models/BoothQueue');
 const PickupLocation = require('../../models/PickupLocation');
 const { adminProtect } = require('../../middleware/auth');
+const { checkPermission, PERMISSIONS } = require('../../middleware/permissions');
 const { notifyAdmins } = require('../../socket');
 
 // Apply admin protection to all routes
 router.use(adminProtect);
+// Note: View permission removed from blanket middleware to allow all admins to view ride details
+// Permission checks are applied selectively to routes that modify data
 
 // GET /admin/rides - Get all rides with filtering options
-router.get('/', async (req, res) => {
+router.get('/', checkPermission(PERMISSIONS.RIDES_VIEW), async (req, res) => {
   try {
     const {
       booth,
@@ -622,7 +625,7 @@ router.get('/:rideId', async (req, res) => {
 });
 
 // PUT /admin/rides/:rideId/status - Emergency status update
-router.put('/:rideId/status', async (req, res) => {
+router.put('/:rideId/status', checkPermission(PERMISSIONS.RIDES_MANAGE), async (req, res) => {
   try {
     const { rideId } = req.params;
     const { status, reason, adminNote } = req.body;

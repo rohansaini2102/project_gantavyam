@@ -423,14 +423,23 @@ export const DriverStateProvider = ({ children }) => {
                       activeRideToUse = { _id: syncedState.activeRideId };
                     }
                   }
-                } else if (syncedState.activeRideId === null && state.activeRide && state.activeRide._id) {
-                  // Server says no active ride, but we have one locally with data
-                  if (state.activeRide.startOTP || state.activeRide.endOTP || state.activeRide.status === 'accepted') {
-                    console.warn('[DriverState] Server wants to clear activeRide but local has OTP data - KEEPING LOCAL');
-                    activeRideToUse = state.activeRide; // Don't clear if we have OTP data
-                  } else {
-                    activeRideToUse = null; // Clear if no important data
+                } else if (syncedState.activeRideId === null) {
+                  // CRITICAL FIX: Server says no active ride - ALWAYS trust the server and clear localStorage backup
+                  console.log('[DriverState] Server has no active ride (activeRideId: null)');
+                  
+                  // Clear localStorage backups to prevent ghost rides
+                  if (localStorage.getItem('driver_active_ride_backup')) {
+                    console.log('[DriverState] 🧹 Clearing driver_active_ride_backup from localStorage');
+                    localStorage.removeItem('driver_active_ride_backup');
                   }
+                  if (localStorage.getItem('driver_active_ride_backup_v2')) {
+                    console.log('[DriverState] 🧹 Clearing driver_active_ride_backup_v2 from localStorage');
+                    localStorage.removeItem('driver_active_ride_backup_v2');
+                  }
+                  
+                  // Always clear local state when server says no ride
+                  activeRideToUse = null;
+                  console.log('[DriverState] ✅ Cleared local activeRide to match server state');
                 } else {
                   activeRideToUse = null; // Both agree there's no ride
                 }
@@ -446,7 +455,7 @@ export const DriverStateProvider = ({ children }) => {
                   }
                 });
                 
-                console.log('[DriverState] State updated from sync, activeRide preserved:', !!activeRideToUse);
+                console.log('[DriverState] State updated from sync, activeRide:', activeRideToUse ? 'preserved' : 'cleared');
               }
               
               // Update sync status

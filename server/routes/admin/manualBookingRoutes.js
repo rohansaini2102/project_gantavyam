@@ -6,6 +6,7 @@ const Driver = require('../../models/Driver');
 const BoothQueue = require('../../models/BoothQueue');
 const PickupLocation = require('../../models/PickupLocation');
 const { adminProtect } = require('../../middleware/auth');
+const { checkPermission, PERMISSIONS } = require('../../middleware/permissions');
 const { generateOTP } = require('../../utils/otpUtils');
 const twilioSmsService = require('../../services/twilioSmsService');
 const { getIO, sendRideRequestToDriver } = require('../../socket');
@@ -13,8 +14,8 @@ const { v4: uuidv4 } = require('uuid');
 const { logRideEvent, logDriverAction, logStatusTransition, logSocketDelivery, logError } = require('../../utils/rideLogger');
 const { calculateFare } = require('../../utils/fareCalculator');
 
-// Manual booking endpoint
-router.post('/manual-booking', adminProtect, async (req, res) => {
+// Manual booking endpoint (requires manual booking permission)
+router.post('/manual-booking', adminProtect, checkPermission(PERMISSIONS.RIDES_MANUAL_BOOKING), async (req, res) => {
   try {
     const {
       pickupStation,

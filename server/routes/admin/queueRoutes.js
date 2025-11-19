@@ -1,17 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const { protect, adminProtect } = require('../../middleware/auth');
-const { 
-  getBoothQueueStatus, 
-  getBoothQueueList, 
+const { checkPermission, PERMISSIONS } = require('../../middleware/permissions');
+const {
+  getBoothQueueStatus,
+  getBoothQueueList,
   getAllBoothQueues,
-  getQueueAnalytics 
+  getQueueAnalytics
 } = require('../../utils/queueManager');
 const BoothQueue = require('../../models/BoothQueue');
 const RideRequest = require('../../models/RideRequest');
 
 // Middleware to ensure only admins can access these routes
 router.use(adminProtect);
+// Note: View permission removed to allow all admins to view queue
 
 /**
  * GET /admin/queue/booths

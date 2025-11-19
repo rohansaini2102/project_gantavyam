@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { adminProtect } = require('../middleware/auth');
+const { checkPermission, PERMISSIONS } = require('../middleware/permissions');
 const { uploadDriverDocuments } = require('../config/cloudinary');
 const { registerDriver } = require('../controllers/driverController');
 const { 
@@ -39,16 +40,16 @@ const driverDocumentUpload = uploadDriverDocuments.fields([
 ]);
 
 // Admin routes for driver management
-router.get('/drivers', adminProtect, getAllDrivers);
-router.get('/drivers/:id', adminProtect, getDriverById);
-router.post('/drivers', adminProtect, driverDocumentUpload, registerDriver);
+router.get('/drivers', adminProtect, checkPermission(PERMISSIONS.DRIVERS_VIEW), getAllDrivers);
+router.get('/drivers/:id', adminProtect, checkPermission(PERMISSIONS.DRIVERS_VIEW), getDriverById);
+router.post('/drivers', adminProtect, checkPermission(PERMISSIONS.DRIVERS_CREATE), driverDocumentUpload, registerDriver);
 
 // Admin routes for user management
-router.get('/users', adminProtect, getAllUsers);
-router.get('/users/:id', adminProtect, getUserById);
+router.get('/users', adminProtect, checkPermission(PERMISSIONS.USERS_VIEW), getAllUsers);
+router.get('/users/:id', adminProtect, checkPermission(PERMISSIONS.USERS_VIEW), getUserById);
 
 // Approve/reject driver
-router.put('/drivers/:id/verify', adminProtect, verifyDriver);
+router.put('/drivers/:id/verify', adminProtect, checkPermission(PERMISSIONS.DRIVERS_VERIFY), verifyDriver);
 
 // Specialized admin routes
 router.use('/queue', queueRoutes);
@@ -58,12 +59,12 @@ router.use('/driver-recovery', driverInfoRecoveryRoutes);
 router.use('/fare', fareManagementRoutes);
 router.use('/', manualBookingRoutes);
 
-// Dashboard and statistics routes
+// Dashboard and statistics routes (accessible to all admins, but will hide financial data on frontend)
 router.get('/dashboard/stats', adminProtect, getDashboardStats);
 router.get('/booths/performance', adminProtect, getBoothPerformance);
 
-// Delete driver
-router.delete('/drivers/:id', adminProtect, async (req, res) => {
+// Delete driver (requires delete permission)
+router.delete('/drivers/:id', adminProtect, checkPermission(PERMISSIONS.DRIVERS_DELETE), async (req, res) => {
   try {
     const Driver = require('../models/Driver');
     const driver = await Driver.findByIdAndDelete(req.params.id);
@@ -108,10 +109,25 @@ router.post('/login', async (req, res) => {
       return res.status(500).json({ success: false, error: 'Admin ID not found' });
     }
     
-    const token = jwt.sign({ id: admin._id.toString(), role: 'admin' }, process.env.JWT_SECRET || 'your_jwt_secret', { expiresIn: '1d' });
-    console.log('Token created with payload:', { id: admin._id.toString(), role: 'admin' });
-    
-    res.json({ success: true, token, admin: { id: admin._id, email: admin.email, name: admin.name } });
+    const config = require('../config/config');
+    const token = jwt.sign({ id: admin._id.toString(), role: admin.role }, config.jwtSecret, { expiresIn: '1d' });
+    console.log('Token created with payload:', { id: admin._id.toString(), role: admin.role });
+
+    // Update last login time
+    admin.lastLogin = new Date();
+    await admin.save();
+
+    res.json({
+      success: true,
+      token,
+      admin: {
+        id: admin._id,
+        email: admin.email,
+        name: admin.name,
+        role: admin.role,
+        permissions: admin.permissions
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Server error' });
   }

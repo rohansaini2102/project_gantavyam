@@ -202,13 +202,6 @@ const ManualBooking = () => {
       const socket = getSocket();
       const connected = socket && socket.connected;
       setSocketConnected(connected);
-      
-      // Log socket status
-      if (connected && !socketConnected) {
-        console.log('[ManualBooking] Socket is now connected');
-      } else if (!connected && socketConnected) {
-        console.log('[ManualBooking] Socket disconnected');
-      }
     };
     
     // Check immediately after a short delay to let initialization complete
@@ -224,61 +217,101 @@ const ManualBooking = () => {
   useEffect(() => {
     if (!socket || !socketConnected) return;
 
-    console.log('[ManualBooking] Setting up socket event listeners for ride updates');
-
     // Listen for driver accepting the ride
     const handleDriverAssigned = (data) => {
-      console.log('[ManualBooking] 🎉 Driver accepted the ride:', data);
-      
-      // Check if this is for our booking
-      if (bookingDetails && 
-          (data.bookingId === bookingDetails.bookingId || 
-           data.rideId === bookingDetails._id)) {
-        
-        setWaitingForDriverResponse(false);
-        setBookingDetails(prev => ({
-          ...prev,
-          status: 'driver_accepted',
-          driverName: data.driverName,
-          driverId: data.driverId,
-          startOTP: data.startOTP,
-          endOTP: data.endOTP,
-          queueNumber: data.queueNumber,
-          message: 'Driver has accepted the ride!'
-        }));
-      }
+      console.log('🔔 [ManualBooking] driverAssigned event received:', data);
+
+      // Use functional update to get latest bookingDetails
+      setBookingDetails(prev => {
+        console.log('📋 [ManualBooking] Current bookingDetails:', prev);
+        console.log('🔍 [ManualBooking] Comparing bookingIds:', {
+          received: data.bookingId,
+          current: prev?.bookingId,
+          match: prev && data.bookingId === prev.bookingId
+        });
+
+        // Check if this is for our booking (use bookingId string comparison)
+        if (prev && data.bookingId === prev.bookingId) {
+          console.log('✅ [ManualBooking] BookingId matches! Updating state...');
+          setWaitingForDriverResponse(false);
+          return {
+            ...prev,
+            status: 'driver_accepted',
+            driverName: data.driverName,
+            driverId: data.driverId,
+            startOTP: data.startOTP,
+            endOTP: data.endOTP,
+            queueNumber: data.queueNumber,
+            message: 'Driver has accepted the ride!'
+          };
+        } else {
+          console.log('❌ [ManualBooking] BookingId does not match, ignoring event');
+          return prev;
+        }
+      });
     };
 
     // Listen for driver rejecting the ride
     const handleRideRejected = (data) => {
-      console.log('[ManualBooking] ❌ Driver rejected the ride:', data);
-      
-      // Check if this is for our booking
-      if (bookingDetails && 
-          (data.bookingId === bookingDetails.bookingId || 
-           data.rideId === bookingDetails._id)) {
-        
-        setWaitingForDriverResponse(false);
-        setBookingDetails(prev => ({
-          ...prev,
-          status: 'driver_rejected',
-          message: `Driver rejected the ride: ${data.reason || 'Driver not available'}`,
-          rejectionReason: data.reason
-        }));
-        
-        // Alert the admin
-        alert(`Driver rejected the ride: ${data.reason || 'Driver not available'}. Please try another driver.`);
-      }
+      console.log('🔔 [ManualBooking] rideRejectedByDriver event received:', data);
+
+      // Use functional update to get latest bookingDetails
+      setBookingDetails(prev => {
+        // Check if this is for our booking (use bookingId string comparison)
+        if (prev && data.bookingId === prev.bookingId) {
+          setWaitingForDriverResponse(false);
+          alert(`Driver rejected the ride: ${data.reason || 'Driver not available'}. Please try another driver.`);
+          return {
+            ...prev,
+            status: 'driver_rejected',
+            message: `Driver rejected the ride: ${data.reason || 'Driver not available'}`,
+            rejectionReason: data.reason
+          };
+        }
+        return prev;
+      });
     };
 
+    // Listen for ride cancellation (from driver or admin)
+    const handleRideCancelled = (data) => {
+      console.log('🔔 [ManualBooking] rideCancelled event received:', data);
+
+      // Use functional update to get latest bookingDetails
+      setBookingDetails(prev => {
+        // Check if this is for our booking (match using _id, rideId, or uniqueRideId)
+        const isOurBooking = prev && (
+          data.rideId === prev._id ||
+          data.rideId === prev.rideId ||
+          data.uniqueRideId === prev.rideId ||
+          data.bookingId === prev.bookingId
+        );
+
+        if (isOurBooking) {
+          console.log('✅ [ManualBooking] Ride cancelled, clearing booking state');
+          setWaitingForDriverResponse(false);
+
+          const cancelledByText = data.cancelledBy === 'driver' ? 'Driver' : 'System';
+          alert(`Ride cancelled by ${cancelledByText}: ${data.reason || 'No reason provided'}`);
+
+          // Clear the booking details to remove from UI
+          return null;
+        }
+        return prev;
+      });
+    };
+
+    console.log('🎧 [ManualBooking] Registering socket event listeners');
     socket.on('driverAssigned', handleDriverAssigned);
     socket.on('rideRejectedByDriver', handleRideRejected);
+    socket.on('rideCancelled', handleRideCancelled);
 
     return () => {
+      console.log('🔇 [ManualBooking] Removing socket event listeners');
       socket.off('driverAssigned', handleDriverAssigned);
       socket.off('rideRejectedByDriver', handleRideRejected);
+      socket.off('rideCancelled', handleRideCancelled);
     };
-  }, [socket, socketConnected, bookingDetails]);
+  }, [socket, socketConnected]); // Removed bookingDetails from dependencies
 
   // Auto-save state when important fields change
   useEffect(() => {
@@ -549,79 +582,41 @@ const ManualBooking = () => {
       // Fetch all drivers and filter by online status and vehicle type
       const response = await admin.getAllDrivers();
       const allDrivers = response.data || [];
-      
-      console.log('\n🔍 [Manual Booking] Driver Selection Debug:');
-      console.log(`📊 Total drivers fetched: ${allDrivers.length}`);
-      console.log(`🎯 Looking for vehicle type: ${vehicleType}`);
-      console.log(`📍 Pickup station: ${currentBooth.name}`);
-      
-      // Log all drivers for debugging
-      allDrivers.forEach((driver, index) => {
-        console.log(`\n👤 Driver ${index + 1}: ${driver.fullName}`);
-        console.log(`   📱 Phone: ${driver.mobileNo}`);
-        console.log(`   🚗 Vehicle: ${driver.vehicleType} - ${driver.vehicleNo}`);
-        console.log(`   🟢 Online: ${driver.isOnline}`);
-        console.log(`   📍 Location: ${driver.currentMetroBooth || 'Not set'}`);
-        console.log(`   🚦 Current Ride: ${driver.currentRide || 'None'}`);
-        console.log(`   🏆 Queue Position: ${driver.queuePosition || 'Not set'}`);
-        console.log(`   ⏰ Queue Entry: ${driver.queueEntryTime || 'Not set'}`);
-      });
-      
-      // Use the same filtering logic as Queue Management
-      // Step 1: Filter online drivers first
+
+      // Filter online drivers first
       const onlineDrivers = allDrivers.filter(driver => driver.isOnline);
-      console.log(`\n✅ Online drivers: ${onlineDrivers.length}/${allDrivers.length}`);
-      
-      // Step 2: Filter by vehicle type (but more flexible)
+
+      // Filter by vehicle type
       const vehicleMatchDrivers = onlineDrivers.filter(driver => {
-        const matches = !vehicleType || driver.vehicleType === vehicleType;
-        if (!matches) {
-          console.log(`❌ ${driver.fullName}: Vehicle type mismatch (${driver.vehicleType} != ${vehicleType})`);
-        }
-        return matches;
+        return !vehicleType || driver.vehicleType === vehicleType;
       });
-      console.log(`🚗 Vehicle type matches: ${vehicleMatchDrivers.length}/${onlineDrivers.length}`);
-      
-      // Step 3: Filter by current ride status
+
+      // Filter by current ride status
       const availableDrivers = vehicleMatchDrivers.filter(driver => {
-        const available = !driver.currentRide;
-        if (!available) {
-          console.log(`⏸️ ${driver.fullName}: Currently on ride ${driver.currentRide}`);
-        }
-        return available;
+        return !driver.currentRide;
       });
-      console.log(`🆓 Available drivers: ${availableDrivers.length}/${vehicleMatchDrivers.length}`);
-      
-      // Step 4: Sort by queue entry time (same as Queue Management)
+
+      // Sort by queue entry time
       const sortedDrivers = availableDrivers.sort((a, b) => {
-        // Sort by queue entry time (first-come-first-served)
         if (a.queueEntryTime && b.queueEntryTime) {
           return new Date(a.queueEntryTime) - new Date(b.queueEntryTime);
         }
-        // Fallback to last active time
         if (a.lastActiveTime && b.lastActiveTime) {
           return new Date(a.lastActiveTime) - new Date(b.lastActiveTime);
         }
         return (a.queuePosition || 999) - (b.queuePosition || 999);
       });
-      
-      // Step 5: Reassign queue positions based on sorted order
+
+      // Reassign queue positions based on sorted order
       const finalDrivers = sortedDrivers.map((driver, index) => ({
         ...driver,
-        queuePosition: index + 1 // Reassign positions based on sorted order
+        queuePosition: index + 1
       }));
-      
-      console.log(`\n🏁 Final driver queue for ${vehicleType}:`);
-      finalDrivers.forEach((driver, index) => {
-        console.log(`   ${index + 1}. ${driver.fullName} (${driver.mobileNo}) - ${driver.vehicleNo}`);
-      });
-      
+
       setAvailableDrivers(finalDrivers);
-      
+
       if (finalDrivers.length === 0) {
-        // If no drivers found with strict filtering, try fallback to all online drivers
-        console.log(`\n⚠️ No ${vehicleType} drivers found, trying fallback to all online drivers...`);
-        
+        // Fallback to all online drivers
         const fallbackDrivers = onlineDrivers
           .filter(driver => !driver.currentRide)
           .sort((a, b) => {
@@ -638,9 +633,8 @@ const ManualBooking = () => {
             queuePosition: index + 1,
             isVehicleTypeMismatch: driver.vehicleType !== vehicleType
           }));
-        
+
         if (fallbackDrivers.length > 0) {
-          console.log(`\n🔄 Fallback: Found ${fallbackDrivers.length} online drivers (any vehicle type)`);
           setAvailableDrivers(fallbackDrivers);
           setDriverError(`No ${vehicleType} drivers available. Showing all online drivers.`);
         } else {
@@ -811,9 +805,7 @@ const ManualBooking = () => {
       if (!userName) {
         throw new Error('User name is missing');
       }
-      
-      console.log('✅ [Manual Booking] All validation checks passed');
-      
+
       // Prepare data for manual booking API
       const bookingData = {
         pickupStation: currentBooth.name,
@@ -825,37 +817,20 @@ const ManualBooking = () => {
         userPhone: userPhone,
         userName: userName,
         existingUserId: existingUser?._id || null,
-        selectedDriverId: selectedDriver?._id || null, // Add selected driver
+        selectedDriverId: selectedDriver?._id || null,
         bookingSource: 'manual',
         paymentStatus: 'collected'
       };
 
-      console.log('📋 [Manual Booking] Prepared booking data:', bookingData);
-      console.log('🚗 [Manual Booking] Selected Driver Details:', {
-        id: selectedDriver?._id,
-        name: selectedDriver?.fullName,
-        phone: selectedDriver?.mobileNo,
-        vehicleNo: selectedDriver?.vehicleNo,
-        queuePosition: selectedDriver?.queuePosition
-      });
-      console.log('🌐 [Manual Booking] About to call admin.createManualBooking...');
-      console.log('🔌 [Manual Booking] Current socket status:', {
-        connected: socketConnected,
-        socketExists: !!socket,
-        globalSocket: !!getSocket()
-      });
-      
-      debugger; // DEBUGGER 2: Before API call
       const response = await admin.createManualBooking(bookingData);
-      console.log('✅ [Manual Booking] API call successful, response:', response);
-      
+
       if (response.success) {
-        console.log('🎉 [Manual Booking] Booking successful, setting booking details');
-        
         // Set waiting state and store booking details
         setWaitingForDriverResponse(true);
         setBookingDetails({
           ...response.booking,
+          startOTP: response.booking.startOTP,
+          endOTP: response.booking.endOTP,
           status: 'waiting_driver',
           message: 'Waiting for driver to accept the ride...',
           selectedDriver: selectedDriver,
@@ -863,22 +838,14 @@ const ManualBooking = () => {
           pickupLocation: currentBooth,
           dropLocation: { address: dropLocation }
         });
-        
+
         // Clear saved state on successful booking
         clearBookingState();
-        console.log('✅ [Manual Booking] Ride request sent to driver, waiting for response...');
       } else {
-        console.error('❌ [Manual Booking] Booking failed - API returned success: false');
-        console.error('❌ [Manual Booking] Response:', response);
         throw new Error(response.message || 'Booking failed - unknown reason');
       }
     } catch (error) {
-      console.error('💥 [Manual Booking] Error in confirmBooking:', error);
-      console.error('💥 [Manual Booking] Error type:', typeof error);
-      console.error('💥 [Manual Booking] Error message:', error.message);
-      console.error('💥 [Manual Booking] Error response:', error.response?.data);
-      console.error('💥 [Manual Booking] Error status:', error.response?.status);
-      console.error('💥 [Manual Booking] Full error object:', error);
+      console.error('[Manual Booking] Error:', error.message || error);
       
       // More detailed error handling
       let errorMessage = 'Failed to book ride';
@@ -912,7 +879,6 @@ const ManualBooking = () => {
         alert(`Booking failed: ${errorMessage}`);
       }
     } finally {
-      console.log('🔄 [Manual Booking] Setting loading to false');
       setLoading(false);
     }
   };;
@@ -1423,8 +1389,7 @@ const ManualBooking = () => {
                   >
                     <input
                       type="text"
-                      value={dropLocation}
-                      onChange={(e) => setDropLocation(e.target.value)}
+                      defaultValue={dropLocation}
                       placeholder="Search for destination..."
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
@@ -1460,13 +1425,13 @@ const ManualBooking = () => {
               {showMap && mapsLoaded && (
                 <div className="mb-6">
                   <div className={`p-3 rounded-lg mb-3 transition-all ${
-                    dropCoordinates && !dropLocationConfirmed 
-                      ? 'bg-green-50 border border-green-200' 
+                    dropCoordinates && !dropLocationConfirmed
+                      ? 'bg-green-50 border border-green-200'
                       : 'bg-blue-50'
                   }`}>
                     <p className={`text-sm ${
-                      dropCoordinates && !dropLocationConfirmed 
-                        ? 'text-green-700' 
+                      dropCoordinates && !dropLocationConfirmed
+                        ? 'text-green-700'
                         : 'text-blue-700'
                     }`}>
                       {dropCoordinates && !dropLocationConfirmed ? (
@@ -1475,13 +1440,13 @@ const ManualBooking = () => {
                         </>
                       ) : (
                         <>
-                          <strong>Tip:</strong> Click anywhere on the map to set drop location, or drag the marker to adjust. 
+                          <strong>Tip:</strong> Click anywhere on the map to set drop location, or drag the marker to adjust.
                           Most rides are within 10km radius of the pickup station.
                         </>
                       )}
                     </p>
                   </div>
-                  <div style={{ height: '400px', borderRadius: '8px', overflow: 'hidden' }}>
+                  <div style={{ height: '400px', width: '100%', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
                     <GoogleMap
                       mapContainerStyle={{ width: '100%', height: '100%' }}
                       center={dropCoordinates || { lat: currentBooth.lat, lng: currentBooth.lng }}

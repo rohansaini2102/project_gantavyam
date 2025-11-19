@@ -13,19 +13,18 @@ router.post('/user/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Find user by email
-    const user = await User.findOne({ email });
+    // Find user by email and include password for validation
+    const user = await User.findOne({ email }).select('+password');
     if (!user) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
-    
-    // Check password - use your actual password comparison method
-    // For example: const isMatch = await user.comparePassword(password);
-    const isMatch = true; // Replace with actual password validation
-    
+
+    // Check password using matchPassword method
+    const isMatch = await user.matchPassword(password);
+
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -75,19 +74,18 @@ router.post('/driver/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Find driver by email
-    const driver = await Driver.findOne({ email });
+    // Find driver by email and include password for validation
+    const driver = await Driver.findOne({ email }).select('+password');
     if (!driver) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
-    
-    // Check password - use your actual password comparison method
-    // For example: const isMatch = await driver.comparePassword(password);
-    const isMatch = true; // Replace with actual password validation
-    
+
+    // Check password using matchPassword method
+    const isMatch = await driver.matchPassword(password);
+
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -191,7 +189,8 @@ router.post('/admin/login', async (req, res) => {
         _id: admin._id,
         name: admin.name,
         email: admin.email,
-        role: admin.role
+        role: admin.role,
+        permissions: admin.permissions || []
       }
     });
   } catch (error) {

@@ -1,5 +1,6 @@
 // middleware/auth.js
 const jwt = require('jsonwebtoken');
+const config = require('../config/config');
 const Driver = require('../models/Driver');
 
 // Try to import User model but don't crash if it doesn't exist
@@ -38,8 +39,8 @@ const auth = async (req, res, next) => {
     }
 
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+      // Verify token using secure config
+      const decoded = jwt.verify(token, config.jwtSecret);
 
       // Try to find a user with that ID
       let user;
@@ -102,8 +103,8 @@ const protect = async (req, res, next) => {
     }
 
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+      // Verify token using secure config
+      const decoded = jwt.verify(token, config.jwtSecret);
 
       // Try to find a driver with that ID
       const driver = await Driver.findById(decoded.id).select('-password');
@@ -166,8 +167,8 @@ const adminProtect = async (req, res, next) => {
     }
 
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+      // Verify token using secure config
+      const decoded = jwt.verify(token, config.jwtSecret);
       
       console.log('Admin auth - Decoded token:', decoded);
       console.log('Admin auth - Looking for admin with ID:', decoded.id);

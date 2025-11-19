@@ -6,9 +6,11 @@ import LandingPage from './pages/LandingPage';
 // Initialize app startup procedures (removed automatic import to prevent driver logout)
 // State Management
 import { DriverStateProvider } from './contexts/DriverStateContext';
+import { AdminProvider, PERMISSIONS } from './contexts/AdminContext';
 // Admin
 import AdminLayout from './components/admin/AdminLayout';
 import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute';
+import PermissionRoute from './components/admin/PermissionRoute';
 import AdminDashboard from './pages/admin/Dashboard';
 import AddUser from './pages/admin/AddUser';
 import ViewUsers from './pages/admin/ViewUsers';
@@ -37,12 +39,14 @@ import ForgotPassword from './pages/user/ForgotPassword';
 import UserBooking from './pages/test/UserBooking';
 import DriverView from './pages/test/DriverView';
 
+// Move these OUTSIDE the component to prevent recreation on each render
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
-const libraries = ["places", "geometry"];
+const libraries = ["places", "geometry"]; // Static array prevents LoadScript reload warnings
 
 function App() {
   return (
-    <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={libraries} >
+    <AdminProvider>
+      <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={libraries} >
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/admin/login" element={<AdminLogin />} />
@@ -52,15 +56,31 @@ function App() {
             </ProtectedAdminRoute>
           }>
             <Route index element={<AdminDashboard />} />
-            <Route path="register-driver" element={<AddDriver />} />
-            <Route path="add-user" element={<AddUser />} />
+            <Route path="register-driver" element={
+              <PermissionRoute requiredPermission={PERMISSIONS.DRIVERS_CREATE}>
+                <AddDriver />
+              </PermissionRoute>
+            } />
+            <Route path="add-user" element={
+              <PermissionRoute requiredPermission={PERMISSIONS.USERS_CREATE}>
+                <AddUser />
+              </PermissionRoute>
+            } />
             <Route path="drivers" element={<AllDrivers />} />
             <Route path="view-users" element={<ViewUsers />} />
             <Route path="rides" element={<RideManagement />} />
-            <Route path="manual-booking" element={<ManualBooking />} />
+            <Route path="manual-booking" element={
+              <PermissionRoute requiredPermission={PERMISSIONS.RIDES_MANUAL_BOOKING}>
+                <ManualBooking />
+              </PermissionRoute>
+            } />
             <Route path="queue" element={<QueueManagement />} />
             <Route path="booths" element={<BoothManagement />} />
-            <Route path="fare-management" element={<FareManagement />} />
+            <Route path="fare-management" element={
+              <PermissionRoute requiredPermission={PERMISSIONS.FARE_VIEW}>
+                <FareManagement />
+              </PermissionRoute>
+            } />
           </Route>
           <Route path="/admin/users/:id" element={
             <ProtectedAdminRoute>
@@ -95,7 +115,8 @@ function App() {
           <Route path="/test/user" element={<UserBooking />} />
           <Route path="/test/driver" element={<DriverView />} />
         </Routes>
-    </LoadScript>
+      </LoadScript>
+    </AdminProvider>
   );
 }
 

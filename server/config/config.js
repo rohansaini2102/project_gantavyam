@@ -10,8 +10,13 @@ module.exports = {
     ? 'mongodb://localhost:27017/gantavyam'
     : process.env.MONGO_URL,
 
-  // JWT secret key for authentication
-  jwtSecret: process.env.JWT_SECRET || 'fallback_jwt_secret_key',
+  // JWT secret key for authentication - MUST be set in environment variables
+  jwtSecret: (() => {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('FATAL ERROR: JWT_SECRET environment variable is not set. Cannot start server without a secure JWT secret.');
+    }
+    return process.env.JWT_SECRET;
+  })(),
 
   // Server configuration
   port: process.env.PORT || 5000,

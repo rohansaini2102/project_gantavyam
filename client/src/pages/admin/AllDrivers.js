@@ -5,6 +5,7 @@ import { getImageUrl } from '../../utils/imageUtils';
 import ModernCard from '../../components/admin/ModernCard';
 import { useNavigate } from 'react-router-dom';
 import { initializeSocket, getSocket } from '../../services/socket';
+import { useAdmin } from '../../contexts/AdminContext';
 
 const statusColors = {
   approved: 'text-green-600',
@@ -13,6 +14,7 @@ const statusColors = {
 };
 
 const AllDrivers = () => {
+  const { hasPermission, PERMISSIONS } = useAdmin();
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -297,13 +299,15 @@ const AllDrivers = () => {
           </p>
         </div>
         <div className="flex items-center space-x-3">
-          <button
-            onClick={() => navigate('/admin/register-driver')}
-            className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <FiPlus className="h-4 w-4" />
-            <span>Add Driver</span>
-          </button>
+          {hasPermission(PERMISSIONS.DRIVERS_CREATE) && (
+            <button
+              onClick={() => navigate('/admin/register-driver')}
+              className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <FiPlus className="h-4 w-4" />
+              <span>Add Driver</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -485,31 +489,31 @@ const AllDrivers = () => {
                       >
                         <FiEye className="h-4 w-4" />
                       </button>
-                      {!driver.isVerified && (
+                      {!driver.isVerified && hasPermission(PERMISSIONS.DRIVERS_VERIFY) && (
                         <>
-                          <button 
-                            disabled={actionLoading === driver._id + '-approve'} 
-                            onClick={() => handleApprove(driver._id)} 
-                            className="text-green-600 hover:text-green-900 transition-colors disabled:opacity-50" 
+                          <button
+                            disabled={actionLoading === driver._id + '-approve'}
+                            onClick={() => handleApprove(driver._id)}
+                            className="text-green-600 hover:text-green-900 transition-colors disabled:opacity-50"
                             title="Approve"
                           >
                             <FiCheckCircle className="h-4 w-4" />
                           </button>
-                          <button 
-                            disabled={actionLoading === driver._id + '-reject'} 
-                            onClick={() => handleReject(driver._id)} 
-                            className="text-orange-600 hover:text-orange-900 transition-colors disabled:opacity-50" 
+                          <button
+                            disabled={actionLoading === driver._id + '-reject'}
+                            onClick={() => handleReject(driver._id)}
+                            className="text-orange-600 hover:text-orange-900 transition-colors disabled:opacity-50"
                             title="Reject"
                           >
                             <FiXCircle className="h-4 w-4" />
                           </button>
                         </>
                       )}
-                      {driver.isVerified && (
-                        <button 
-                          disabled={actionLoading === driver._id + '-delete'} 
-                          onClick={() => handleDelete(driver._id)} 
-                          className="text-red-600 hover:text-red-900 transition-colors disabled:opacity-50" 
+                      {driver.isVerified && hasPermission(PERMISSIONS.DRIVERS_DELETE) && (
+                        <button
+                          disabled={actionLoading === driver._id + '-delete'}
+                          onClick={() => handleDelete(driver._id)}
+                          className="text-red-600 hover:text-red-900 transition-colors disabled:opacity-50"
                           title="Remove"
                         >
                           <FiTrash2 className="h-4 w-4" />
@@ -602,19 +606,19 @@ const AllDrivers = () => {
                         <FiEye className="inline mr-2" />
                         View Details
                       </button>
-                      {!driver.isVerified && (
+                      {!driver.isVerified && hasPermission(PERMISSIONS.DRIVERS_VERIFY) && (
                         <>
-                          <button 
-                            disabled={actionLoading === driver._id + '-approve'} 
-                            onClick={() => handleApprove(driver._id)} 
+                          <button
+                            disabled={actionLoading === driver._id + '-approve'}
+                            onClick={() => handleApprove(driver._id)}
                             className="table-card-action-btn bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                           >
                             <FiCheckCircle className="inline mr-2" />
                             Approve
                           </button>
-                          <button 
-                            disabled={actionLoading === driver._id + '-reject'} 
-                            onClick={() => handleReject(driver._id)} 
+                          <button
+                            disabled={actionLoading === driver._id + '-reject'}
+                            onClick={() => handleReject(driver._id)}
                             className="table-card-action-btn bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50"
                           >
                             <FiXCircle className="inline mr-2" />
@@ -622,9 +626,9 @@ const AllDrivers = () => {
                           </button>
                         </>
                       )}
-                      {driver.isVerified && (
-                        <button 
-                          disabled={actionLoading === driver._id + '-delete'} 
+                      {driver.isVerified && hasPermission(PERMISSIONS.DRIVERS_DELETE) && (
+                        <button
+                          disabled={actionLoading === driver._id + '-delete'}
                           onClick={() => handleDelete(driver._id)} 
                           className="table-card-action-btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                         >

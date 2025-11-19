@@ -184,4 +184,12 @@ const DriverSchema = new mongoose.Schema({
 // Create a geospatial index on the location field
 DriverSchema.index({ location: '2dsphere' });
 
+// Add bcrypt for password hashing
+const bcrypt = require('bcryptjs');
+
+// Match driver entered password to hashed password in database
+DriverSchema.methods.matchPassword = async function(enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
 module.exports = mongoose.model('Driver', DriverSchema);

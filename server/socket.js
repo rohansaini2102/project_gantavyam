@@ -1267,6 +1267,7 @@ const initializeSocket = (server) => {
         const acceptanceData = {
           rideId: rideRequest._id.toString(),
           uniqueRideId: rideRequest.rideId,
+          bookingId: rideRequest.bookingId,
           boothRideNumber: rideRequest.boothRideNumber,
           // Queue information
           queueNumber: rideRequest.queueNumber,
@@ -1900,10 +1901,30 @@ const initializeSocket = (server) => {
           console.log('🔍 Not found by rideId field, trying uniqueRideId field...');
           rideRequest = await RideRequest.findOne({ uniqueRideId: rideId });
         }
-        
+
+        // Try finding by bookingId for manual bookings
+        if (!rideRequest) {
+          console.log('🔍 Not found by uniqueRideId, trying bookingId field...');
+          rideRequest = await RideRequest.findOne({ bookingId: rideId });
+        }
+
         if (!rideRequest) {
           console.error('❌ Ride not found with any ID format');
           console.log('❌ Tried searching for:', rideId);
+          console.log('❌ ID type:', typeof rideId, 'Length:', rideId?.length);
+          console.log('❌ Searched fields: _id, rideId, uniqueRideId, bookingId');
+
+          // Log a sample ride to see the structure
+          const sampleRide = await RideRequest.findOne({}).limit(1);
+          if (sampleRide) {
+            console.log('📋 Sample ride structure:', {
+              _id: sampleRide._id?.toString(),
+              rideId: sampleRide.rideId,
+              uniqueRideId: sampleRide.uniqueRideId,
+              bookingId: sampleRide.bookingId
+            });
+          }
+
           if (callback) callback({ success: false, message: 'Ride not found' });
           return;
         }
@@ -1957,16 +1978,29 @@ const initializeSocket = (server) => {
           io.to(`user_${rideRequest.userId}`).emit('rideCancelled', {
             rideId: rideId,
             uniqueRideId: rideRequest.rideId,
+            bookingId: rideRequest.bookingId,
             cancelledBy: 'driver',
             reason: reason
           });
           console.log('📤 User notified of cancellation');
+
+          // ALSO notify the driver themselves to clear their UI
+          socket.emit('rideCancelled', {
+            rideId: rideId,
+            uniqueRideId: rideRequest.rideId,
+            bookingId: rideRequest.bookingId,
+            cancelledBy: 'driver',
+            reason: reason,
+            success: true
+          });
+          console.log('📤 Driver notified of own cancellation');
         } else {
           // User cancelled - notify driver
           if (rideRequest.driverId) {
             io.to(`driver_${rideRequest.driverId}`).emit('rideCancelled', {
               rideId: rideId,
               uniqueRideId: rideRequest.rideId,
+              bookingId: rideRequest.bookingId,
               cancelledBy: 'user',
               reason: reason
             });
@@ -1978,6 +2012,7 @@ const initializeSocket = (server) => {
         notifyAdmins('rideCancelled', {
           rideId: rideRequest._id.toString(),
           uniqueRideId: rideRequest.rideId,
+          bookingId: rideRequest.bookingId, // Added for manual booking matching
           userName: rideRequest.userName,
           driverName: rideRequest.driverName || 'No driver assigned',
           pickupLocation: rideRequest.pickupLocation,

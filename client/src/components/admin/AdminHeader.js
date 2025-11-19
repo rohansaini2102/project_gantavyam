@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { FaSearch, FaBell, FaUserCircle, FaChevronDown, FaSignOutAlt, FaCog } from 'react-icons/fa';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAdmin } from '../../contexts/AdminContext';
 
 const AdminHeader = () => {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
+  const { admin, clearAdmin, getRoleDisplayName } = useAdmin();
 
   const handleLogout = () => {
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('admin');
+    clearAdmin();
     navigate('/admin/login');
   };
 
@@ -109,8 +110,8 @@ const AdminHeader = () => {
             <div className="flex items-center space-x-2">
               <FaUserCircle className="h-8 w-8 text-blue-600" />
               <div className="text-left">
-                <p className="text-sm font-medium">Admin</p>
-                <p className="text-xs text-gray-500">Administrator</p>
+                <p className="text-sm font-medium">{admin?.name || 'Admin'}</p>
+                <p className="text-xs text-gray-500">{getRoleDisplayName()}</p>
               </div>
             </div>
             <FaChevronDown className={`h-4 w-4 transition-transform ${showUserDropdown ? 'transform rotate-180' : ''}`} />
