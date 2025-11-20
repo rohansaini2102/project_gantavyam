@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import debounce from 'lodash/debounce';
 import axios from 'axios';
+import { API_URL } from '../config';
 
-// API base URL - Fix for production
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// API base URL - Uses centralized config for environment-aware URL selection
+const API_BASE_URL = API_URL;
 console.log('[Validation] Using API URL:', API_BASE_URL);
 
 /**
