@@ -592,7 +592,7 @@ exports.resetPassword = async (req, res) => {
     
     // Update password
     driver.password = hashedPassword;
-    await driver.save();
+    await driver.save({ validateModifiedOnly: true });
     
     console.log(`[Password Reset] Password updated successfully for driver ${driver._id}`);
 

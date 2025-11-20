@@ -514,7 +514,7 @@ const initializeSocket = (server) => {
         exp: new Date(decoded.exp * 1000).toISOString(),
         iat: new Date(decoded.iat * 1000).toISOString()
       });
-      
+
       // Validate required fields
       if (!decoded.id) {
         console.error('❌ Token missing id field');
@@ -534,7 +534,7 @@ const initializeSocket = (server) => {
             console.error('❌ Driver not found for ID:', decoded.id);
             return next(new Error('Authentication error: Driver not found'));
           }
-          
+
           socket.user = {
             _id: decoded.id,
             role: userRole,
@@ -560,7 +560,7 @@ const initializeSocket = (server) => {
             console.error('❌ User not found for ID:', decoded.id);
             return next(new Error('Authentication error: User not found'));
           }
-          
+
           socket.user = {
             _id: decoded.id,
             role: userRole,
@@ -1310,9 +1310,10 @@ const initializeSocket = (server) => {
 
         // Update driver's current ride
         if (driver) {
-          driver.currentRide = rideRequest._id;
-          driver.isAvailable = false;
-          await driver.save();
+          await Driver.findByIdAndUpdate(driver._id, {
+            currentRide: rideRequest._id,
+            isAvailable: false
+          });
         }
 
         // Notify the accepting driver
@@ -1735,8 +1736,7 @@ const initializeSocket = (server) => {
         // Clear driver's currentRide field and make them available for new rides
         const driver = await Driver.findById(rideRequest.driverId);
         if (driver) {
-          driver.currentRide = null;
-          await driver.save();
+          await Driver.findByIdAndUpdate(driver._id, { currentRide: null });
           console.log(`📋 Driver ${driver.fullName} is now available for new rides`);
         }
         
@@ -1956,8 +1956,7 @@ const initializeSocket = (server) => {
           try {
             const driver = await Driver.findById(rideRequest.driverId);
             if (driver && driver.currentRide && driver.currentRide.toString() === rideRequest._id.toString()) {
-              driver.currentRide = null;
-              await driver.save();
+              await Driver.findByIdAndUpdate(driver._id, { currentRide: null });
               console.log(`📋 Driver ${driver.fullName} is now available for new rides after cancellation`);
             }
           } catch (driverError) {

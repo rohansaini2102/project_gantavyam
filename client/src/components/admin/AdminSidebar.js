@@ -5,7 +5,7 @@ import { useSidebar } from '../../contexts/SidebarContext';
 import { useAdmin } from '../../contexts/AdminContext';
 
 const getAllNavLinks = (PERMISSIONS) => [
-  { to: '/admin', label: 'Dashboard', icon: <FaTachometerAlt />, isExact: true, permission: null }, // Always visible
+  { to: '/admin', label: 'Dashboard', icon: <FaTachometerAlt />, isExact: true, permission: PERMISSIONS.FINANCIAL_VIEW }, // Requires financial view permission
   {
     category: 'Operations',
     items: [

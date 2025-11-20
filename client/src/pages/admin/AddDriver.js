@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { driverSignup } from '../../services/api';
 import ModernUpload from '../../components/common/ModernUpload';
 import CameraCapture from '../../components/common/CameraCapture';
+import HybridDocumentUpload from '../../components/common/HybridDocumentUpload';
 import ModernCard from '../../components/admin/ModernCard';
 import { FiUser, FiCreditCard, FiClipboard, FiLock, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 import useRealtimeValidation from '../../hooks/useRealtimeValidation';
@@ -743,18 +744,20 @@ const AddDriver = () => {
                   </p>
                 )}
               </div>
-              <ModernUpload
+              <HybridDocumentUpload
                 label="Aadhaar Photo (Front)"
                 name="aadhaarPhotoFront"
                 file={files.aadhaarPhotoFront}
                 onChange={handleFileChange}
+                documentType="aadhaar-front"
                 required
               />
-              <ModernUpload
+              <HybridDocumentUpload
                 label="Aadhaar Photo (Back)"
                 name="aadhaarPhotoBack"
                 file={files.aadhaarPhotoBack}
                 onChange={handleFileChange}
+                documentType="aadhaar-back"
                 required
               />
               <CameraCapture
@@ -827,11 +830,12 @@ const AddDriver = () => {
                   </p>
                 )}
               </div>
-              <ModernUpload
+              <HybridDocumentUpload
                 label="Registration Certificate Photo"
                 name="registrationCertificatePhoto"
                 file={files.registrationCertificatePhoto}
                 onChange={handleFileChange}
+                documentType="registration-certificate"
                 required
               />
             </div>
@@ -983,11 +987,12 @@ const AddDriver = () => {
                   </p>
                 )}
               </div>
-              <ModernUpload
+              <HybridDocumentUpload
                 label="Driving License Photo"
                 name="drivingLicensePhoto"
                 file={files.drivingLicensePhoto}
                 onChange={handleFileChange}
+                documentType="driving-license"
                 required
               />
               {/* Permit */}
@@ -995,11 +1000,12 @@ const AddDriver = () => {
                 <label className="block text-gray-700 font-medium mb-1">Permit Number <span className="text-gray-500">(Optional)</span></label>
                 <input type="text" name="permitNo" value={formData.permitNo} onChange={handleChange} placeholder="Enter permit number" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 text-lg" />
               </div>
-              <ModernUpload
+              <HybridDocumentUpload
                 label="Permit Photo (Optional)"
                 name="permitPhoto"
                 file={files.permitPhoto}
                 onChange={handleFileChange}
+                documentType="permit"
                 required={false}
               />
               {/* Fitness Certificate */}
@@ -1007,11 +1013,12 @@ const AddDriver = () => {
                 <label className="block text-gray-700 font-medium mb-1">Fitness Certificate Number <span className="text-gray-500">(Optional)</span></label>
                 <input type="text" name="fitnessCertificateNo" value={formData.fitnessCertificateNo} onChange={handleChange} placeholder="Enter fitness certificate number" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 text-lg" />
               </div>
-              <ModernUpload
+              <HybridDocumentUpload
                 label="Fitness Certificate Photo (Optional)"
                 name="fitnessCertificatePhoto"
                 file={files.fitnessCertificatePhoto}
                 onChange={handleFileChange}
+                documentType="fitness-certificate"
                 required={false}
               />
               {/* Insurance Policy */}
@@ -1019,11 +1026,12 @@ const AddDriver = () => {
                 <label className="block text-gray-700 font-medium mb-1">Insurance Policy Number <span className="text-gray-500">(Optional)</span></label>
                 <input type="text" name="insurancePolicyNo" value={formData.insurancePolicyNo} onChange={handleChange} placeholder="Enter insurance policy number" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 text-lg" />
               </div>
-              <ModernUpload
+              <HybridDocumentUpload
                 label="Insurance Policy Photo (Optional)"
                 name="insurancePolicyPhoto"
                 file={files.insurancePolicyPhoto}
                 onChange={handleFileChange}
+                documentType="insurance-policy"
                 required={false}
               />
             </div>

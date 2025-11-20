@@ -59,8 +59,8 @@ router.use('/driver-recovery', driverInfoRecoveryRoutes);
 router.use('/fare', fareManagementRoutes);
 router.use('/', manualBookingRoutes);
 
-// Dashboard and statistics routes (accessible to all admins, but will hide financial data on frontend)
-router.get('/dashboard/stats', adminProtect, getDashboardStats);
+// Dashboard and statistics routes (requires financial view permission)
+router.get('/dashboard/stats', adminProtect, checkPermission(PERMISSIONS.FINANCIAL_VIEW), getDashboardStats);
 router.get('/booths/performance', adminProtect, getBoothPerformance);
 
 // Delete driver (requires delete permission)

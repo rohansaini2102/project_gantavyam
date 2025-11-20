@@ -1,0 +1,340 @@
+import React, { useState, useRef, useCallback } from 'react';
+import { FiCamera, FiUploadCloud, FiX, FiRefreshCw, FiCheck, FiCheckCircle, FiImage } from 'react-icons/fi';
+
+const HybridDocumentUpload = ({
+  label,
+  name,
+  file,
+  onChange,
+  accept = 'image/*',
+  required = false,
+  documentType = 'document' // e.g., 'aadhaar-front', 'license', etc.
+}) => {
+  const [uploadMode, setUploadMode] = useState('file'); // 'file' or 'camera'
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const [stream, setStream] = useState(null);
+  const [error, setError] = useState(null);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // ============ CAMERA FUNCTIONS ============
+  const startCamera = async () => {
+    try {
+      setError(null);
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment', // Use back camera for documents
+          width: { ideal: 1920, max: 4096 },
+          height: { ideal: 1080, max: 2160 }
+        }
+      });
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        setStream(mediaStream);
+        setIsCameraReady(true);
+      }
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      if (err.name === 'NotAllowedError') {
+        setError('Camera access denied. Please allow camera access in your browser settings.');
+      } else if (err.name === 'NotFoundError') {
+        setError('No camera found. Please connect a camera and try again.');
+      } else {
+        setError('Unable to access camera. Please try again.');
+      }
+    }
+  };
+
+  const stopCamera = useCallback(() => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+      setIsCameraReady(false);
+    }
+  }, [stream]);
+
+  const openCamera = () => {
+    setIsCameraOpen(true);
+    setUploadMode('camera');
+    startCamera();
+  };
+
+  const closeCamera = () => {
+    stopCamera();
+    setIsCameraOpen(false);
+    setCapturedImage(null);
+    setError(null);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const context = canvas.getContext('2d');
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const fileName = `${documentType}-${Date.now()}.jpg`;
+          const capturedFile = new File([blob], fileName, { type: 'image/jpeg' });
+          setCapturedImage(URL.createObjectURL(blob));
+          console.log(`[Camera Capture] ${documentType} captured: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+
+          // Create synthetic event to match file input onChange signature
+          const syntheticEvent = {
+            target: {
+              name: name,
+              files: [capturedFile]
+            }
+          };
+          onChange(syntheticEvent);
+          stopCamera();
+        }
+      }, 'image/jpeg', 0.85);
+    }
+  };
+
+  const retakePhoto = () => {
+    setCapturedImage(null);
+    startCamera();
+  };
+
+  const confirmPhoto = () => {
+    closeCamera();
+  };
+
+  // ============ FILE UPLOAD FUNCTIONS ============
+  const handleFileChange = (e) => {
+    onChange(e);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      onChange({ target: { name, files: [e.dataTransfer.files[0]] } });
+    }
+  };
+
+  const handleFileClick = () => {
+    fileInputRef.current.click();
+  };
+
+  const switchToFileMode = () => {
+    setUploadMode('file');
+    closeCamera();
+  };
+
+  const switchToCameraMode = () => {
+    setUploadMode('camera');
+    openCamera();
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-gray-700 font-medium mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+
+      {/* Mode Selection Buttons */}
+      <div className="flex gap-2 mb-3">
+        <button
+          type="button"
+          onClick={switchToFileMode}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
+            uploadMode === 'file'
+              ? 'bg-blue-500 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          <FiUploadCloud size={18} />
+          <span className="text-sm md:text-base">Upload File</span>
+        </button>
+        <button
+          type="button"
+          onClick={switchToCameraMode}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
+            uploadMode === 'camera'
+              ? 'bg-blue-500 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          <FiCamera size={18} />
+          <span className="text-sm md:text-base">Take Photo</span>
+        </button>
+      </div>
+
+      {/* FILE UPLOAD MODE */}
+      {uploadMode === 'file' && !isCameraOpen && (
+        <div
+          className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-4 cursor-pointer transition ${
+            file ? 'bg-gray-50 hover:bg-sky-50 border-sky-400' : 'bg-gray-50 hover:bg-sky-50 border-gray-300'
+          }`}
+          onClick={handleFileClick}
+          onDrop={handleDrop}
+          onDragOver={e => e.preventDefault()}
+          tabIndex={0}
+          role="button"
+          aria-label={`Upload ${label}`}
+        >
+          {file ? (
+            <>
+              {file.type && file.type.startsWith('image') ? (
+                <img
+                  src={URL.createObjectURL(file)}
+                  alt="preview"
+                  className="w-24 h-24 object-cover rounded mb-2 border border-sky-400"
+                />
+              ) : (
+                <FiImage className="text-4xl text-sky-400 mb-2" />
+              )}
+              <div className="flex items-center gap-2 font-medium text-sky-600">
+                <FiCheckCircle className="text-xl" />
+                <span className="text-sm">{file.name}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <FiUploadCloud className="text-4xl text-sky-400 mb-2" />
+              <span className="text-gray-500 text-sm">Drag & drop or click to upload</span>
+            </>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            name={name}
+            accept={accept}
+            required={required && !file}
+            className="hidden"
+            onChange={handleFileChange}
+          />
+        </div>
+      )}
+
+      {/* CAMERA CAPTURE MODE */}
+      {uploadMode === 'camera' && !isCameraOpen && file && (
+        <div className="space-y-2">
+          <div className="relative w-32 h-32 rounded-lg overflow-hidden border-2 border-gray-200">
+            <img
+              src={URL.createObjectURL(file)}
+              alt="Captured"
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={openCamera}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+          >
+            <FiCamera />
+            Retake Photo
+          </button>
+        </div>
+      )}
+
+      {/* CAMERA MODAL */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-2 md:p-4">
+          <div className="bg-white rounded-lg p-3 md:p-4 w-full max-w-sm md:max-w-2xl max-h-[calc(100vh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-16px)] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Capture {label}</h3>
+              <button
+                type="button"
+                onClick={closeCamera}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+
+            {error ? (
+              <div className="text-red-500 text-center py-8">
+                <p>{error}</p>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {!capturedImage ? (
+                  <>
+                    <div className="relative aspect-[4/3] md:aspect-video bg-black rounded-lg overflow-hidden">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                        onLoadedMetadata={() => setIsCameraReady(true)}
+                      />
+                      {!isCameraReady && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="text-white">Loading camera...</div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={capturePhoto}
+                        disabled={!isCameraReady}
+                        className="w-full md:w-auto px-6 py-4 md:py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg md:text-base"
+                      >
+                        <FiCamera size={20} />
+                        Capture Photo
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="relative aspect-[4/3] md:aspect-video bg-black rounded-lg overflow-hidden">
+                      <img
+                        src={capturedImage}
+                        alt="Captured"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex flex-col md:flex-row justify-center gap-3 md:gap-4">
+                      <button
+                        type="button"
+                        onClick={retakePhoto}
+                        className="w-full md:w-auto px-4 py-3 md:py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center gap-2 text-lg md:text-base"
+                      >
+                        <FiRefreshCw />
+                        Retake
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmPhoto}
+                        className="w-full md:w-auto px-4 py-3 md:py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center justify-center gap-2 text-lg md:text-base"
+                      >
+                        <FiCheck />
+                        Use This Photo
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default HybridDocumentUpload;

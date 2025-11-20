@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, Autocomplete, Marker } from '@react-google-maps/api';
 import { FaMapMarkerAlt, FaCar, FaMotorcycle, FaTaxi, FaUser, FaRupeeSign, FaCheckCircle, FaSpinner, FaUserPlus, FaSearch, FaArrowLeft, FaArrowRight, FaUsers, FaClock, FaPhone } from 'react-icons/fa';
+import { QRCodeSVG } from 'qrcode.react';
 import { admin, users } from '../../services/api';
 import { FIXED_PICKUP_LOCATION } from '../../config/fixedLocations';
 import { initializeSocket, getSocket } from '../../services/socket';
@@ -47,6 +48,11 @@ const ManualBooking = () => {
 
   // Resend OTP state
   const [isResendingOTP, setIsResendingOTP] = useState(false);
+
+  // Payment state
+  const [isSendingSMS, setIsSendingSMS] = useState(false);
+  const [paymentLinkSent, setPaymentLinkSent] = useState(false);
+  const [transactionRef, setTransactionRef] = useState(null);
 
   // Fixed pickup location (same as online booking)
   const currentBooth = FIXED_PICKUP_LOCATION;
@@ -500,7 +506,7 @@ const ManualBooking = () => {
 
   // Step navigation functions
   const nextStep = () => {
-    if (currentStep < 5) setCurrentStep(currentStep + 1);
+    if (currentStep < 6) setCurrentStep(currentStep + 1);
   };
 
   const prevStep = () => {
@@ -747,6 +753,54 @@ const ManualBooking = () => {
     } finally {
       setIsResendingOTP(false);
     }
+  };
+
+  // Generate UPI payment link
+  const generateUPILink = (amount, txnRef) => {
+    const upiId = 'BHARATPE.8C0W0Q8S1A01707@fbpe';
+    const merchantName = 'GT3 Auto Booking';
+    const txnNote = `Ride Booking ${txnRef || Date.now()}`;
+    const txnReference = txnRef || `GT3${Date.now()}`;
+
+    return `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchantName)}&am=${amount}&tn=${encodeURIComponent(txnNote)}&tr=${txnReference}&cu=INR`;
+  };
+
+  // Handle send payment link via SMS
+  const handleSendPaymentLink = async () => {
+    setIsSendingSMS(true);
+    try {
+      const txnRef = transactionRef || `GT3${Date.now()}`;
+      if (!transactionRef) {
+        setTransactionRef(txnRef);
+      }
+
+      const paymentLink = generateUPILink(selectedVehicle?.price, txnRef);
+
+      const response = await admin.sendPaymentLinkSMS({
+        phone: userPhone,
+        customerName: userName,
+        amount: selectedVehicle?.price,
+        paymentLink: paymentLink
+      });
+
+      if (response.success) {
+        setPaymentLinkSent(true);
+        alert('✅ Payment link sent successfully to customer!');
+      } else {
+        alert('❌ Failed to send SMS: ' + (response.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error sending payment link:', error);
+      alert('❌ Error sending payment link. Please try again.');
+    } finally {
+      setIsSendingSMS(false);
+    }
+  };
+
+  // Handle payment collected
+  const handlePaymentCollected = () => {
+    // Proceed to driver assignment
+    nextStep();
   };
 
   // State recovery functions
@@ -1036,7 +1090,7 @@ const ManualBooking = () => {
               <button
                 onClick={() => {
                   setBookingDetails(null);
-                  setCurrentStep(4); // Go back to driver selection
+                  setCurrentStep(5); // Go back to driver selection
                 }}
                 className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors"
               >
@@ -1237,25 +1291,26 @@ const ManualBooking = () => {
               </div>
             </div>
             <div className="flex items-center mt-4">
-              {[1, 2, 3, 4, 5].map((step) => (
+              {[1, 2, 3, 4, 5, 6].map((step) => (
                 <React.Fragment key={step}>
                   <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${
-                    currentStep === step 
-                      ? 'bg-blue-600 text-white' 
-                      : currentStep > step 
-                        ? 'bg-green-600 text-white' 
+                    currentStep === step
+                      ? 'bg-blue-600 text-white'
+                      : currentStep > step
+                        ? 'bg-green-600 text-white'
                         : 'bg-gray-300 text-gray-600'
                   }`}>
                     {currentStep > step ? '✓' : step}
                   </div>
-                  {step < 5 && <div className={`h-1 w-8 mx-1 ${currentStep > step ? 'bg-green-600' : 'bg-gray-300'}`} />}
+                  {step < 6 && <div className={`h-1 w-6 mx-1 ${currentStep > step ? 'bg-green-600' : 'bg-gray-300'}`} />}
                 </React.Fragment>
               ))}
             </div>
             <div className="flex justify-between mt-2 text-xs text-gray-600">
-              <span>Customer</span>
               <span>Location</span>
               <span>Vehicle</span>
+              <span>Customer</span>
+              <span>Payment</span>
               <span>Driver</span>
               <span>Confirm</span>
             </div>
@@ -1264,149 +1319,10 @@ const ManualBooking = () => {
 
         {/* Main Content */}
         <div className="bg-white rounded-lg shadow-lg p-6">
-          {/* Step 1: Customer Lookup */}
+          {/* Step 1: Location Selection */}
           {currentStep === 1 && (
-            <div className="max-w-2xl mx-auto">
-              <h2 className="text-xl font-semibold mb-6 text-center">Customer Information</h2>
-
-              {/* Phone Number Input */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <FaPhone className="inline mr-2" />
-                  Customer Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={userPhone}
-                  onChange={(e) => {
-                    const phone = e.target.value;
-                    setUserPhone(phone);
-                    if (phone.length === 10) {
-                      handlePhoneLookup(phone);
-                    } else {
-                      setShowRegistrationForm(false);
-                      setExistingUser(null);
-                    }
-                  }}
-                  placeholder="Enter 10-digit phone number"
-                  maxLength="10"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-                  disabled={isLookingUpCustomer || isRegisteringCustomer}
-                />
-                {isLookingUpCustomer && (
-                  <p className="text-sm text-blue-600 mt-2">
-                    <FaSpinner className="inline animate-spin mr-2" />
-                    Looking up customer...
-                  </p>
-                )}
-              </div>
-
-              {/* Existing Customer Found */}
-              {existingUser && (
-                <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6">
-                  <div className="flex items-center mb-4">
-                    <FaCheckCircle className="text-green-600 text-2xl mr-3" />
-                    <h3 className="text-lg font-semibold text-green-800">Customer Found</h3>
-                  </div>
-                  <div className="space-y-2 mb-4">
-                    <p className="text-gray-700"><strong>Name:</strong> {existingUser.name}</p>
-                    <p className="text-gray-700"><strong>Phone:</strong> {existingUser.phone}</p>
-                    {existingUser.email && (
-                      <p className="text-gray-700"><strong>Email:</strong> {existingUser.email}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleProceedFromCustomer}
-                    className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition-colors font-medium"
-                  >
-                    <FaArrowRight className="inline mr-2" />
-                    Proceed to Trip Details
-                  </button>
-                </div>
-              )}
-
-              {/* Registration Form for New Customer */}
-              {showRegistrationForm && !existingUser && userPhone.length === 10 && (
-                <div className="bg-blue-50 border-2 border-blue-500 rounded-lg p-6">
-                  <div className="flex items-center mb-4">
-                    <FaUserPlus className="text-blue-600 text-2xl mr-3" />
-                    <h3 className="text-lg font-semibold text-blue-800">New Customer Registration</h3>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Customer not found. Please fill in their details to register:
-                  </p>
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Customer Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={userName}
-                        onChange={(e) => setUserName(e.target.value)}
-                        placeholder="Enter customer name"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        disabled={isRegisteringCustomer}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Email (Optional)
-                      </label>
-                      <input
-                        type="email"
-                        value={userEmail}
-                        onChange={(e) => setUserEmail(e.target.value)}
-                        placeholder="Enter email address"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        disabled={isRegisteringCustomer}
-                      />
-                    </div>
-
-                    <button
-                      onClick={handleRegisterCustomer}
-                      disabled={!userName || isRegisteringCustomer}
-                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    >
-                      {isRegisteringCustomer ? (
-                        <>
-                          <FaSpinner className="inline animate-spin mr-2" />
-                          Registering Customer...
-                        </>
-                      ) : (
-                        <>
-                          <FaUserPlus className="inline mr-2" />
-                          Register Customer
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Help Text */}
-              {!showRegistrationForm && !existingUser && userPhone.length < 10 && (
-                <div className="text-center text-gray-500 text-sm">
-                  Enter a 10-digit phone number to lookup or register a customer
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step 2: Trip Details */}
-          {currentStep === 2 && (
             <div>
               <h2 className="text-xl font-semibold mb-6">Trip Details</h2>
-              
-              {/* Customer Info Display */}
-              <div className="bg-gray-50 p-4 rounded-lg mb-6">
-                <h3 className="font-medium mb-2">Customer Information</h3>
-                <p><strong>Name:</strong> {userName}</p>
-                <p><strong>Phone:</strong> {userPhone}</p>
-                {existingUser && <p className="text-green-600 text-sm">✓ Existing Customer</p>}
-              </div>
 
               {/* Pickup Location (Fixed) */}
               <div className="mb-6">
@@ -1425,7 +1341,7 @@ const ManualBooking = () => {
                   <FaMapMarkerAlt className="inline mr-2" />
                   Drop Location
                 </label>
-                
+
                 {mapsError ? (
                   <div>
                     <div className="w-full px-4 py-2 bg-yellow-50 border border-yellow-300 rounded-lg text-yellow-700 mb-3">
@@ -1479,7 +1395,7 @@ const ManualBooking = () => {
                     />
                   </Autocomplete>
                 )}
-                
+
                 {isCalculatingFare && (
                   <p className="text-sm text-blue-600 mt-2">
                     <FaSpinner className="animate-spin inline mr-2" />
@@ -1555,7 +1471,7 @@ const ManualBooking = () => {
                           scaledSize: new window.google.maps.Size(40, 40)
                         }}
                       />
-                      
+
                       {/* Drop Location Marker (Draggable) */}
                       {dropCoordinates && (
                         <Marker
@@ -1572,7 +1488,7 @@ const ManualBooking = () => {
                       )}
                     </GoogleMap>
                   </div>
-                  
+
                   {/* Map Legend */}
                   <div className="mt-3 flex items-center justify-center gap-6 text-sm text-gray-600">
                     <span className="flex items-center gap-1">
@@ -1586,14 +1502,7 @@ const ManualBooking = () => {
               )}
 
               {/* Navigation Buttons */}
-              <div className="flex justify-between">
-                <button
-                  onClick={prevStep}
-                  className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-800"
-                >
-                  <FaArrowLeft className="mr-2" />
-                  Back
-                </button>
+              <div className="flex justify-end">
                 <button
                   onClick={handleLocationSubmit}
                   disabled={!dropLocation || !dropCoordinates || (dropLocationConfirmed && isCalculatingFare)}
@@ -1615,11 +1524,11 @@ const ManualBooking = () => {
             </div>
           )}
 
-          {/* Step 3: Vehicle Selection */}
-          {currentStep === 3 && (
+          {/* Step 2: Vehicle Selection */}
+          {currentStep === 2 && (
             <div>
               <h2 className="text-xl font-semibold mb-6">Choose Vehicle & Fare</h2>
-              
+
               {/* Trip Summary */}
               <div className="bg-gray-50 p-4 rounded-lg mb-6">
                 <h3 className="font-medium mb-2">Trip Summary</h3>
@@ -1630,7 +1539,6 @@ const ManualBooking = () => {
                   </div>
                   <div>
                     <p><strong>Distance:</strong> {fareEstimates?.distance || 'Calculating...'} km</p>
-                    <p><strong>Customer:</strong> {userName}</p>
                   </div>
                 </div>
               </div>
@@ -1711,8 +1619,276 @@ const ManualBooking = () => {
             </div>
           )}
 
-          {/* Step 4: Driver Selection */}
+          {/* Step 3: Customer Verification */}
+          {currentStep === 3 && (
+            <div className="max-w-2xl mx-auto">
+              <h2 className="text-xl font-semibold mb-6 text-center">Customer Information</h2>
+
+              {/* Trip Summary */}
+              <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                <h3 className="font-medium mb-2">Trip Summary</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p><strong>From:</strong> {currentBooth.name}</p>
+                    <p><strong>To:</strong> {dropLocation}</p>
+                  </div>
+                  <div>
+                    <p><strong>Distance:</strong> {fareEstimates?.distance || 'N/A'} km</p>
+                    <p><strong>Vehicle:</strong> {selectedVehicle?.label || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Phone Number Input */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FaPhone className="inline mr-2" />
+                  Customer Phone Number
+                </label>
+                <input
+                  type="tel"
+                  value={userPhone}
+                  onChange={(e) => {
+                    const phone = e.target.value;
+                    setUserPhone(phone);
+                    if (phone.length === 10) {
+                      handlePhoneLookup(phone);
+                    } else {
+                      setShowRegistrationForm(false);
+                      setExistingUser(null);
+                    }
+                  }}
+                  placeholder="Enter 10-digit phone number"
+                  maxLength="10"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                  disabled={isLookingUpCustomer || isRegisteringCustomer}
+                />
+                {isLookingUpCustomer && (
+                  <p className="text-sm text-blue-600 mt-2">
+                    <FaSpinner className="inline animate-spin mr-2" />
+                    Looking up customer...
+                  </p>
+                )}
+              </div>
+
+              {/* Existing Customer Found */}
+              {existingUser && (
+                <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6">
+                  <div className="flex items-center mb-4">
+                    <FaCheckCircle className="text-green-600 text-2xl mr-3" />
+                    <h3 className="text-lg font-semibold text-green-800">Customer Found</h3>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    <p className="text-gray-700"><strong>Name:</strong> {existingUser.name}</p>
+                    <p className="text-gray-700"><strong>Phone:</strong> {existingUser.phone}</p>
+                    {existingUser.email && (
+                      <p className="text-gray-700"><strong>Email:</strong> {existingUser.email}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Registration Form for New Customer */}
+              {showRegistrationForm && !existingUser && userPhone.length === 10 && (
+                <div className="bg-blue-50 border-2 border-blue-500 rounded-lg p-6 mb-6">
+                  <div className="flex items-center mb-4">
+                    <FaUserPlus className="text-blue-600 text-2xl mr-3" />
+                    <h3 className="text-lg font-semibold text-blue-800">New Customer Registration</h3>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Customer not found. Please fill in their details to register:
+                  </p>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Customer Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={userName}
+                        onChange={(e) => setUserName(e.target.value)}
+                        placeholder="Enter customer name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        disabled={isRegisteringCustomer}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email (Optional)
+                      </label>
+                      <input
+                        type="email"
+                        value={userEmail}
+                        onChange={(e) => setUserEmail(e.target.value)}
+                        placeholder="Enter email address"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        disabled={isRegisteringCustomer}
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleRegisterCustomer}
+                      disabled={!userName || isRegisteringCustomer}
+                      className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    >
+                      {isRegisteringCustomer ? (
+                        <>
+                          <FaSpinner className="inline animate-spin mr-2" />
+                          Registering Customer...
+                        </>
+                      ) : (
+                        <>
+                          <FaUserPlus className="inline mr-2" />
+                          Register Customer
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Help Text */}
+              {!showRegistrationForm && !existingUser && userPhone.length < 10 && (
+                <div className="text-center text-gray-500 text-sm">
+                  Enter a 10-digit phone number to lookup or register a customer
+                </div>
+              )}
+
+              {/* Navigation Buttons */}
+              <div className="flex justify-between mt-6">
+                <button
+                  onClick={prevStep}
+                  className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  <FaArrowLeft className="mr-2" />
+                  Back
+                </button>
+                {existingUser && (
+                  <button
+                    onClick={handleProceedFromCustomer}
+                    className="flex items-center bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  >
+                    Continue
+                    <FaArrowRight className="ml-2" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Payment Collection */}
           {currentStep === 4 && (
+            <div className="max-w-2xl mx-auto">
+              <h2 className="text-xl font-semibold mb-6 text-center">💳 Collect Payment from Customer</h2>
+
+              {/* Trip Summary */}
+              <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                <h3 className="font-medium mb-2">Trip Summary</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p><strong>From:</strong> {currentBooth.name}</p>
+                    <p><strong>To:</strong> {dropLocation}</p>
+                    <p><strong>Vehicle:</strong> {selectedVehicle?.label || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p><strong>Distance:</strong> {fareEstimates?.distance || 'N/A'} km</p>
+                    <p><strong>Customer:</strong> {userName}</p>
+                    <p><strong>Phone:</strong> {userPhone}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Amount - Large Display */}
+              <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6 text-center">
+                <p className="text-sm text-gray-600 mb-2">Total Amount to Collect</p>
+                <p className="text-5xl font-bold text-green-600">
+                  ₹{selectedVehicle?.price}
+                </p>
+                {fareEstimates?.estimates?.[selectedVehicle?.type] && fareEstimates.detailed && (
+                  <div className="mt-4 text-xs text-gray-600 space-y-1">
+                    <p>Driver Fare: ₹{fareEstimates.estimates[selectedVehicle.type].driverFare}</p>
+                    <p>GST (5%): ₹{fareEstimates.estimates[selectedVehicle.type].gstAmount}</p>
+                    <p>Commission (10%): ₹{fareEstimates.estimates[selectedVehicle.type].commissionAmount}</p>
+                    {fareEstimates.estimates[selectedVehicle.type].nightChargeAmount > 0 && (
+                      <p>Night Charge (20%): ₹{fareEstimates.estimates[selectedVehicle.type].nightChargeAmount}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* UPI QR Code */}
+              <div className="bg-white border-2 border-gray-300 rounded-lg p-6 mb-6">
+                <p className="text-center text-gray-700 font-medium mb-4">
+                  Scan QR Code to Pay
+                </p>
+                <div className="flex justify-center mb-4">
+                  <QRCodeSVG
+                    value={generateUPILink(selectedVehicle?.price, transactionRef || `GT3${Date.now()}`)}
+                    size={280}
+                    level="H"
+                    includeMargin={true}
+                  />
+                </div>
+                <p className="text-center text-sm text-gray-500">
+                  Works with GPay, PhonePe, Paytm, BharatPe & all UPI apps
+                </p>
+                <p className="text-center text-xs text-gray-400 mt-2">
+                  UPI ID: BHARATPE.8C0W0Q8S1A01707@fbpe
+                </p>
+              </div>
+
+              {/* Send SMS Button */}
+              <button
+                onClick={handleSendPaymentLink}
+                disabled={isSendingSMS}
+                className="w-full mb-4 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+              >
+                {isSendingSMS ? (
+                  <>
+                    <FaSpinner className="inline animate-spin mr-2" />
+                    Sending Payment Link...
+                  </>
+                ) : paymentLinkSent ? (
+                  <>
+                    ✅ Payment Link Sent!
+                  </>
+                ) : (
+                  <>
+                    📱 Send Payment Link via SMS
+                  </>
+                )}
+              </button>
+
+              {paymentLinkSent && (
+                <div className="bg-green-50 border border-green-200 p-3 rounded-lg mb-4 text-center text-sm text-green-700">
+                  ✅ Payment link has been sent to {userPhone}
+                </div>
+              )}
+
+              {/* Navigation */}
+              <div className="flex justify-between mt-6">
+                <button
+                  onClick={prevStep}
+                  className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  <FaArrowLeft className="mr-2" />
+                  Back
+                </button>
+                <button
+                  onClick={handlePaymentCollected}
+                  className="flex items-center bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  ✓ Payment Collected - Continue
+                  <FaArrowRight className="ml-2" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Driver Selection */}
+          {currentStep === 5 && (
             <div>
               <h2 className="text-xl font-semibold mb-6">Select Driver from Queue</h2>
               
@@ -1784,7 +1960,7 @@ const ManualBooking = () => {
                 )}
 
                 {/* Driver List */}
-                {!loadingDrivers && !driverError && (
+                {!loadingDrivers && (
                   <div className="space-y-3 max-h-96 overflow-y-auto">
                     {availableDrivers.length === 0 ? (
                       <div className="text-center py-8 bg-gray-50 rounded-lg">
@@ -1911,8 +2087,8 @@ const ManualBooking = () => {
             </div>
           )}
 
-          {/* Step 5: Final Confirmation */}
-          {currentStep === 5 && (
+          {/* Step 6: Final Confirmation */}
+          {currentStep === 6 && (
             <div>
               <h2 className="text-xl font-semibold mb-6">Booking Confirmation</h2>
               
@@ -2018,82 +2194,31 @@ const ManualBooking = () => {
                 </button>
                 <button
                   onClick={() => {
-                    debugger; // DEBUGGER: Confirm booking button clicked
                     console.log('🖱️ [Manual Booking] Confirm Booking button clicked!');
-                    console.log('📊 [Manual Booking] Complete state check:', {
-                      socketConnected,
-                      socketExists: !!socket,
-                      globalSocketExists: !!getSocket(),
-                      selectedDriver: {
-                        id: selectedDriver?._id,
-                        name: selectedDriver?.fullName,
-                        phone: selectedDriver?.mobileNo,
-                        vehicleType: selectedDriver?.vehicleType,
-                        vehicleNo: selectedDriver?.vehicleNo,
-                        queuePosition: selectedDriver?.queuePosition
-                      },
-                      selectedVehicle: {
-                        type: selectedVehicle?.type,
-                        label: selectedVehicle?.label,
-                        price: selectedVehicle?.price
-                      },
-                      customer: {
-                        name: userName,
-                        phone: userPhone,
-                        existingUserId: existingUser?._id
-                      },
-                      trip: {
-                        pickup: currentBooth.name,
-                        drop: dropLocation,
-                        distance: fareEstimates?.distance
-                      }
+                    console.log('📊 [Manual Booking] Booking data:', {
+                      selectedDriver: selectedDriver?._id,
+                      selectedVehicle: selectedVehicle?.type,
+                      customer: { name: userName, phone: userPhone },
+                      trip: { from: currentBooth.name, to: dropLocation }
                     });
-                    
-                    if (!socketConnected || !socket) {
-                      // Try to re-initialize socket
-                      console.log('⚠️ [ManualBooking] Socket not ready, attempting to initialize...');
-                      const token = localStorage.getItem('adminToken');
-                      if (token) {
-                        const socketPromise = initializeSocket(token);
-                        if (socketPromise && typeof socketPromise.then === 'function') {
-                          socketPromise.then((sock) => {
-                            const newSocket = sock || getSocket();
-                            if (newSocket && newSocket.connected) {
-                              console.log('✅ [ManualBooking] Socket re-initialized successfully');
-                              setSocket(newSocket);
-                              setSocketConnected(true);
-                              confirmBooking();
-                            } else {
-                              alert('⚠️ Unable to establish connection. Please refresh the page and try again.');
-                            }
-                          }).catch((error) => {
-                            console.error('[ManualBooking] Socket re-initialization error:', error);
-                            alert('⚠️ Connection error. Please refresh the page and try again.');
-                          });
-                        } else {
-                          // Direct socket returned
-                          const newSocket = socketPromise || getSocket();
-                          if (newSocket && newSocket.connected) {
-                            console.log('[ManualBooking] Socket ready (direct)');
-                            setSocket(newSocket);
-                            setSocketConnected(true);
-                            confirmBooking();
-                          } else {
-                            alert('⚠️ Unable to establish connection. Please refresh the page and try again.');
-                          }
-                        }
-                      } else {
-                        alert('⚠️ Authentication lost. Please login again.');
-                        navigate('/admin/login');
-                      }
-                      return;
-                    }
+
+                    // Call confirmBooking directly - backend handles socket communication
                     confirmBooking();
                   }}
                   className="flex items-center bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 transition-colors text-lg font-medium"
+                  disabled={loading}
                 >
-                  <FaCheckCircle className="mr-2" />
-                  Confirm Booking
+                  {loading ? (
+                    <>
+                      <FaSpinner className="mr-2 animate-spin" />
+                      Creating Booking...
+                    </>
+                  ) : (
+                    <>
+                      <FaCheckCircle className="mr-2" />
+                      Confirm Booking
+                    </>
+                  )}
                 </button>
               </div>
             </div>

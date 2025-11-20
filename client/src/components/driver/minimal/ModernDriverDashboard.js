@@ -235,8 +235,9 @@ const ModernDriverDashboard = () => {
               dropLocation: ride.dropLocation,
               vehicleType: ride.vehicleType,
               distance: ride.distance,
-              fare: getDriverEarnings(ride),  // Driver sees their earnings
-              estimatedFare: getDriverEarnings(ride),  // Use driver fare
+              driverFare: ride.driverFare,  // Store actual driver fare
+              fare: ride.driverFare || getDriverEarnings(ride),  // Driver sees their earnings
+              estimatedFare: ride.driverFare || getDriverEarnings(ride),  // Use driver fare
               startOTP: ride.startOTP || null,
               endOTP: ride.endOTP || null,
               status: 'pending',
@@ -300,6 +301,20 @@ const ModernDriverDashboard = () => {
               vehicleType: data.vehicleType
             });
           }
+
+          // Debug fare fields
+          console.log('[driverFare Debug] All fare fields from socket:', {
+            driverFare: data.driverFare,
+            fare: data.fare,
+            estimatedFare: data.estimatedFare,
+            customerFare: data.customerFare,
+            baseFare: data.baseFare,
+            types: {
+              driverFare: typeof data.driverFare,
+              fare: typeof data.fare,
+              estimatedFare: typeof data.estimatedFare
+            }
+          });
           
           // All bookings (including manual) now require driver acceptance
           // No skipping - handle all ride requests the same way
@@ -315,8 +330,9 @@ const ModernDriverDashboard = () => {
             dropLocation: data.dropLocation,
             vehicleType: data.vehicleType,
             distance: data.distance,
-            fare: getDriverEarnings(data),  // Driver sees their earnings (base fare)
-            estimatedFare: getDriverEarnings(data),  // Use driver fare preferentially
+            driverFare: data.driverFare,  // Store actual driver fare from backend
+            fare: data.driverFare || getDriverEarnings(data),  // Use driverFare or fallback to calculation
+            estimatedFare: data.driverFare || getDriverEarnings(data),  // Use driverFare or fallback to calculation
             startOTP: data.startOTP || null,
             endOTP: data.endOTP || null,
             status: 'pending',
@@ -340,7 +356,7 @@ const ModernDriverDashboard = () => {
           // Show notification
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('🚕 New Ride Request!', {
-              body: `${data.userName || 'Customer'} - ₹${getDriverEarnings(data)}`,
+              body: `${data.userName || 'Customer'} - ₹${data.driverFare || getDriverEarnings(data)}`,
               icon: '/favicon.ico'
             });
           }
@@ -419,8 +435,9 @@ const ModernDriverDashboard = () => {
                 startOTP: data.startOTP || acceptedRide.startOTP || null,
                 endOTP: data.endOTP || acceptedRide.endOTP || null,
                 // Ensure fare is preserved (driver sees only their earnings)
-                estimatedFare: getDriverEarnings(data) || getDriverEarnings(acceptedRide),
-                fare: getDriverEarnings(data) || getDriverEarnings(acceptedRide),
+                driverFare: data.driverFare || acceptedRide.driverFare,
+                estimatedFare: data.driverFare || acceptedRide.driverFare || getDriverEarnings(data) || getDriverEarnings(acceptedRide),
+                fare: data.driverFare || acceptedRide.driverFare || getDriverEarnings(data) || getDriverEarnings(acceptedRide),
                 // Other important fields
                 boothRideNumber: data.boothRideNumber || acceptedRide.boothRideNumber,
                 userName: acceptedRide.userName,
@@ -509,9 +526,10 @@ const ModernDriverDashboard = () => {
           console.log('[ModernDriverDashboard] Ride completed:', data);
 
           // Store completed ride details for animation (driver sees only their earnings)
-          const driverEarnings = getDriverEarnings(data.driverFare ? data : activeRide);
+          const driverEarnings = data.driverFare || activeRide.driverFare || getDriverEarnings(data.driverFare ? data : activeRide);
           const completedRide = {
             ...activeRide,
+            driverFare: driverEarnings,  // Store as driverFare
             fare: driverEarnings,
             completedAt: new Date(),
             status: 'completed'
@@ -709,7 +727,7 @@ const ModernDriverDashboard = () => {
 ` +
       `Customer: ${activeRide.userName || 'Customer'}
 ` +
-      `Fare: ₹${getDriverEarnings(activeRide)}
+      `Fare: ₹${activeRide.driverFare || getDriverEarnings(activeRide)}
 
 ` +
       `Note: Cancelling rides may affect your rating.`
@@ -1021,7 +1039,7 @@ const ModernDriverDashboard = () => {
                   </a>
                 )}
               </div>
-              <div className="text-2xl font-bold">₹{getDriverEarnings(activeRide)}</div>
+              <div className="text-2xl font-bold">₹{activeRide.driverFare || getDriverEarnings(activeRide)}</div>
             </div>
 
             {/* Locations */}
@@ -1158,7 +1176,7 @@ const ModernDriverDashboard = () => {
               dropLocation={activeRide.dropLocation}
               driverLocation={null}
               rideDetails={{
-                fare: getDriverEarnings(activeRide),
+                fare: activeRide.driverFare || getDriverEarnings(activeRide),
                 distance: activeRide.distance,
                 vehicleType: activeRide.vehicleType,
               }}
@@ -1182,7 +1200,7 @@ const ModernDriverDashboard = () => {
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-2xl font-bold text-gray-800">₹{getDriverEarnings(ride)}</p>
+                        <p className="text-2xl font-bold text-gray-800">₹{ride.driverFare || getDriverEarnings(ride)}</p>
                         <p className="text-sm text-gray-500">{ride.distance || 'N/A'} km</p>
                       </div>
                       <span className="px-3 py-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded-full">
@@ -1297,7 +1315,7 @@ const ModernDriverDashboard = () => {
                           </>
                         ) : (
                           <>
-                            <span className="font-bold text-green-600 text-lg">₹{getDriverEarnings(ride)}</span>
+                            <span className="font-bold text-green-600 text-lg">₹{ride.driverFare || getDriverEarnings(ride)}</span>
                             <span className="ml-1 text-xs text-gray-500 font-medium">estimated</span>
                           </>
                         )}
@@ -1364,7 +1382,7 @@ const ModernDriverDashboard = () => {
               <p className="text-gray-600 mb-4">Great job! You've earned</p>
               
               <div className="text-4xl font-bold text-green-600 mb-6 animate-pulse">
-                ₹{getDriverEarnings(completedRideDetails)}
+                ₹{completedRideDetails.driverFare || getDriverEarnings(completedRideDetails)}
               </div>
               
               <div className="space-y-2 text-sm text-gray-600">

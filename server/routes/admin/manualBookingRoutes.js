@@ -831,4 +831,78 @@ router.post('/resend-otp/:rideId', adminProtect, async (req, res) => {
   }
 });
 
+// Send payment link via SMS
+router.post('/send-payment-link', adminProtect, async (req, res) => {
+  try {
+    const { phone, customerName, amount, paymentLink } = req.body;
+
+    // Validate required fields
+    if (!phone || !amount || !paymentLink) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: phone, amount, or paymentLink'
+      });
+    }
+
+    // Validate phone number format
+    const phoneRegex = /^[6-9]\d{9}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number format'
+      });
+    }
+
+    // Check if Twilio SMS service is configured
+    if (!twilioSmsService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        message: 'SMS service not configured'
+      });
+    }
+
+    // Compose SMS message
+    const smsMessage = `Hi ${customerName || 'Customer'},
+
+Your GT3 Auto Booking fare is ₹${amount}.
+
+Pay now using this link:
+${paymentLink}
+
+Scan QR or click link to pay via any UPI app (GPay, PhonePe, Paytm, BharatPe).
+
+Thank you!
+- GT3 Auto Booking`;
+
+    // Send SMS
+    console.log(`[Payment Link SMS] Sending to ${phone}...`);
+    const smsResult = await twilioSmsService.sendSMS(phone, smsMessage);
+
+    if (smsResult.success) {
+      console.log(`✅ Payment link SMS sent successfully to ${phone}`);
+      res.json({
+        success: true,
+        message: 'Payment link sent successfully',
+        messageId: smsResult.messageId,
+        phone: phone
+      });
+    } else {
+      console.error(`❌ Failed to send payment link SMS:`, smsResult.error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send SMS',
+        error: smsResult.error,
+        errorCode: smsResult.errorCode
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error sending payment link SMS:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

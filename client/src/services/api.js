@@ -675,6 +675,15 @@ export const admin = {
     }
   },
 
+  sendPaymentLinkSMS: async (paymentData) => {
+    try {
+      const response = await apiClient.post('/admin/send-payment-link', paymentData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   getManualBookingDetails: async (bookingId) => {
     try {
       const response = await apiClient.get(`/admin/manual-booking/${bookingId}`);
