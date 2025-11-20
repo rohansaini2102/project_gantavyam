@@ -17,68 +17,145 @@ class DualStorageManager {
     return multer.memoryStorage(); // Use memory storage to handle files manually
   }
 
-  // Process uploaded files with dual storage strategy
+  // Process uploaded files with dual storage strategy (PARALLEL)
   async processUploads(files, req) {
     const results = {};
     const errors = [];
+    const uploadPromises = [];
+    const fieldNames = [];
 
+    // Prepare all upload promises
     for (const [fieldName, fileArray] of Object.entries(files)) {
       if (fileArray && fileArray[0]) {
         const file = fileArray[0];
-        
-        try {
-          const result = await this.uploadFile(file, fieldName, req);
-          results[fieldName] = result.url;
-          console.log(`✅ [Dual Storage] ${fieldName} uploaded via ${result.storage}`);
-        } catch (error) {
-          console.error(`❌ [Dual Storage] Failed to upload ${fieldName}:`, error.message);
-          errors.push({ fieldName, error: error.message });
-          // Use placeholder for failed uploads
-          results[fieldName] = `UPLOAD_FAILED_${fieldName}_${Date.now()}`;
-        }
+        fieldNames.push(fieldName);
+
+        // Create upload promise with progress tracking
+        const uploadPromise = this.uploadFile(file, fieldName, req)
+          .then(result => {
+            console.log(`✅ [Dual Storage] ${fieldName} uploaded via ${result.storage}`);
+            return { fieldName, success: true, result };
+          })
+          .catch(error => {
+            console.error(`❌ [Dual Storage] Failed to upload ${fieldName}:`, error.message);
+            return { fieldName, success: false, error: error.message };
+          });
+
+        uploadPromises.push(uploadPromise);
       }
     }
+
+    // Execute all uploads in parallel
+    console.log(`[Dual Storage] Starting parallel upload of ${uploadPromises.length} files...`);
+    const startTime = Date.now();
+
+    const uploadResults = await Promise.allSettled(uploadPromises);
+
+    const endTime = Date.now();
+    console.log(`[Dual Storage] Parallel upload completed in ${endTime - startTime}ms`);
+
+    // Process results
+    uploadResults.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        const uploadResult = result.value;
+        if (uploadResult.success) {
+          results[uploadResult.fieldName] = uploadResult.result.url;
+        } else {
+          errors.push({
+            fieldName: uploadResult.fieldName,
+            error: uploadResult.error
+          });
+          // Use placeholder for failed uploads
+          results[uploadResult.fieldName] = `UPLOAD_FAILED_${uploadResult.fieldName}_${Date.now()}`;
+        }
+      } else {
+        // Promise rejected (should not happen with our catch above, but just in case)
+        const fieldName = fieldNames[index];
+        errors.push({
+          fieldName,
+          error: result.reason?.message || 'Unknown error'
+        });
+        results[fieldName] = `UPLOAD_FAILED_${fieldName}_${Date.now()}`;
+      }
+    });
+
+    console.log(`[Dual Storage] Upload summary: ${Object.keys(results).length - errors.length} succeeded, ${errors.length} failed`);
 
     return { results, errors };
   }
 
-  // Upload a single file with fallback strategy
-  async uploadFile(file, fieldName, req) {
-    // Try Cloudinary first if enabled and not too many failures
-    if (this.useCloudinary && this.cloudinaryFailures < this.maxFailures) {
-      try {
-        const cloudinaryResult = await this.uploadToCloudinary(file, fieldName);
-        this.cloudinaryFailures = 0; // Reset failure count on success
-        return {
-          url: cloudinaryResult.secure_url || cloudinaryResult.url,
-          storage: 'cloudinary',
-          publicId: cloudinaryResult.public_id
-        };
-      } catch (cloudinaryError) {
-        console.warn(`⚠️ [Dual Storage] Cloudinary upload failed for ${fieldName}:`, cloudinaryError.message);
-        this.cloudinaryFailures++;
-        
-        if (this.cloudinaryFailures >= this.maxFailures) {
-          console.warn(`⚠️ [Dual Storage] Disabling Cloudinary after ${this.maxFailures} consecutive failures`);
-          this.useCloudinary = false;
+  // Upload a single file with fallback strategy and retry mechanism
+  async uploadFile(file, fieldName, req, maxRetries = 3) {
+    let lastError = null;
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+      // Try Cloudinary first if enabled and not too many failures
+      if (this.useCloudinary && this.cloudinaryFailures < this.maxFailures) {
+        try {
+          const cloudinaryResult = await this.uploadToCloudinaryWithRetry(file, fieldName, 2);
+          this.cloudinaryFailures = 0; // Reset failure count on success
+          return {
+            url: cloudinaryResult.secure_url || cloudinaryResult.url,
+            storage: 'cloudinary',
+            publicId: cloudinaryResult.public_id
+          };
+        } catch (cloudinaryError) {
+          lastError = cloudinaryError;
+          console.warn(`⚠️ [Dual Storage] Cloudinary upload failed for ${fieldName} (attempt ${retryCount + 1}/${maxRetries}):`, cloudinaryError.message);
+          this.cloudinaryFailures++;
+
+          if (this.cloudinaryFailures >= this.maxFailures) {
+            console.warn(`⚠️ [Dual Storage] Disabling Cloudinary after ${this.maxFailures} consecutive failures`);
+            this.useCloudinary = false;
+          }
+
+          // Fall through to local storage
         }
-        
-        // Fall through to local storage
+      }
+
+      // Use local storage as fallback
+      try {
+        const localResult = await this.uploadToLocal(file, fieldName, req);
+        return {
+          url: localResult.url,
+          storage: 'local',
+          path: localResult.path
+        };
+      } catch (localError) {
+        lastError = localError;
+        console.error(`❌ [Dual Storage] Local upload also failed for ${fieldName} (attempt ${retryCount + 1}/${maxRetries}):`, localError.message);
+        retryCount++;
+
+        if (retryCount < maxRetries) {
+          // Wait before retrying (exponential backoff)
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
+          console.log(`[Dual Storage] Retrying ${fieldName} upload in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
     }
 
-    // Use local storage as fallback
-    try {
-      const localResult = await this.uploadToLocal(file, fieldName, req);
-      return {
-        url: localResult.url,
-        storage: 'local',
-        path: localResult.path
-      };
-    } catch (localError) {
-      console.error(`❌ [Dual Storage] Local upload also failed for ${fieldName}:`, localError.message);
-      throw new Error(`Both Cloudinary and local storage failed: ${localError.message}`);
+    throw new Error(`Failed to upload ${fieldName} after ${maxRetries} attempts: ${lastError?.message}`);
+  }
+
+  // Upload to Cloudinary with retry
+  async uploadToCloudinaryWithRetry(file, fieldName, maxRetries = 2) {
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await this.uploadToCloudinary(file, fieldName);
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxRetries - 1) {
+          const delay = Math.min(500 * Math.pow(2, attempt), 2000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
+
+    throw lastError;
   }
 
   // Upload to Cloudinary

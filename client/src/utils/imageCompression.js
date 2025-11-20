@@ -1,40 +1,55 @@
 import imageCompression from 'browser-image-compression';
 
-// Default compression options - optimized for speed and quality balance
+// Default compression options - OPTIMIZED FOR MAXIMUM SPEED
 const DEFAULT_OPTIONS = {
-  maxSizeMB: 1, // 1MB max size
-  maxWidthOrHeight: 1920, // Max dimension
+  maxSizeMB: 0.5, // Reduced to 500KB for faster uploads
+  maxWidthOrHeight: 1280, // Reduced max dimension for faster processing
   useWebWorker: true, // Use web worker for better performance
-  initialQuality: 0.75, // Slightly lower quality for faster processing
+  initialQuality: 0.6, // Lower quality for much faster processing
   alwaysKeepResolution: false,
-  fileType: 'image/jpeg' // Force JPEG for smaller file size
+  fileType: 'image/jpeg', // Force JPEG for smaller file size
+  maxIteration: 5, // Limit iterations for faster processing
+  exifOrientation: true, // Maintain proper orientation
+  preserveExif: false // Remove EXIF data to reduce size
 };
 
-// Document-specific compression options - optimized for upload speed
+// Document-specific compression options - AGGRESSIVE OPTIMIZATION for upload speed
 const DOCUMENT_OPTIONS = {
   aadhaar: {
-    maxSizeMB: 0.6, // Smaller size for faster upload
-    maxWidthOrHeight: 1600, // Reduced resolution for speed
-    initialQuality: 0.75,
-    fileType: 'image/jpeg'
+    maxSizeMB: 0.4, // Reduced from 0.6MB - still readable for Aadhaar
+    maxWidthOrHeight: 1200, // Reduced from 1600px - adequate for text documents
+    initialQuality: 0.6, // Reduced from 0.75 - text is still clear at this quality
+    fileType: 'image/jpeg',
+    maxIteration: 3 // Fewer iterations for speed
   },
   license: {
-    maxSizeMB: 0.6,
-    maxWidthOrHeight: 1600,
-    initialQuality: 0.75,
-    fileType: 'image/jpeg'
+    maxSizeMB: 0.4, // Reduced from 0.6MB
+    maxWidthOrHeight: 1200, // Reduced from 1600px
+    initialQuality: 0.6, // Reduced from 0.75
+    fileType: 'image/jpeg',
+    maxIteration: 3
   },
   selfie: {
-    maxSizeMB: 0.4, // Smaller for selfies
-    maxWidthOrHeight: 1080,
-    initialQuality: 0.8, // Slightly higher quality for selfies
-    fileType: 'image/jpeg'
+    maxSizeMB: 0.3, // Reduced from 0.4MB - faces are recognizable at this size
+    maxWidthOrHeight: 800, // Reduced from 1080px - sufficient for face recognition
+    initialQuality: 0.65, // Reduced from 0.8 - still clear enough for selfies
+    fileType: 'image/jpeg',
+    maxIteration: 3
   },
   document: {
-    maxSizeMB: 0.8,
-    maxWidthOrHeight: 1800,
-    initialQuality: 0.75,
-    fileType: 'image/jpeg'
+    maxSizeMB: 0.5, // Reduced from 0.8MB
+    maxWidthOrHeight: 1400, // Reduced from 1800px
+    initialQuality: 0.6, // Reduced from 0.75
+    fileType: 'image/jpeg',
+    maxIteration: 4
+  },
+  // Preview quality for instant feedback (very fast)
+  preview: {
+    maxSizeMB: 0.1, // 100KB for previews
+    maxWidthOrHeight: 400, // Small preview size
+    initialQuality: 0.5, // Low quality for preview
+    fileType: 'image/jpeg',
+    maxIteration: 1 // Single iteration for speed
   }
 };
 
@@ -57,10 +72,21 @@ export const compressImage = async (imageFile, documentType = 'document', onProg
 
     const fileSizeMB = imageFile.size / 1024 / 1024;
     console.log(`[Image Compression] ${imageFile.name}: ${fileSizeMB.toFixed(2)}MB`);
-    
-    // Skip compression for very small files
-    if (fileSizeMB <= 0.3) {
-      console.log(`[Image Compression] File already small (${fileSizeMB.toFixed(2)}MB), skipping compression`);
+
+    // Dynamic skip threshold based on document type
+    const skipThresholds = {
+      aadhaar: 0.2, // Skip if under 200KB
+      license: 0.2,
+      selfie: 0.15, // Skip if under 150KB
+      document: 0.25,
+      preview: 0.05 // Skip if under 50KB for previews
+    };
+
+    const skipThreshold = skipThresholds[documentType] || 0.2;
+
+    // Skip compression for files already smaller than threshold
+    if (fileSizeMB <= skipThreshold) {
+      console.log(`[Image Compression] File already optimal (${fileSizeMB.toFixed(2)}MB < ${skipThreshold}MB), skipping compression`);
       if (onProgress) onProgress(100);
       return imageFile;
     }

@@ -20,7 +20,13 @@ const DriverSchema = new mongoose.Schema({
   aadhaarNo: {
     type: String,
     required: [true, 'Please add an Aadhaar number'],
-    unique: true
+    unique: true,
+    validate: {
+      validator: function(v) {
+        return /^[0-9]{12}$/.test(v);
+      },
+      message: 'Aadhaar number must be exactly 12 digits'
+    }
   },
   aadhaarPhotoFront: {
     type: String,
@@ -37,7 +43,15 @@ const DriverSchema = new mongoose.Schema({
   vehicleNo: {
     type: String,
     required: [true, 'Please add a vehicle number'],
-    unique: true
+    unique: true,
+    validate: {
+      validator: function(v) {
+        // Indian vehicle number format: 2-3 letters, 2 digits, 1-2 letters, 1-4 digits
+        // e.g., DL01AB1234, MH12DE3456, KA05MH1234
+        return /^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{1,4}$/.test(v);
+      },
+      message: 'Vehicle number must be in valid Indian format (e.g., DL01AB1234)'
+    }
   },
   vehicleType: {
     type: String,
@@ -56,11 +70,23 @@ const DriverSchema = new mongoose.Schema({
     },
     accountNumber: {
       type: String,
-      required: [true, 'Please add account number']
+      required: [true, 'Please add account number'],
+      validate: {
+        validator: function(v) {
+          return /^[0-9]{9,18}$/.test(v);
+        },
+        message: 'Account number must be 9-18 digits'
+      }
     },
     ifscCode: {
       type: String,
-      required: [true, 'Please add IFSC code']
+      required: [true, 'Please add IFSC code'],
+      validate: {
+        validator: function(v) {
+          return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(v);
+        },
+        message: 'IFSC code must be in valid format (e.g., SBIN0001234)'
+      }
     },
     bankName: {
       type: String,

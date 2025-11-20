@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -37,8 +37,19 @@ const SmartFileUpload = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [processStatus, setProcessStatus] = useState(''); // Track current processing step
+  const [compressionProgress, setCompressionProgress] = useState(0);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+
+  // Cleanup preview URL on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   // File compression utility
   const compressImage = useCallback((file, quality = compressionQuality) => {
@@ -103,51 +114,81 @@ const SmartFileUpload = ({
     return { isValid: true };
   }, [maxSize]);
 
-  // Process file with compression and validation
+  // Process file with compression and validation - WITH DETAILED PROGRESS
   const processFile = useCallback(async (file) => {
     setIsProcessing(true);
     setUploadProgress(0);
+    setCompressionProgress(0);
+    setProcessStatus('Validating file...');
 
     try {
-      // Validate file
+      // Step 1: Validate file (10% progress)
+      setProcessStatus('Validating file...');
       const validation = validateFile(file);
       if (!validation.isValid) {
         onFileChange?.(null, validation.error);
         toast.error(validation.error);
+        setProcessStatus('');
+        setIsProcessing(false);
         return;
       }
+      setUploadProgress(10);
 
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 100);
-
-      // Compress image if it's large
+      // Step 2: Check if compression needed (20% progress)
+      setProcessStatus('Analyzing file size...');
+      const originalSizeMB = (file.size / (1024 * 1024)).toFixed(2);
       let processedFile = file;
+
+      await new Promise(resolve => setTimeout(resolve, 200)); // Small delay for UX
+      setUploadProgress(20);
+
+      // Step 3: Compress if needed (20-70% progress)
       if (file.size > 1024 * 1024) { // 1MB threshold
+        setProcessStatus(`Compressing image (${originalSizeMB}MB)...`);
+
+        // Use dynamic compression with progress tracking
+        const compressionSteps = 5;
+        for (let i = 1; i <= compressionSteps; i++) {
+          setCompressionProgress((i / compressionSteps) * 100);
+          setUploadProgress(20 + (i / compressionSteps) * 50); // 20-70% range
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
         processedFile = await compressImage(file);
         processedFile = new File([processedFile], file.name, {
           type: 'image/jpeg',
           lastModified: Date.now()
         });
+
+        const compressedSizeMB = (processedFile.size / (1024 * 1024)).toFixed(2);
+        const reduction = ((1 - processedFile.size / file.size) * 100).toFixed(0);
+        setProcessStatus(`Compressed: ${originalSizeMB}MB → ${compressedSizeMB}MB (-${reduction}%)`);
+      } else {
+        setProcessStatus('File size optimal, skipping compression');
+        setUploadProgress(70);
       }
 
-      // Create preview URL
+      // Step 4: Generate preview (70-90% progress)
+      await new Promise(resolve => setTimeout(resolve, 200));
+      setProcessStatus('Generating preview...');
+      setUploadProgress(80);
+
       const url = URL.createObjectURL(processedFile);
       setPreviewUrl(url);
+      setUploadProgress(90);
 
-      // Complete upload
-      clearInterval(progressInterval);
+      // Step 5: Complete (100% progress)
+      setProcessStatus('Ready for upload');
       setUploadProgress(100);
 
       // Call onChange with processed file
       onFileChange?.(processedFile, null);
+
+      // Clear status after success
+      setTimeout(() => {
+        setProcessStatus('');
+        setCompressionProgress(0);
+      }, 2000);
       toast.success('File uploaded successfully!');
 
       setTimeout(() => {

@@ -1,8 +1,10 @@
 // routes/drivers.js
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const { dualUploadFields, dualStorageManager } = require('../config/dualStorage');
 const { protect } = require('../middleware/auth');
+const { normalizeDriverData, normalizeQueryParams } = require('../middleware/normalizeDriverData');
 const {
   registerDriver,
   loginDriver,
@@ -17,11 +19,194 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { getIO } = require('../socket');
 
+// Rate limiter for duplicate check endpoints (prevent enumeration attacks)
+const duplicateCheckLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many validation requests from this IP, please try again later',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
 // Configure multer for multiple files with dual storage
 const driverDocumentUpload = dualUploadFields;
 
 // Public routes
-router.post('/register', driverDocumentUpload, async (req, res, next) => {
+
+// @desc    Check if driver details already exist (for real-time validation)
+// @route   GET /api/drivers/check-duplicate
+// @access  Public
+router.get('/check-duplicate', duplicateCheckLimiter, normalizeQueryParams, async (req, res) => {
+  try {
+    const { field, value } = req.query;
+
+    // Validate inputs
+    const validFields = ['mobileNo', 'aadhaarNo', 'vehicleNo'];
+    if (!field || !value) {
+      return res.status(400).json({
+        success: false,
+        message: 'Field and value are required'
+      });
+    }
+
+    if (!validFields.includes(field)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid field. Must be one of: ${validFields.join(', ')}`
+      });
+    }
+
+    // Normalize value for consistent querying
+    let queryValue = value;
+    if (field === 'aadhaarNo') {
+      // Remove all non-digit characters for consistent storage
+      queryValue = value.replace(/[^0-9]/g, '');
+      console.log(`[Duplicate Check] Normalized Aadhaar: ${value} -> ${queryValue}`);
+    }
+    if (field === 'mobileNo') {
+      // Ensure only digits
+      queryValue = value.replace(/[^0-9]/g, '');
+      console.log(`[Duplicate Check] Normalized Mobile: ${value} -> ${queryValue}`);
+    }
+    if (field === 'vehicleNo') {
+      // Uppercase and remove special characters
+      queryValue = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      console.log(`[Duplicate Check] Normalized Vehicle: ${value} -> ${queryValue}`);
+    }
+
+    // Build query based on field with normalized value
+    const query = { [field]: queryValue };
+    console.log('[Duplicate Check] Query:', query);
+
+    // Check if driver exists with this value
+    const existingDriver = await Driver.findOne(query)
+      .select('_id fullName isVerified');
+
+    if (existingDriver) {
+      const status = existingDriver.isVerified ? 'verified and active' : 'pending approval';
+      let message = '';
+      switch(field) {
+        case 'mobileNo':
+          message = `This mobile number is already registered (${status})`;
+          break;
+        case 'aadhaarNo':
+          message = `This Aadhaar number is already registered (${status})`;
+          break;
+        case 'vehicleNo':
+          message = `This vehicle number is already registered (${status})`;
+          break;
+        default:
+          message = `This value is already registered (${status})`;
+      }
+
+      console.log('[Duplicate Check] Found existing driver:', existingDriver._id, `Status: ${status}`);
+
+      return res.json({
+        success: true,
+        exists: true,
+        message,
+        data: {
+          field,
+          value: queryValue,
+          isVerified: existingDriver.isVerified,
+          status
+        }
+      });
+    }
+
+    console.log('[Duplicate Check] No duplicate found');
+
+    res.json({
+      success: true,
+      exists: false,
+      message: 'Available',
+      data: {
+        field,
+        value: queryValue
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error checking duplicate',
+      error: error.message
+    });
+  }
+});
+
+// @desc    Batch check for multiple duplicates
+// @route   POST /api/drivers/check-duplicates
+// @access  Public
+router.post('/check-duplicates', duplicateCheckLimiter, async (req, res) => {
+  try {
+    const { checks } = req.body;
+
+    if (!checks || !Array.isArray(checks)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Checks array is required'
+      });
+    }
+
+    const validFields = ['mobileNo', 'aadhaarNo', 'vehicleNo'];
+
+    // Helper function to normalize values
+    const normalizeValue = (field, value) => {
+      if (field === 'aadhaarNo') {
+        return value.replace(/[^0-9]/g, '');
+      }
+      if (field === 'mobileNo') {
+        return value.replace(/[^0-9]/g, '');
+      }
+      if (field === 'vehicleNo') {
+        return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      }
+      return value;
+    };
+
+    // Parallel processing using Promise.all for better performance
+    const results = await Promise.all(
+      checks.map(async (check) => {
+        if (!check.field || !check.value || !validFields.includes(check.field)) {
+          return {
+            field: check.field,
+            value: check.value,
+            error: 'Invalid field or value'
+          };
+        }
+
+        const queryValue = normalizeValue(check.field, check.value);
+        const query = { [check.field]: queryValue };
+        const existingDriver = await Driver.findOne(query).select('_id isVerified');
+
+        return {
+          field: check.field,
+          value: queryValue,
+          exists: !!existingDriver,
+          isVerified: existingDriver?.isVerified
+        };
+      })
+    );
+
+    const hasAnyDuplicate = results.some(r => r.exists);
+
+    res.json({
+      success: true,
+      hasAnyDuplicate,
+      results
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error checking duplicates',
+      error: error.message
+    });
+  }
+});
+
+router.post('/register', normalizeDriverData, driverDocumentUpload, async (req, res, next) => {
   try {
     console.log('[Middleware] Processing file uploads with dual storage');
     console.log('[Middleware] req.files:', req.files ? Object.keys(req.files) : 'No files');
