@@ -28,8 +28,16 @@ router.get('/fare-config', adminProtect, checkPermission(PERMISSIONS.FARE_VIEW),
 router.put('/fare-config/vehicle/:vehicleType', adminProtect, checkPermission(PERMISSIONS.FARE_EDIT), async (req, res) => {
   try {
     const { vehicleType } = req.params;
-    const { baseFare, perKmRate, minimumFare, waitingChargePerMin } = req.body;
-    
+    const {
+      baseFare,
+      perKmRate,
+      minimumFare,
+      waitingChargePerMin,
+      baseKilometers,
+      gstPercentage,
+      commissionPercentage
+    } = req.body;
+
     // Validate vehicle type
     if (!['bike', 'auto', 'car'].includes(vehicleType)) {
       return res.status(400).json({
@@ -37,31 +45,77 @@ router.put('/fare-config/vehicle/:vehicleType', adminProtect, checkPermission(PE
         message: 'Invalid vehicle type'
       });
     }
-    
+
     // Validate values
     if (baseFare < 0 || perKmRate < 0 || minimumFare < 0 || waitingChargePerMin < 0) {
       return res.status(400).json({
         success: false,
-        message: 'All values must be positive'
+        message: 'All fare values must be positive'
       });
     }
-    
+
+    // Validate baseKilometers if provided
+    if (baseKilometers !== undefined && baseKilometers < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Base kilometers must be positive'
+      });
+    }
+
+    // Validate percentages if provided
+    if (gstPercentage !== undefined && (gstPercentage < 0 || gstPercentage > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: 'GST percentage must be between 0 and 100'
+      });
+    }
+
+    if (commissionPercentage !== undefined && (commissionPercentage < 0 || commissionPercentage > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Commission percentage must be between 0 and 100'
+      });
+    }
+
     // Get current config
     const currentConfig = await FareConfig.getActiveConfig();
-    
+
+    // Build updated vehicle config with all fields
+    const updatedVehicleConfig = {
+      baseFare,
+      perKmRate,
+      minimumFare,
+      waitingChargePerMin
+    };
+
+    // Add optional fields if provided, otherwise keep existing values
+    if (baseKilometers !== undefined) {
+      updatedVehicleConfig.baseKilometers = baseKilometers;
+    } else if (currentConfig.vehicleConfigs[vehicleType]?.baseKilometers !== undefined) {
+      updatedVehicleConfig.baseKilometers = currentConfig.vehicleConfigs[vehicleType].baseKilometers;
+    }
+
+    if (gstPercentage !== undefined) {
+      updatedVehicleConfig.gstPercentage = gstPercentage;
+    } else if (currentConfig.vehicleConfigs[vehicleType]?.gstPercentage !== undefined) {
+      updatedVehicleConfig.gstPercentage = currentConfig.vehicleConfigs[vehicleType].gstPercentage;
+    }
+
+    if (commissionPercentage !== undefined) {
+      updatedVehicleConfig.commissionPercentage = commissionPercentage;
+    } else if (currentConfig.vehicleConfigs[vehicleType]?.commissionPercentage !== undefined) {
+      updatedVehicleConfig.commissionPercentage = currentConfig.vehicleConfigs[vehicleType].commissionPercentage;
+    }
+
     // Create new config with updated vehicle pricing
     const newConfig = {
       vehicleConfigs: {
         ...currentConfig.vehicleConfigs,
-        [vehicleType]: {
-          baseFare,
-          perKmRate,
-          minimumFare,
-          waitingChargePerMin
-        }
+        [vehicleType]: updatedVehicleConfig
       },
       surgeTimes: currentConfig.surgeTimes,
       dynamicPricing: currentConfig.dynamicPricing,
+      nightCharge: currentConfig.nightCharge,
       updatedBy: req.admin._id,
       updatedByName: req.admin.name,
       notes: `Updated ${vehicleType} pricing`,
@@ -173,6 +227,7 @@ router.put('/fare-config/surge', adminProtect, checkPermission(PERMISSIONS.FARE_
       vehicleConfigs: currentConfig.vehicleConfigs,
       surgeTimes,
       dynamicPricing: currentConfig.dynamicPricing,
+      nightCharge: currentConfig.nightCharge,
       updatedBy: req.admin._id,
       updatedByName: req.admin.name,
       notes: 'Updated surge pricing rules',
@@ -233,6 +288,7 @@ router.put('/fare-config/dynamic', adminProtect, checkPermission(PERMISSIONS.FAR
       vehicleConfigs: currentConfig.vehicleConfigs,
       surgeTimes: currentConfig.surgeTimes,
       dynamicPricing,
+      nightCharge: currentConfig.nightCharge,
       updatedBy: req.admin._id,
       updatedByName: req.admin.name,
       notes: 'Updated dynamic pricing thresholds',
@@ -258,6 +314,81 @@ router.put('/fare-config/dynamic', adminProtect, checkPermission(PERMISSIONS.FAR
     res.status(500).json({
       success: false,
       message: 'Failed to update dynamic pricing',
+      error: error.message
+    });
+  }
+});
+
+// Update night charge settings (edit permission required)
+router.put('/fare-config/night-charge', adminProtect, checkPermission(PERMISSIONS.FARE_EDIT), async (req, res) => {
+  try {
+    const { isActive, startHour, endHour, percentage } = req.body;
+
+    // Validate hours if provided
+    if (startHour !== undefined && (startHour < 0 || startHour > 23)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start hour must be between 0 and 23'
+      });
+    }
+
+    if (endHour !== undefined && (endHour < 0 || endHour > 23)) {
+      return res.status(400).json({
+        success: false,
+        message: 'End hour must be between 0 and 23'
+      });
+    }
+
+    // Validate percentage if provided
+    if (percentage !== undefined && (percentage < 0 || percentage > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Night charge percentage must be between 0 and 100'
+      });
+    }
+
+    // Get current config
+    const currentConfig = await FareConfig.getActiveConfig();
+
+    // Build updated night charge config
+    const updatedNightCharge = {
+      isActive: isActive !== undefined ? isActive : currentConfig.nightCharge?.isActive || false,
+      startHour: startHour !== undefined ? startHour : currentConfig.nightCharge?.startHour || 23,
+      endHour: endHour !== undefined ? endHour : currentConfig.nightCharge?.endHour || 5,
+      percentage: percentage !== undefined ? percentage : currentConfig.nightCharge?.percentage || 20
+    };
+
+    // Create new config
+    const newConfig = {
+      vehicleConfigs: currentConfig.vehicleConfigs,
+      surgeTimes: currentConfig.surgeTimes,
+      dynamicPricing: currentConfig.dynamicPricing,
+      nightCharge: updatedNightCharge,
+      updatedBy: req.admin._id,
+      updatedByName: req.admin.name,
+      notes: 'Updated night charge settings',
+      isActive: true
+    };
+
+    // Deactivate current config
+    await FareConfig.updateOne(
+      { _id: currentConfig._id },
+      { isActive: false }
+    );
+
+    // Create new config
+    const savedConfig = await FareConfig.create(newConfig);
+
+    res.json({
+      success: true,
+      message: 'Night charge settings updated successfully',
+      config: savedConfig
+    });
+  } catch (error) {
+    console.error('Error updating night charge settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update night charge settings',
       error: error.message
     });
   }

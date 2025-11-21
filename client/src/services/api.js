@@ -770,6 +770,16 @@ export const admin = {
     }
   },
 
+  updateNightCharge: async (data) => {
+    try {
+      const response = await apiClient.put('/admin/fare/fare-config/night-charge', data);
+      return response.data;
+    } catch (error) {
+      console.error('Update night charge error:', error);
+      throw error;
+    }
+  },
+
   simulateFare: async (data) => {
     try {
       const response = await apiClient.post('/admin/fare/fare-config/simulate', data);

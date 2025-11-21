@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaSave, FaSync, FaHistory, FaTrash, FaPlus, FaChevronDown, FaCar, FaMotorcycle, FaTaxi, FaClock, FaChartLine, FaCalculator, FaTimes, FaCheck } from 'react-icons/fa';
+import { FaSave, FaSync, FaHistory, FaTrash, FaPlus, FaChevronDown, FaCar, FaMotorcycle, FaTaxi, FaClock, FaChartLine, FaCalculator, FaTimes, FaCheck, FaMoon } from 'react-icons/fa';
 import { admin } from '../../services/api';
 
 const FareManagement = () => {
@@ -212,6 +212,38 @@ const FareManagement = () => {
     });
   };
 
+  const handleNightChargeChange = (field, value) => {
+    setConfig(prev => ({
+      ...prev,
+      nightCharge: {
+        ...prev.nightCharge,
+        [field]: field === 'isActive' ? value : (field === 'percentage' ? parseFloat(value) : parseInt(value))
+      }
+    }));
+  };
+
+  const saveNightCharge = async () => {
+    setConfirmDialog({
+      title: 'Update Night Charge Settings',
+      message: 'Are you sure you want to update night charge settings? This will affect all rides during night hours.',
+      onConfirm: async () => {
+        try {
+          setSaving(true);
+          const response = await admin.updateNightCharge(config.nightCharge);
+          if (response.success) {
+            showAlert('success', 'Night charge settings updated successfully');
+            fetchFareConfig();
+          }
+        } catch (error) {
+          showAlert('error', 'Failed to update night charge settings');
+        } finally {
+          setSaving(false);
+          setConfirmDialog(null);
+        }
+      }
+    });
+  };
+
   const runSimulation = async () => {
     try {
       const response = await admin.simulateFare(simulation);
@@ -259,6 +291,7 @@ const FareManagement = () => {
     { id: 'vehicle', label: 'Vehicle Pricing', icon: <FaCar /> },
     { id: 'surge', label: 'Surge Pricing', icon: <FaClock /> },
     { id: 'dynamic', label: 'Dynamic Pricing', icon: <FaChartLine /> },
+    { id: 'night', label: 'Night Charge', icon: <FaMoon /> },
     { id: 'simulator', label: 'Fare Simulator', icon: <FaCalculator /> }
   ];
 
@@ -400,7 +433,52 @@ const FareManagement = () => {
                           step="0.5"
                         />
                       </div>
-                      
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Base Kilometers (km)
+                        </label>
+                        <input
+                          type="number"
+                          value={vehicleConfig.baseKilometers || 2}
+                          onChange={(e) => handleVehicleConfigChange(type, 'baseKilometers', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          min="0"
+                          step="0.5"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Kilometers covered by base fare</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          GST (%)
+                        </label>
+                        <input
+                          type="number"
+                          value={vehicleConfig.gstPercentage || 5}
+                          onChange={(e) => handleVehicleConfigChange(type, 'gstPercentage', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          min="0"
+                          max="100"
+                          step="0.5"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Commission (%)
+                        </label>
+                        <input
+                          type="number"
+                          value={vehicleConfig.commissionPercentage || 10}
+                          onChange={(e) => handleVehicleConfigChange(type, 'commissionPercentage', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          min="0"
+                          max="100"
+                          step="0.5"
+                        />
+                      </div>
+
                       <button
                         onClick={() => saveVehicleConfig(type)}
                         disabled={saving}
@@ -633,6 +711,130 @@ const FareManagement = () => {
                 <FaSave />
                 Save Dynamic Pricing
               </button>
+            </div>
+          )}
+
+          {/* Night Charge Tab */}
+          {currentTab === 'night' && (
+            <div>
+              <h3 className="text-xl font-semibold mb-4">Night Charge Configuration</h3>
+
+              <div className="bg-gray-50 rounded-lg p-6 max-w-2xl">
+                <div className="space-y-6">
+                  {/* Enable/Disable Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
+                    <div>
+                      <h4 className="font-medium text-gray-900">Enable Night Charge</h4>
+                      <p className="text-sm text-gray-500">Apply additional charge during night hours</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.nightCharge?.isActive || false}
+                        onChange={(e) => handleNightChargeChange('isActive', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Night Hours */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Start Hour (24-hour format)
+                      </label>
+                      <select
+                        value={config.nightCharge?.startHour || 23}
+                        onChange={(e) => handleNightChargeChange('startHour', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {[...Array(24)].map((_, hour) => (
+                          <option key={hour} value={hour}>
+                            {hour.toString().padStart(2, '0')}:00
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">Night charge starts at this hour</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        End Hour (24-hour format)
+                      </label>
+                      <select
+                        value={config.nightCharge?.endHour || 5}
+                        onChange={(e) => handleNightChargeChange('endHour', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {[...Array(24)].map((_, hour) => (
+                          <option key={hour} value={hour}>
+                            {hour.toString().padStart(2, '0')}:00
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">Night charge ends at this hour</p>
+                    </div>
+                  </div>
+
+                  {/* Percentage */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Night Charge Percentage (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={config.nightCharge?.percentage || 20}
+                      onChange={(e) => handleNightChargeChange('percentage', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      min="0"
+                      max="100"
+                      step="1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Additional percentage added to the total fare during night hours
+                    </p>
+                  </div>
+
+                  {/* Preview */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h5 className="font-medium text-blue-900 mb-2">Current Configuration:</h5>
+                    <ul className="text-sm text-blue-800 space-y-1">
+                      <li>
+                        <span className="font-medium">Status:</span>{' '}
+                        {config.nightCharge?.isActive ? (
+                          <span className="text-green-600">✓ Enabled</span>
+                        ) : (
+                          <span className="text-red-600">✗ Disabled</span>
+                        )}
+                      </li>
+                      <li>
+                        <span className="font-medium">Night Hours:</span>{' '}
+                        {String(config.nightCharge?.startHour || 23).padStart(2, '0')}:00 to{' '}
+                        {String(config.nightCharge?.endHour || 5).padStart(2, '0')}:00
+                      </li>
+                      <li>
+                        <span className="font-medium">Additional Charge:</span>{' '}
+                        {config.nightCharge?.percentage || 20}%
+                      </li>
+                      <li className="mt-2 pt-2 border-t border-blue-300">
+                        <span className="font-medium">Example:</span> A ₹100 fare would become ₹
+                        {100 + (100 * (config.nightCharge?.percentage || 20) / 100)} during night hours
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Save Button */}
+                <button
+                  onClick={saveNightCharge}
+                  disabled={saving}
+                  className="mt-6 w-full px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2 transition-colors disabled:bg-gray-400"
+                >
+                  <FaSave />
+                  Save Night Charge Settings
+                </button>
+              </div>
             </div>
           )}
 
