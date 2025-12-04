@@ -317,7 +317,7 @@ class RideLifecycleService {
       // Update basic driver stats
       if (rideData.status === 'completed') {
         driver.totalRides += 1;
-        driver.totalEarnings += rideData.actualFare;
+        driver.totalEarnings += rideData.driverFare; // FIXED: Use driverFare instead of actualFare
         
         // Update rating if provided
         if (rideData.userRating && rideData.userRating.rating) {

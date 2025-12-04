@@ -985,6 +985,50 @@ const RideManagement = () => {
                 </div>
               </div>
 
+              {/* Payment Information */}
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">Payment Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Payment Status</label>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        selectedRide.paymentStatus === 'collected'
+                          ? 'bg-green-100 text-green-800'
+                          : selectedRide.paymentStatus === 'online'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {selectedRide.paymentStatus ? selectedRide.paymentStatus.toUpperCase() : 'PENDING'}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Payment Method</label>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        selectedRide.paymentMethod === 'cash'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {selectedRide.paymentMethod === 'cash' ? '💵 CASH' :
+                         selectedRide.paymentMethod === 'upi' ? '📱 UPI' :
+                         selectedRide.paymentMethod === 'online' ? '🌐 ONLINE' :
+                         '💵 CASH (default)'}
+                      </span>
+                    </div>
+                  </div>
+                  {selectedRide.paymentCollectedAt && (
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-gray-700">Payment Collected At</label>
+                      <div className="mt-1 text-sm text-gray-900">
+                        {formatDateTime(selectedRide.paymentCollectedAt)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Financial Details (only for users with financial view permission) */}
               {hasPermission(PERMISSIONS.FINANCIAL_VIEW) && (
                 <RideFinancialDetails ride={selectedRide} showSummary={true} />

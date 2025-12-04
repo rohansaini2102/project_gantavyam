@@ -53,6 +53,7 @@ const ManualBooking = () => {
   const [isSendingSMS, setIsSendingSMS] = useState(false);
   const [paymentLinkSent, setPaymentLinkSent] = useState(false);
   const [transactionRef, setTransactionRef] = useState(null);
+  const [paymentMode, setPaymentMode] = useState('cash'); // 'cash' or 'online'
 
   // Fixed pickup location (same as online booking)
   const currentBooth = FIXED_PICKUP_LOCATION;
@@ -920,7 +921,8 @@ const ManualBooking = () => {
         existingUserId: existingUser?._id || null,
         selectedDriverId: selectedDriver?._id || null,
         bookingSource: 'manual',
-        paymentStatus: 'collected'
+        paymentStatus: paymentMode === 'cash' ? 'collected' : 'online',
+        paymentMethod: paymentMode === 'cash' ? 'cash' : 'upi'
       };
 
       const response = await admin.createManualBooking(bookingData);
@@ -1818,8 +1820,59 @@ const ManualBooking = () => {
                 )}
               </div>
 
-              {/* UPI QR Code */}
-              <div className="bg-white border-2 border-gray-300 rounded-lg p-6 mb-6">
+              {/* Payment Mode Selection */}
+              <div className="bg-white border-2 border-blue-300 rounded-lg p-6 mb-6">
+                <h3 className="text-center text-gray-700 font-medium mb-4">
+                  Select Payment Mode
+                </h3>
+
+                <div className="flex gap-4 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode('cash')}
+                    className={`flex-1 p-4 rounded-lg border-2 transition-all ${
+                      paymentMode === 'cash'
+                        ? 'border-green-500 bg-green-50 shadow-md'
+                        : 'border-gray-300 bg-white hover:border-gray-400'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-3xl mb-2">💵</div>
+                      <div className="font-semibold">Cash</div>
+                      <div className="text-xs text-gray-500 mt-1">Collect payment in cash</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode('online')}
+                    className={`flex-1 p-4 rounded-lg border-2 transition-all ${
+                      paymentMode === 'online'
+                        ? 'border-blue-500 bg-blue-50 shadow-md'
+                        : 'border-gray-300 bg-white hover:border-gray-400'
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-3xl mb-2">📱</div>
+                      <div className="font-semibold">Online Payment (UPI)</div>
+                      <div className="text-xs text-gray-500 mt-1">Customer scans QR code</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Cash Payment Note */}
+              {paymentMode === 'cash' && (
+                <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-6">
+                  <p className="text-center text-yellow-800 font-medium">
+                    💵 Collect ₹{selectedVehicle?.price} in cash from the customer
+                  </p>
+                </div>
+              )}
+
+              {/* UPI QR Code - Show only for Online Payment */}
+              {paymentMode === 'online' && (
+                <div className="bg-white border-2 border-gray-300 rounded-lg p-6 mb-6">
                 <p className="text-center text-gray-700 font-medium mb-4">
                   Scan QR Code to Pay
                 </p>
@@ -1838,33 +1891,38 @@ const ManualBooking = () => {
                   UPI ID: BHARATPE.8C0W0Q8S1A01707@fbpe
                 </p>
               </div>
+              )}
 
-              {/* Send SMS Button */}
-              <button
-                onClick={handleSendPaymentLink}
-                disabled={isSendingSMS}
-                className="w-full mb-4 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-              >
-                {isSendingSMS ? (
-                  <>
-                    <FaSpinner className="inline animate-spin mr-2" />
-                    Sending Payment Link...
-                  </>
-                ) : paymentLinkSent ? (
-                  <>
-                    ✅ Payment Link Sent!
-                  </>
-                ) : (
-                  <>
-                    📱 Send Payment Link via SMS
-                  </>
-                )}
-              </button>
+              {/* Send SMS Button - Show only for Online Payment */}
+              {paymentMode === 'online' && (
+                <>
+                  <button
+                    onClick={handleSendPaymentLink}
+                    disabled={isSendingSMS}
+                    className="w-full mb-4 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+                  >
+                    {isSendingSMS ? (
+                      <>
+                        <FaSpinner className="inline animate-spin mr-2" />
+                        Sending Payment Link...
+                      </>
+                    ) : paymentLinkSent ? (
+                      <>
+                        ✅ Payment Link Sent!
+                      </>
+                    ) : (
+                      <>
+                        📱 Send Payment Link via SMS
+                      </>
+                    )}
+                  </button>
 
-              {paymentLinkSent && (
-                <div className="bg-green-50 border border-green-200 p-3 rounded-lg mb-4 text-center text-sm text-green-700">
-                  ✅ Payment link has been sent to {userPhone}
-                </div>
+                  {paymentLinkSent && (
+                    <div className="bg-green-50 border border-green-200 p-3 rounded-lg mb-4 text-center text-sm text-green-700">
+                      ✅ Payment link has been sent to {userPhone}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Navigation */}

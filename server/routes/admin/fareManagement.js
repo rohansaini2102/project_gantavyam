@@ -3,7 +3,7 @@ const router = express.Router();
 const FareConfig = require('../../models/FareConfig');
 const { adminProtect } = require('../../middleware/auth');
 const { checkPermission, PERMISSIONS } = require('../../middleware/permissions');
-const { calculateFare, calculateDistance } = require('../../utils/fareCalculator');
+const { calculateFare, calculateDistance, clearConfigCache } = require('../../utils/fareCalculator');
 
 // Get current fare configuration (view permission required)
 router.get('/fare-config', adminProtect, checkPermission(PERMISSIONS.FARE_VIEW), async (req, res) => {
@@ -130,7 +130,10 @@ router.put('/fare-config/vehicle/:vehicleType', adminProtect, checkPermission(PE
     
     // Create new config
     const savedConfig = await FareConfig.create(newConfig);
-    
+
+    // Clear fare calculator cache so new config takes effect immediately
+    clearConfigCache();
+
     res.json({
       success: true,
       message: `${vehicleType} pricing updated successfully`,
@@ -181,7 +184,10 @@ router.put('/fare-config/vehicles', adminProtect, checkPermission(PERMISSIONS.FA
     
     // Create new config
     const savedConfig = await FareConfig.create(newConfig);
-    
+
+    // Clear fare calculator cache so new config takes effect immediately
+    clearConfigCache();
+
     res.json({
       success: true,
       message: 'All vehicle pricing updated successfully',
@@ -242,7 +248,10 @@ router.put('/fare-config/surge', adminProtect, checkPermission(PERMISSIONS.FARE_
     
     // Create new config
     const savedConfig = await FareConfig.create(newConfig);
-    
+
+    // Clear fare calculator cache so new config takes effect immediately
+    clearConfigCache();
+
     res.json({
       success: true,
       message: 'Surge pricing updated successfully',
@@ -303,7 +312,10 @@ router.put('/fare-config/dynamic', adminProtect, checkPermission(PERMISSIONS.FAR
     
     // Create new config
     const savedConfig = await FareConfig.create(newConfig);
-    
+
+    // Clear fare calculator cache so new config takes effect immediately
+    clearConfigCache();
+
     res.json({
       success: true,
       message: 'Dynamic pricing updated successfully',
@@ -378,6 +390,9 @@ router.put('/fare-config/night-charge', adminProtect, checkPermission(PERMISSION
 
     // Create new config
     const savedConfig = await FareConfig.create(newConfig);
+
+    // Clear fare calculator cache so new config takes effect immediately
+    clearConfigCache();
 
     res.json({
       success: true,
@@ -564,7 +579,10 @@ router.post('/fare-config/restore/:configId', adminProtect, checkPermission(PERM
     };
     
     const savedConfig = await FareConfig.create(newConfig);
-    
+
+    // Clear fare calculator cache so restored config takes effect immediately
+    clearConfigCache();
+
     res.json({
       success: true,
       message: 'Configuration restored successfully',

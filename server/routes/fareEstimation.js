@@ -63,7 +63,8 @@ router.post('/estimate', async (req, res) => {
       // For customer view (no breakdown unless detailed is requested)
       if (!detailed) {
         finalEstimates[vehicleType] = {
-          totalFare: dynamicCustomerFare, // Customer sees only total
+          totalFare: dynamicCustomerFare, // Customer sees only total (for backward compatibility)
+          customerTotalFare: dynamicCustomerFare, // Explicit customer fare field
           // Minimal fields for customer
           vehicleType: estimate.vehicleType,
           distance: estimate.distance,

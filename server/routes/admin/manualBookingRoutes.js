@@ -29,7 +29,8 @@ router.post('/manual-booking', adminProtect, checkPermission(PERMISSIONS.RIDES_M
       existingUserId,
       selectedDriverId, // Add support for manual driver selection
       bookingSource,
-      paymentStatus
+      paymentStatus,
+      paymentMethod
     } = req.body;
 
     // Validate phone number
@@ -138,7 +139,9 @@ router.post('/manual-booking', adminProtect, checkPermission(PERMISSIONS.RIDES_M
       bookingId,
       queueNumber,
       bookingSource: 'manual',
-      paymentStatus: 'collected',
+      paymentStatus: paymentStatus || 'collected',
+      paymentMethod: paymentMethod || 'cash',
+      paymentCollectedAt: paymentStatus === 'collected' ? new Date() : null,
       status: 'pending',
       adminId: req.admin._id,
       adminName: req.admin.name

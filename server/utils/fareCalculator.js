@@ -118,9 +118,12 @@ const calculateFare = async (vehicleType, distance, applySurge = true, waitingTi
   let baseFareAmount = config.baseFare; // ₹40 for auto
   let distanceFare = 0;
 
-  if (distance > config.baseKilometers) {
+  // Use baseKilometers with fallback to 2 if not defined
+  const baseKilometers = config.baseKilometers || 2;
+
+  if (distance > baseKilometers) {
     // Add per km rate only for distance beyond base kilometers
-    distanceFare = (distance - config.baseKilometers) * config.perKmRate; // ₹17 per km for auto
+    distanceFare = (distance - baseKilometers) * config.perKmRate; // ₹17 per km for auto
   }
 
   const waitingCharges = waitingTime * config.waitingChargePerMin;
@@ -195,7 +198,7 @@ const calculateFare = async (vehicleType, distance, applySurge = true, waitingTi
       commissionAmount,
       nightChargeAmount,
       customerTotal: customerTotalFare,
-      platformEarnings: commissionAmount + gstAmount + nightChargeAmount,
+      platformEarnings: commissionAmount + gstAmount + nightChargeAmount + (surgedFare - driverBaseFare), // FIXED: Include surge amount
       isNightCharge: isNight
     },
     // Additional fields for clarity

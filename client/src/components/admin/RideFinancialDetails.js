@@ -67,8 +67,8 @@ const RideFinancialDetails = ({ ride, showSummary = true }) => {
       surgeAmount = Math.round(driverFare * (ride.surgeFactor - 1));
     }
 
-    // Calculate platform revenue
-    const platformRevenue = commissionAmount + gstAmount + nightChargeAmount;
+    // Calculate platform revenue (includes commission + GST + night charge + surge)
+    const platformRevenue = customerFare - driverFare; // This automatically includes all platform earnings including surge
 
     setFinancialData({
       driverEarnings: Math.max(0, driverFare),

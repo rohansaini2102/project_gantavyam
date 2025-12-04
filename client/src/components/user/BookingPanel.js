@@ -71,23 +71,23 @@ const BookingPanel = ({
 
   // Vehicle options - using real fare estimates or reasonable defaults only when estimates unavailable
   const vehicles = [
-    { 
-      type: 'bike', 
+    {
+      type: 'bike',
       available: true,
       eta: '2 mins away',
-      price: fareEstimates?.estimates?.bike?.totalFare || (fareEstimates ? 'Calculating...' : 25)
+      price: fareEstimates?.estimates?.bike?.customerTotalFare || fareEstimates?.estimates?.bike?.totalFare || (fareEstimates ? 'Calculating...' : 25)
     },
-    { 
-      type: 'auto', 
+    {
+      type: 'auto',
       available: true,
       eta: '3 mins away',
-      price: fareEstimates?.estimates?.auto?.totalFare || (fareEstimates ? 'Calculating...' : 40)
+      price: fareEstimates?.estimates?.auto?.customerTotalFare || fareEstimates?.estimates?.auto?.totalFare || (fareEstimates ? 'Calculating...' : 40)
     },
-    { 
-      type: 'car', 
+    {
+      type: 'car',
       available: true,
       eta: '5 mins away',
-      price: fareEstimates?.estimates?.car?.totalFare || (fareEstimates ? 'Calculating...' : 80)
+      price: fareEstimates?.estimates?.car?.customerTotalFare || fareEstimates?.estimates?.car?.totalFare || (fareEstimates ? 'Calculating...' : 80)
     }
   ];
 
