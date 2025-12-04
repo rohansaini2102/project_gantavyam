@@ -311,16 +311,81 @@ const ManualBooking = () => {
       });
     };
 
+    // NEW: Driver status change handlers for real-time driver list updates
+    const handleDriverStatusChanged = (data) => {
+      console.log('🔄 [ManualBooking] Driver status changed:', data);
+
+      setAvailableDrivers(prevDrivers => {
+        return prevDrivers.map(driver => {
+          if (driver._id === data.driverId) {
+            return {
+              ...driver,
+              isOnline: data.isOnline,
+              inQueue: data.inQueue,
+              queuePosition: data.queuePosition,
+              connectionStatus: data.connectionStatus,
+              lastActiveTime: data.lastActiveTime
+            };
+          }
+          return driver;
+        }).filter(driver => driver.inQueue); // Only show drivers who are in queue
+      });
+    };
+
+    const handleDriverNotReachable = (data) => {
+      console.log('⚠️ [ManualBooking] Driver not reachable:', data);
+
+      setAvailableDrivers(prevDrivers => {
+        return prevDrivers.map(driver => {
+          if (driver._id === data.driverId) {
+            return {
+              ...driver,
+              isOnline: false,
+              connectionStatus: 'disconnected',
+              lastActiveTime: data.lastActiveTime
+            };
+          }
+          return driver;
+        });
+      });
+    };
+
+    const handleDriverReconnected = (data) => {
+      console.log('✅ [ManualBooking] Driver reconnected:', data);
+
+      setAvailableDrivers(prevDrivers => {
+        return prevDrivers.map(driver => {
+          if (driver._id === data.driverId) {
+            return {
+              ...driver,
+              isOnline: true,
+              connectionStatus: 'connected',
+              lastActiveTime: new Date().toISOString()
+            };
+          }
+          return driver;
+        });
+      });
+    };
+
     console.log('🎧 [ManualBooking] Registering socket event listeners');
     socket.on('driverAssigned', handleDriverAssigned);
     socket.on('rideRejectedByDriver', handleRideRejected);
     socket.on('rideCancelled', handleRideCancelled);
+
+    // NEW: Listen for driver status changes
+    socket.on('driverStatusChanged', handleDriverStatusChanged);
+    socket.on('driverNotReachable', handleDriverNotReachable);
+    socket.on('driverReconnected', handleDriverReconnected);
 
     return () => {
       console.log('🔇 [ManualBooking] Removing socket event listeners');
       socket.off('driverAssigned', handleDriverAssigned);
       socket.off('rideRejectedByDriver', handleRideRejected);
       socket.off('rideCancelled', handleRideCancelled);
+      socket.off('driverStatusChanged', handleDriverStatusChanged);
+      socket.off('driverNotReachable', handleDriverNotReachable);
+      socket.off('driverReconnected', handleDriverReconnected);
     };
   }, [socket, socketConnected]); // Removed bookingDetails from dependencies
 
@@ -630,15 +695,16 @@ const ManualBooking = () => {
     setDriverError('');
     
     try {
-      // Fetch all drivers and filter by online status and vehicle type
+      // Fetch all drivers and filter by queue membership and vehicle type
       const response = await admin.getAllDrivers();
       const allDrivers = response.data || [];
 
-      // Filter online drivers first
-      const onlineDrivers = allDrivers.filter(driver => driver.isOnline);
+      // Filter drivers in queue (both online and not reachable)
+      // NEW: Use inQueue instead of isOnline to show disconnected drivers too
+      const inQueueDrivers = allDrivers.filter(driver => driver.inQueue || driver.isOnline);
 
       // Filter by vehicle type
-      const vehicleMatchDrivers = onlineDrivers.filter(driver => {
+      const vehicleMatchDrivers = inQueueDrivers.filter(driver => {
         return !vehicleType || driver.vehicleType === vehicleType;
       });
 
@@ -667,8 +733,8 @@ const ManualBooking = () => {
       setAvailableDrivers(finalDrivers);
 
       if (finalDrivers.length === 0) {
-        // Fallback to all online drivers
-        const fallbackDrivers = onlineDrivers
+        // Fallback to all drivers in queue
+        const fallbackDrivers = inQueueDrivers
           .filter(driver => !driver.currentRide)
           .sort((a, b) => {
             if (a.queueEntryTime && b.queueEntryTime) {
@@ -687,14 +753,14 @@ const ManualBooking = () => {
 
         if (fallbackDrivers.length > 0) {
           setAvailableDrivers(fallbackDrivers);
-          setDriverError(`No ${vehicleType} drivers available. Showing all online drivers.`);
+          setDriverError(`No ${vehicleType} drivers available. Showing all drivers in queue.`);
         } else {
           // If still no drivers found, show helpful error message
           const reasons = [];
           if (allDrivers.length === 0) reasons.push('No drivers in database');
-          else if (onlineDrivers.length === 0) reasons.push('No drivers online');
+          else if (inQueueDrivers.length === 0) reasons.push('No drivers in queue');
           else reasons.push('All drivers busy');
-          
+
           setDriverError(`No drivers available: ${reasons.join(', ')}`);
         }
       }
@@ -2067,15 +2133,31 @@ const ManualBooking = () => {
                               
                               {/* Driver Info */}
                               <div>
-                                <h4 className="font-medium text-gray-800 flex items-center">
+                                <h4 className="font-medium text-gray-800 flex items-center flex-wrap gap-2">
                                   {driver.fullName}
+
+                                  {/* Connection Status Badge - NEW */}
+                                  {driver.connectionStatus === 'connected' || (driver.isOnline && !driver.connectionStatus) ? (
+                                    <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full flex items-center">
+                                      🟢 Online
+                                    </span>
+                                  ) : driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue) ? (
+                                    <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full flex items-center">
+                                      ⚠️ Not Reachable
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded-full flex items-center">
+                                      ⚫ Offline
+                                    </span>
+                                  )}
+
                                   {index === 0 && !driver.isVehicleTypeMismatch && (
-                                    <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                                    <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
                                       Next in Queue
                                     </span>
                                   )}
                                   {driver.isVehicleTypeMismatch && (
-                                    <span className="ml-2 px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">
+                                    <span className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">
                                       Different Vehicle
                                     </span>
                                   )}
@@ -2083,6 +2165,22 @@ const ManualBooking = () => {
                                 <p className="text-sm text-gray-600 flex items-center">
                                   <FaPhone className="mr-1" /> {driver.mobileNo}
                                 </p>
+
+                                {/* Last Seen Time for Not Reachable Drivers - NEW */}
+                                {(driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue)) && driver.lastActiveTime && (
+                                  <p className="text-xs text-yellow-700 mt-1">
+                                    Last seen: {(() => {
+                                      const lastSeen = new Date(driver.lastActiveTime);
+                                      const now = new Date();
+                                      const diffMinutes = Math.floor((now - lastSeen) / 60000);
+                                      if (diffMinutes < 1) return 'Just now';
+                                      if (diffMinutes < 60) return `${diffMinutes} min ago`;
+                                      const diffHours = Math.floor(diffMinutes / 60);
+                                      return `${diffHours}h ${diffMinutes % 60}m ago`;
+                                    })()}
+                                  </p>
+                                )}
+
                                 <p className={`text-sm ${driver.isVehicleTypeMismatch ? 'text-orange-600' : 'text-gray-500'}`}>
                                   🚗 {driver.vehicleNo} • {driver.vehicleType?.toUpperCase()}
                                   {driver.isVehicleTypeMismatch && (

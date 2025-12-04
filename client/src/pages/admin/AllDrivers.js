@@ -94,17 +94,20 @@ const AllDrivers = () => {
       socket.on('driverStatusUpdated', (data) => {
         console.log('[AllDrivers] Received driverStatusUpdated event:', data);
         setDrivers(prevDrivers => {
-          const updatedDrivers = prevDrivers.map(driver => 
-            driver._id === data.driverId 
-              ? { 
-                  ...driver, 
-                  isOnline: data.isOnline, 
-                  currentPickupLocation: data.currentPickupLocation, 
-                  lastActiveTime: data.lastActiveTime 
+          const updatedDrivers = prevDrivers.map(driver =>
+            driver._id === data.driverId
+              ? {
+                  ...driver,
+                  isOnline: data.isOnline,
+                  inQueue: data.inQueue !== undefined ? data.inQueue : driver.inQueue,
+                  connectionStatus: data.connectionStatus || (data.isOnline ? 'connected' : 'offline'),
+                  queuePosition: data.queuePosition !== undefined ? data.queuePosition : driver.queuePosition,
+                  currentPickupLocation: data.currentPickupLocation,
+                  lastActiveTime: data.lastActiveTime
                 }
               : driver
           );
-          console.log('[AllDrivers] Updated drivers list');
+          console.log('[AllDrivers] Updated drivers list with connection status');
           return updatedDrivers;
         });
       });
@@ -125,13 +128,16 @@ const AllDrivers = () => {
           // Handle conflicts by updating driver state
           console.log('[AllDrivers] Conflict detected, updating driver state');
           setDrivers(prevDrivers => {
-            return prevDrivers.map(driver => 
-              driver._id === data.currentState?.driverId 
-                ? { 
-                    ...driver, 
+            return prevDrivers.map(driver =>
+              driver._id === data.currentState?.driverId
+                ? {
+                    ...driver,
                     isOnline: data.currentState.isOnline,
+                    inQueue: data.currentState.inQueue,
+                    connectionStatus: data.currentState.connectionStatus,
                     currentPickupLocation: data.currentState.currentMetroBooth,
-                    queuePosition: data.currentState.queuePosition
+                    queuePosition: data.currentState.queuePosition,
+                    lastActiveTime: data.currentState.lastActiveTime
                   }
                 : driver
             );
@@ -157,7 +163,10 @@ const AllDrivers = () => {
                 return {
                   ...driver,
                   queuePosition: queueUpdate.queuePosition,
-                  isOnline: queueUpdate.isOnline
+                  isOnline: queueUpdate.isOnline,
+                  inQueue: queueUpdate.inQueue,
+                  connectionStatus: queueUpdate.connectionStatus,
+                  lastActiveTime: queueUpdate.lastActiveTime
                 };
               }
               return driver;
@@ -166,6 +175,61 @@ const AllDrivers = () => {
             return updatedDrivers;
           });
         }
+      });
+
+      // NEW: Listen for driver status changes (comprehensive updates)
+      socket.on('driverStatusChanged', (data) => {
+        console.log('[AllDrivers] Driver status changed:', data);
+        setDrivers(prevDrivers =>
+          prevDrivers.map(driver =>
+            driver._id === data.driverId
+              ? {
+                  ...driver,
+                  isOnline: data.isOnline,
+                  inQueue: data.inQueue,
+                  connectionStatus: data.connectionStatus,
+                  queuePosition: data.queuePosition,
+                  currentPickupLocation: data.currentPickupLocation,
+                  lastActiveTime: data.lastActiveTime
+                }
+              : driver
+          )
+        );
+      });
+
+      // NEW: Listen for driver not reachable (disconnected but in queue)
+      socket.on('driverNotReachable', (data) => {
+        console.log('[AllDrivers] Driver not reachable:', data);
+        setDrivers(prevDrivers =>
+          prevDrivers.map(driver =>
+            driver._id === data.driverId
+              ? {
+                  ...driver,
+                  isOnline: false,
+                  connectionStatus: 'disconnected',
+                  lastActiveTime: data.lastActiveTime
+                  // Keep inQueue and queuePosition unchanged
+                }
+              : driver
+          )
+        );
+      });
+
+      // NEW: Listen for driver reconnected
+      socket.on('driverReconnected', (data) => {
+        console.log('[AllDrivers] Driver reconnected:', data);
+        setDrivers(prevDrivers =>
+          prevDrivers.map(driver =>
+            driver._id === data.driverId
+              ? {
+                  ...driver,
+                  isOnline: true,
+                  connectionStatus: 'connected',
+                  lastActiveTime: new Date().toISOString()
+                }
+              : driver
+          )
+        );
       });
 
       console.log('[AllDrivers] All event listeners set up successfully');
@@ -182,6 +246,9 @@ const AllDrivers = () => {
         socket.off('adminToggleDriverStatusConfirmed');
         socket.off('adminToggleDriverStatusError');
         socket.off('queuePositionsUpdated');
+        socket.off('driverStatusChanged');
+        socket.off('driverNotReachable');
+        socket.off('driverReconnected');
         socket.off('connect');
       }
     };
@@ -451,29 +518,59 @@ const AllDrivers = () => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center space-x-2">
-                      {driver.isOnline ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          <FiWifi className="mr-1" /> Online
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          <FiWifiOff className="mr-1" /> Offline
-                        </span>
-                      )}
-                      {driver.isVerified && (
-                        <button
-                          disabled={actionLoading === driver._id + '-toggle'}
-                          onClick={() => toggleDriverStatus(driver._id, driver.isOnline)}
-                          className={`px-2 py-1 text-xs font-medium rounded transition-colors disabled:opacity-50 ${
-                            driver.isOnline
-                              ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                              : 'bg-green-100 text-green-800 hover:bg-green-200'
-                          }`}
-                          title={driver.isOnline ? 'Set Offline' : 'Set Online'}
-                        >
-                          {actionLoading === driver._id + '-toggle' ? '...' : (driver.isOnline ? 'Set Offline' : 'Set Online')}
-                        </button>
+                    <div className="flex flex-col space-y-1">
+                      <div className="flex items-center space-x-2">
+                        {/* Three-state connection status */}
+                        {driver.connectionStatus === 'connected' || (driver.isOnline && !driver.connectionStatus) ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            🟢 Online
+                          </span>
+                        ) : driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue) ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            ⚠️ Not Reachable
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            ⚫ Offline
+                          </span>
+                        )}
+
+                        {/* Queue position badge */}
+                        {driver.inQueue && driver.queuePosition && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            Queue #{driver.queuePosition}
+                          </span>
+                        )}
+
+                        {driver.isVerified && (
+                          <button
+                            disabled={actionLoading === driver._id + '-toggle'}
+                            onClick={() => toggleDriverStatus(driver._id, driver.isOnline)}
+                            className={`px-2 py-1 text-xs font-medium rounded transition-colors disabled:opacity-50 ${
+                              driver.isOnline
+                                ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                                : 'bg-green-100 text-green-800 hover:bg-green-200'
+                            }`}
+                            title={driver.isOnline ? 'Set Offline' : 'Set Online'}
+                          >
+                            {actionLoading === driver._id + '-toggle' ? '...' : (driver.isOnline ? 'Set Offline' : 'Set Online')}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Last seen time for Not Reachable drivers */}
+                      {(driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue)) && driver.lastActiveTime && (
+                        <p className="text-xs text-yellow-700">
+                          Last seen: {(() => {
+                            const lastSeen = new Date(driver.lastActiveTime);
+                            const now = new Date();
+                            const diffMinutes = Math.floor((now - lastSeen) / 60000);
+                            if (diffMinutes < 1) return 'Just now';
+                            if (diffMinutes < 60) return `${diffMinutes} min ago`;
+                            const diffHours = Math.floor(diffMinutes / 60);
+                            return `${diffHours}h ${diffMinutes % 60}m ago`;
+                          })()}
+                        </p>
                       )}
                     </div>
                   </td>
@@ -584,12 +681,56 @@ const AllDrivers = () => {
                         <span className="table-card-label">Contact</span>
                         <span className="table-card-value">{driver.mobileNo}</span>
                       </div>
-                      
+
                       <div className="table-card-row">
                         <span className="table-card-label">Vehicle</span>
                         <span className="table-card-value">{driver.vehicleNo}</span>
                       </div>
-                      
+
+                      <div className="table-card-row">
+                        <span className="table-card-label">Status</span>
+                        <div className="flex flex-col items-end space-y-1">
+                          <div className="flex items-center space-x-2">
+                            {/* Three-state connection status */}
+                            {driver.connectionStatus === 'connected' || (driver.isOnline && !driver.connectionStatus) ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                🟢 Online
+                              </span>
+                            ) : driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue) ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                ⚠️ Not Reachable
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                ⚫ Offline
+                              </span>
+                            )}
+
+                            {/* Queue position badge */}
+                            {driver.inQueue && driver.queuePosition && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                Queue #{driver.queuePosition}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Last seen time for Not Reachable drivers */}
+                          {(driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue)) && driver.lastActiveTime && (
+                            <p className="text-xs text-yellow-700">
+                              Last seen: {(() => {
+                                const lastSeen = new Date(driver.lastActiveTime);
+                                const now = new Date();
+                                const diffMinutes = Math.floor((now - lastSeen) / 60000);
+                                if (diffMinutes < 1) return 'Just now';
+                                if (diffMinutes < 60) return `${diffMinutes} min ago`;
+                                const diffHours = Math.floor(diffMinutes / 60);
+                                return `${diffHours}h ${diffMinutes % 60}m ago`;
+                              })()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="table-card-row">
                         <span className="table-card-label">Registered</span>
                         <span className="table-card-value text-xs">

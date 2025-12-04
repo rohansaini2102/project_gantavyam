@@ -342,9 +342,9 @@ const reorderQueueByEntryTime = async () => {
     console.log('🔄 FULL REORDER: Rebuilding entire queue by entry time...');
     console.log('⚠️ WARNING: This will change ALL driver positions!');
 
-    // Get all online drivers sorted by queue entry time
-    const onlineDrivers = await Driver.find({
-      isOnline: true,
+    // Get all queued drivers (both connected and disconnected) sorted by queue entry time
+    const queuedDrivers = await Driver.find({
+      inQueue: true,
       isVerified: true
     }).sort({
       queueEntryTime: 1,
@@ -353,12 +353,12 @@ const reorderQueueByEntryTime = async () => {
 
     // Log before changes
     console.log('📋 Current queue state before reorder:');
-    onlineDrivers.forEach(driver => {
+    queuedDrivers.forEach(driver => {
       console.log(`   ${driver.fullName}: Position ${driver.queuePosition} (Entry: ${driver.queueEntryTime || driver.lastActiveTime})`);
     });
 
     // Reassign positions based on sorted order
-    const updatePromises = onlineDrivers.map((driver, index) => {
+    const updatePromises = queuedDrivers.map((driver, index) => {
       const newPosition = index + 1;
       const oldPosition = driver.queuePosition;
 
@@ -386,19 +386,22 @@ const reorderQueueByEntryTime = async () => {
 // Helper function to get complete queue state
 const getCompleteQueueState = async () => {
   try {
-    const onlineDrivers = await Driver.find({
-      isOnline: true,
+    // Include drivers in queue (both connected and disconnected)
+    const queuedDrivers = await Driver.find({
+      inQueue: true,
       isVerified: true
-    }).sort({ 
+    }).sort({
       queueEntryTime: 1,
       lastActiveTime: 1 // Fallback for drivers without queueEntryTime
     });
-    
-    return onlineDrivers.map(driver => ({
+
+    return queuedDrivers.map(driver => ({
       driverId: driver._id,
       driverName: driver.fullName,
       queuePosition: driver.queuePosition,
-      isOnline: true,
+      isOnline: driver.isOnline,
+      inQueue: driver.inQueue,
+      connectionStatus: driver.connectionStatus || (driver.isOnline ? 'connected' : 'offline'),
       currentPickupLocation: driver.currentPickupLocation,
       lastActiveTime: driver.lastActiveTime,
       queueEntryTime: driver.queueEntryTime
@@ -739,15 +742,60 @@ const initializeSocket = (server) => {
         // Update driver online status in database when rejoining
         // This ensures the driver is marked as online for manual bookings
         const driver = await Driver.findById(socket.user._id);
-        if (driver && !driver.isOnline) {
-          console.log(`📝 Updating driver ${socket.user._id} online status in database`);
-          await Driver.findByIdAndUpdate(socket.user._id, {
-            isOnline: true,
-            lastActiveTime: new Date()
-          });
-          console.log(`✅ Driver ${socket.user._id} marked as online in database`);
-        } else if (driver && driver.isOnline) {
-          console.log(`✅ Driver ${socket.user._id} already online in database`);
+        if (driver) {
+          const wasDisconnected = !driver.isOnline && driver.inQueue;
+
+          if (!driver.isOnline) {
+            console.log(`📝 Driver ${socket.user._id} reconnecting...`);
+
+            // Determine connection status based on queue membership
+            const newConnectionStatus = driver.inQueue ? 'connected' : 'offline';
+
+            await Driver.findByIdAndUpdate(socket.user._id, {
+              isOnline: true,
+              connectionStatus: newConnectionStatus,
+              lastActiveTime: new Date()
+              // NOTE: Keep inQueue and queuePosition unchanged!
+            });
+
+            console.log(`✅ Driver ${driver.fullName} reconnected:`);
+            console.log(`   - In queue: ${driver.inQueue}`);
+            console.log(`   - Queue position: ${driver.queuePosition}`);
+            console.log(`   - Connection status: ${newConnectionStatus}`);
+
+            // If driver was in queue but disconnected, broadcast reconnection
+            if (wasDisconnected) {
+              console.log(`🔔 Driver ${driver.fullName} was in queue - broadcasting reconnection`);
+
+              // Notify admins that driver is now reachable again
+              notifyAdmins('driverReconnected', {
+                driverId: socket.user._id,
+                driverName: driver.fullName,
+                queuePosition: driver.queuePosition,
+                metroBooth: driver.currentMetroBooth,
+                vehicleType: driver.vehicleType,
+                timestamp: new Date().toISOString(),
+                message: 'Driver reconnected and is now reachable'
+              });
+
+              // Broadcast status change
+              broadcastStateChange('driverStatusChanged', {
+                driverId: socket.user._id,
+                driverName: driver.fullName,
+                isOnline: true,
+                inQueue: true,
+                queuePosition: driver.queuePosition,
+                connectionStatus: 'connected',
+                currentPickupLocation: driver.currentMetroBooth,
+                lastActiveTime: new Date().toISOString(),
+                changedBy: 'system',
+                reason: 'reconnect',
+                timestamp: new Date().toISOString()
+              });
+            }
+          } else {
+            console.log(`✅ Driver ${socket.user._id} already online in database`);
+          }
         }
         
         // Verify room membership after joining
@@ -813,6 +861,8 @@ const initializeSocket = (server) => {
         const queueEntryTime = new Date();
         await Driver.findByIdAndUpdate(socket.user._id, {
           isOnline: true,
+          inQueue: true, // NEW: Driver joins queue when going online
+          connectionStatus: 'connected', // NEW: Set connection status
           currentMetroBooth: fixedMetroBooth,
           location: {
             type: 'Point',
@@ -867,10 +917,12 @@ const initializeSocket = (server) => {
         });
 
         // Broadcast comprehensive status update
-        broadcastStateChange('driverStatusUpdated', {
+        broadcastStateChange('driverStatusChanged', {
           driverId: socket.user._id,
           driverName: `Driver ${socket.user._id}`,
           isOnline: true,
+          inQueue: true,
+          connectionStatus: 'connected',
           currentPickupLocation: fixedMetroBooth,
           vehicleType,
           lastActiveTime: new Date().toISOString(),
@@ -928,9 +980,11 @@ const initializeSocket = (server) => {
         
         const metroBooth = driver.currentMetroBooth;
         
-        // Update driver status
+        // Update driver status - REMOVE from queue completely
         await Driver.findByIdAndUpdate(socket.user._id, {
           isOnline: false,
+          inQueue: false, // NEW: Remove from queue
+          connectionStatus: 'offline', // NEW: Set connection status to offline
           currentMetroBooth: null,
           lastActiveTime: new Date(),
           queuePosition: null,
@@ -961,10 +1015,13 @@ const initializeSocket = (server) => {
         });
 
         // Broadcast comprehensive status update
-        broadcastStateChange('driverStatusUpdated', {
+        broadcastStateChange('driverStatusChanged', {
           driverId: socket.user._id,
           driverName: `Driver ${socket.user._id}`,
           isOnline: false,
+          inQueue: false,
+          queuePosition: null,
+          connectionStatus: 'offline',
           currentPickupLocation: null,
           lastActiveTime: new Date().toISOString(),
           changedBy: 'driver',
@@ -2300,24 +2357,93 @@ const initializeSocket = (server) => {
     });
 
     // Handle disconnection
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', async (reason) => {
       console.log('\n=== CLIENT DISCONNECTED ===');
       console.log('Socket ID:', socket.id);
       console.log('User ID:', socket.user._id);
       console.log('Role:', socket.user.role);
       console.log('Reason:', reason);
       console.log('Time:', new Date().toISOString());
-      
+
       // Remove from connected clients map
       connectedClients.delete(socket.user._id);
       console.log(`✅ Client ${socket.user._id} removed from connected clients map`);
-      
+
       // Update driver status if it's a driver
       if (socket.user.role === 'driver') {
-        Driver.findByIdAndUpdate(socket.user._id, {
-          isOnline: false,
-          lastSeen: new Date()
-        }).catch(err => console.error('Error updating driver status on disconnect:', err));
+        try {
+          // Get driver's current state to check queue membership
+          const driver = await Driver.findById(socket.user._id);
+
+          if (driver) {
+            // Determine new connection status based on queue membership
+            const newConnectionStatus = driver.inQueue ? 'disconnected' : 'offline';
+
+            // Update connection status but PRESERVE queue position
+            await Driver.findByIdAndUpdate(socket.user._id, {
+              isOnline: false,
+              lastActiveTime: new Date(),
+              connectionStatus: newConnectionStatus
+              // NOTE: queuePosition and inQueue are NOT cleared here!
+            });
+
+            console.log(`📊 Driver ${driver.fullName} disconnected:`);
+            console.log(`   - Still in queue: ${driver.inQueue}`);
+            console.log(`   - Queue position: ${driver.queuePosition}`);
+            console.log(`   - Connection status: ${newConnectionStatus}`);
+
+            // Broadcast status change to admins
+            if (driver.inQueue) {
+              // Driver is in queue but disconnected - notify as "Not Reachable"
+              notifyAdmins('driverNotReachable', {
+                driverId: socket.user._id,
+                driverName: driver.fullName,
+                queuePosition: driver.queuePosition,
+                metroBooth: driver.currentMetroBooth,
+                vehicleType: driver.vehicleType,
+                lastActiveTime: new Date().toISOString(),
+                timestamp: new Date().toISOString(),
+                reason: reason
+              });
+
+              broadcastStateChange('driverStatusChanged', {
+                driverId: socket.user._id,
+                driverName: driver.fullName,
+                isOnline: false,
+                inQueue: true,
+                queuePosition: driver.queuePosition,
+                connectionStatus: 'disconnected',
+                currentPickupLocation: driver.currentMetroBooth,
+                lastActiveTime: new Date().toISOString(),
+                changedBy: 'system',
+                reason: 'socket_disconnect',
+                timestamp: new Date().toISOString()
+              });
+
+              console.log(`⚠️  Driver ${driver.fullName} is NOT REACHABLE but remains in queue at position #${driver.queuePosition}`);
+            } else {
+              // Driver was not in queue anyway
+              console.log(`ℹ️  Driver ${driver.fullName} went offline (was not in queue)`);
+
+              // Still broadcast for UI updates
+              broadcastStateChange('driverStatusChanged', {
+                driverId: socket.user._id,
+                driverName: driver.fullName,
+                isOnline: false,
+                inQueue: false,
+                queuePosition: null,
+                connectionStatus: 'offline',
+                currentPickupLocation: null,
+                lastActiveTime: new Date().toISOString(),
+                changedBy: 'system',
+                reason: 'socket_disconnect',
+                timestamp: new Date().toISOString()
+              });
+            }
+          }
+        } catch (err) {
+          console.error('❌ Error updating driver status on disconnect:', err);
+        }
       }
     });
 

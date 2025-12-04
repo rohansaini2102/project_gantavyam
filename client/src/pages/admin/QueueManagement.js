@@ -136,6 +136,8 @@ const QueueManagement = () => {
                   ...driver,
                   queuePosition: queueUpdate.queuePosition,
                   isOnline: queueUpdate.isOnline,
+                  inQueue: queueUpdate.inQueue,
+                  connectionStatus: queueUpdate.connectionStatus,
                   currentPickupLocation: queueUpdate.currentPickupLocation,
                   lastActiveTime: queueUpdate.lastActiveTime,
                   queueEntryTime: queueUpdate.queueEntryTime || queueUpdate.lastActiveTime
@@ -146,10 +148,10 @@ const QueueManagement = () => {
             return updatedDrivers;
           });
 
-          // Update online drivers with new positions, sorted by queue entry time
+          // Update online drivers with new positions (now includes disconnected drivers in queue)
           setOnlineDrivers(prevOnline => {
             const updatedOnline = data.queueUpdates
-              .filter(update => update.isOnline)
+              .filter(update => update.inQueue || update.isOnline) // Include all queued drivers
               .map(update => ({
                 ...update,
                 _id: update.driverId,
@@ -163,8 +165,8 @@ const QueueManagement = () => {
                 }
                 return (a.queuePosition || 999) - (b.queuePosition || 999);
               });
-            
-            console.log('[QueueManagement] Updated online drivers with new queue positions (sorted by entry time)');
+
+            console.log('[QueueManagement] Updated queued drivers with new positions (sorted by entry time)');
             return updatedOnline;
           });
 
@@ -177,37 +179,101 @@ const QueueManagement = () => {
           }));
         }
       });
-      
+
+      // NEW: Listen for driver status changes (comprehensive updates)
+      socket.on('driverStatusChanged', (data) => {
+        console.log('[QueueManagement] Driver status changed:', data);
+        setDrivers(prevDrivers =>
+          prevDrivers.map(driver =>
+            driver._id === data.driverId
+              ? {
+                  ...driver,
+                  isOnline: data.isOnline,
+                  inQueue: data.inQueue,
+                  connectionStatus: data.connectionStatus,
+                  queuePosition: data.queuePosition,
+                  currentPickupLocation: data.currentPickupLocation,
+                  lastActiveTime: data.lastActiveTime
+                }
+              : driver
+          )
+        );
+
+        // Refresh the queue list
+        fetchDrivers();
+      });
+
+      // NEW: Listen for driver not reachable (disconnected but in queue)
+      socket.on('driverNotReachable', (data) => {
+        console.log('[QueueManagement] Driver not reachable:', data);
+        setDrivers(prevDrivers =>
+          prevDrivers.map(driver =>
+            driver._id === data.driverId
+              ? {
+                  ...driver,
+                  isOnline: false,
+                  connectionStatus: 'disconnected',
+                  lastActiveTime: data.lastActiveTime
+                  // Keep inQueue and queuePosition unchanged
+                }
+              : driver
+          )
+        );
+      });
+
+      // NEW: Listen for driver reconnected
+      socket.on('driverReconnected', (data) => {
+        console.log('[QueueManagement] Driver reconnected:', data);
+        setDrivers(prevDrivers =>
+          prevDrivers.map(driver =>
+            driver._id === data.driverId
+              ? {
+                  ...driver,
+                  isOnline: true,
+                  connectionStatus: 'connected',
+                  lastActiveTime: new Date().toISOString()
+                }
+              : driver
+          )
+        );
+      });
+
       console.log('[QueueManagement] All event listeners set up successfully');
     }
   };
 
   const updateDriverStatus = (data) => {
-    setDrivers(prevDrivers => 
-      prevDrivers.map(driver => 
-        driver._id === data.driverId 
-          ? { 
-              ...driver, 
-              isOnline: data.isOnline, 
+    setDrivers(prevDrivers =>
+      prevDrivers.map(driver =>
+        driver._id === data.driverId
+          ? {
+              ...driver,
+              isOnline: data.isOnline,
+              inQueue: data.inQueue !== undefined ? data.inQueue : driver.inQueue,
+              connectionStatus: data.connectionStatus || (data.isOnline ? 'connected' : 'offline'),
               currentPickupLocation: data.currentPickupLocation,
               lastActiveTime: data.lastActiveTime || new Date(),
-              queuePosition: data.queuePosition || null,
-              queueEntryTime: data.queueEntryTime || (data.isOnline ? new Date() : null)
+              queuePosition: data.queuePosition !== undefined ? data.queuePosition : driver.queuePosition,
+              queueEntryTime: data.queueEntryTime || (data.isOnline ? new Date() : driver.queueEntryTime)
             }
           : driver
       )
     );
     
-    // Update online drivers list
+    // Update queue drivers list (includes both connected and disconnected)
     setOnlineDrivers(prevOnline => {
-      if (data.isOnline) {
+      const inQueue = data.inQueue !== undefined ? data.inQueue : data.isOnline;
+
+      if (inQueue) {
         const exists = prevOnline.find(d => d._id === data.driverId);
         if (!exists) {
           const driver = drivers.find(d => d._id === data.driverId);
           if (driver) {
             const newOnline = [...prevOnline, {
               ...driver,
-              isOnline: true,
+              isOnline: data.isOnline,
+              inQueue: data.inQueue,
+              connectionStatus: data.connectionStatus || (data.isOnline ? 'connected' : 'offline'),
               currentPickupLocation: data.currentPickupLocation,
               lastActiveTime: data.lastActiveTime || new Date(),
               queuePosition: data.queuePosition || prevOnline.length + 1,
@@ -224,6 +290,7 @@ const QueueManagement = () => {
         }
         return prevOnline;
       } else {
+        // Only remove from queue if inQueue is explicitly false (not just disconnected)
         return prevOnline.filter(d => d._id !== data.driverId);
       }
     });
@@ -247,9 +314,9 @@ const QueueManagement = () => {
       const driversData = res.data || [];
       setDrivers(driversData);
       
-      // Filter and sort online drivers by queue entry time (first-come-first-served)
+      // Filter and sort drivers in queue (includes both connected and disconnected)
       const online = driversData
-        .filter(driver => driver.isOnline)
+        .filter(driver => driver.inQueue || driver.isOnline) // Show all drivers in queue, regardless of connection status
         .sort((a, b) => {
           // First sort by queue entry time (first-come-first-served)
           if (a.queueEntryTime && b.queueEntryTime) {
@@ -660,17 +727,46 @@ const QueueManagement = () => {
                       </div>
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        <FiWifi className="mr-1" /> Online
-                      </span>
-                      <button
-                        onClick={() => toggleDriverStatus(driver._id, driver.isOnline)}
-                        className="px-3 py-1 text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 rounded transition-colors"
-                        title="Set Offline"
-                      >
-                        Set Offline
-                      </button>
+                    <div className="flex flex-col items-end space-y-2">
+                      {/* Three-state connection status */}
+                      <div className="flex items-center space-x-2">
+                        {driver.connectionStatus === 'connected' || (driver.isOnline && !driver.connectionStatus) ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            🟢 Online
+                          </span>
+                        ) : driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue) ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            ⚠️ Not Reachable
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            ⚫ Offline
+                          </span>
+                        )}
+
+                        <button
+                          onClick={() => toggleDriverStatus(driver._id, driver.isOnline)}
+                          className="px-3 py-1 text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 rounded transition-colors"
+                          title="Set Offline"
+                        >
+                          Set Offline
+                        </button>
+                      </div>
+
+                      {/* Last seen time for Not Reachable drivers */}
+                      {(driver.connectionStatus === 'disconnected' || (!driver.isOnline && driver.inQueue)) && driver.lastActiveTime && (
+                        <p className="text-xs text-yellow-700">
+                          Last seen: {(() => {
+                            const lastSeen = new Date(driver.lastActiveTime);
+                            const now = new Date();
+                            const diffMinutes = Math.floor((now - lastSeen) / 60000);
+                            if (diffMinutes < 1) return 'Just now';
+                            if (diffMinutes < 60) return `${diffMinutes} min ago`;
+                            const diffHours = Math.floor(diffMinutes / 60);
+                            return `${diffHours}h ${diffMinutes % 60}m ago`;
+                          })()}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

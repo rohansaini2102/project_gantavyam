@@ -168,6 +168,21 @@ const DriverSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // New field: Separate queue membership from connection status
+  inQueue: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  // New field: Three-state connection status
+  connectionStatus: {
+    type: String,
+    enum: ['connected', 'disconnected', 'offline'],
+    default: 'offline'
+    // connected = online & socket connected
+    // disconnected = in queue but socket disconnected (not reachable)
+    // offline = completely offline, removed from queue
+  },
   currentMetroBooth: {
     type: String,
     default: null
