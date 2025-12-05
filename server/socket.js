@@ -746,10 +746,25 @@ const initializeSocket = (server) => {
           const wasDisconnected = !driver.isOnline && driver.inQueue;
 
           if (!driver.isOnline) {
-            console.log(`📝 Driver ${socket.user._id} reconnecting...`);
+            // Check if driver has inQueue flag - if false, driver was intentionally set offline
+            // by admin or by their own action, don't auto-restore
+            if (!driver.inQueue) {
+              console.log(`⛔ Driver ${socket.user._id} (${driver.fullName}) is offline and NOT in queue - REJECTING auto-restore`);
+              console.log(`   This prevents auto-rejoin after admin sets driver offline`);
+              socket.emit('roomRejoinConfirmed', {
+                success: true,
+                restored: false,
+                isOnline: false,
+                inQueue: false,
+                message: 'You are offline. Please go online manually to join the queue.'
+              });
+              return;
+            }
 
-            // Determine connection status based on queue membership
-            const newConnectionStatus = driver.inQueue ? 'connected' : 'offline';
+            console.log(`📝 Driver ${socket.user._id} reconnecting with queue preserved...`);
+
+            // Only restore if driver was in queue (disconnected, not offline)
+            const newConnectionStatus = 'connected';
 
             await Driver.findByIdAndUpdate(socket.user._id, {
               isOnline: true,
@@ -1150,11 +1165,14 @@ const initializeSocket = (server) => {
           updateData.queueEntryTime = queueEntryTime;
           console.log(`📋 Admin setting driver ${data.driverId} online with queue entry time: ${queueEntryTime.toISOString()}`);
         } else {
-          // If setting offline, clear current booth and queue entry time
+          // If setting offline, clear ALL queue-related fields to prevent auto-rejoin
           updateData.currentMetroBooth = null;
           updateData.currentPickupLocation = null;
           updateData.queueEntryTime = null;
-          console.log(`📋 Admin setting driver ${data.driverId} offline - clearing queue entry time`);
+          updateData.inQueue = false;  // Prevent auto-rejoin on reconnect
+          updateData.queuePosition = null;  // Remove from queue position
+          updateData.connectionStatus = 'offline';  // Set explicit offline status
+          console.log(`📋 Admin setting driver ${data.driverId} offline - clearing ALL queue data to prevent auto-rejoin`);
         }
         
         await Driver.findByIdAndUpdate(data.driverId, updateData);
