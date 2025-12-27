@@ -1799,8 +1799,8 @@ const initializeSocket = (server) => {
         rideRequest.status = 'ride_ended';
         rideRequest.rideEndedAt = new Date();
         rideRequest.actualFare = rideRequest.estimatedFare; // For now, use estimated fare
-        rideRequest.paymentStatus = 'collected'; // Auto-assume cash payment collected
-        rideRequest.paymentMethod = 'cash';
+        rideRequest.paymentStatus = 'collected'; // Auto-assume payment collected
+        // Keep original paymentMethod from booking (don't override)
         rideRequest.paymentCollectedAt = new Date();
         rideRequest.queueStatus = 'completed'; // Update queue status
         
@@ -1848,12 +1848,12 @@ const initializeSocket = (server) => {
         // Automatically complete ride using RideLifecycleService
         const completionResult = await RideLifecycleService.completeRide(rideRequest._id, {
           status: 'completed',
-          paymentMethod: 'cash'
+          paymentMethod: rideRequest.paymentMethod // Use existing payment method from booking
         });
-        
+
         if (completionResult.success) {
           console.log('✅ Ride automatically completed and moved to history');
-          
+
           // Prepare completion notification data
           const completionData = {
             rideId: rideRequest._id.toString(),
@@ -1864,7 +1864,7 @@ const initializeSocket = (server) => {
             completedAt: new Date().toISOString(),
             actualFare: rideRequest.actualFare,
             paymentStatus: 'collected',
-            paymentMethod: 'cash',
+            paymentMethod: rideRequest.paymentMethod, // Use existing payment method from booking
             rideDuration: Math.floor((rideRequest.rideEndedAt - rideRequest.rideStartedAt) / 60000), // in minutes
             message: 'Ride completed successfully and moved to history'
           };
@@ -2161,7 +2161,10 @@ const initializeSocket = (server) => {
         
         // Update payment information
         rideRequest.paymentStatus = 'collected';
-        rideRequest.paymentMethod = paymentMethod || 'cash';
+        // Only update paymentMethod if explicitly provided, otherwise keep original from booking
+        if (paymentMethod) {
+          rideRequest.paymentMethod = paymentMethod;
+        }
         rideRequest.paymentCollectedAt = new Date();
         rideRequest.actualFare = actualFare || rideRequest.estimatedFare;
         rideRequest.status = 'completed';

@@ -140,7 +140,7 @@ router.post('/manual-booking', adminProtect, checkPermission(PERMISSIONS.RIDES_M
       queueNumber,
       bookingSource: 'manual',
       paymentStatus: paymentStatus || 'collected',
-      paymentMethod: paymentMethod || 'cash',
+      paymentMethod: paymentMethod,
       paymentCollectedAt: paymentStatus === 'collected' ? new Date() : null,
       status: 'pending',
       adminId: req.admin._id,
@@ -149,7 +149,15 @@ router.post('/manual-booking', adminProtect, checkPermission(PERMISSIONS.RIDES_M
 
     // Save the ride request first
     await rideRequest.save();
-    
+
+    // Debug: Log payment details
+    console.log('📋 Manual Booking Payment Details:', {
+      bookingId: rideRequest.bookingId,
+      paymentStatus: rideRequest.paymentStatus,
+      paymentMethod: rideRequest.paymentMethod,
+      savedToDB: true
+    });
+
     // Log ride creation
     logRideEvent(rideRequest._id, 'manual_booking_created', {
       bookingId: rideRequest.bookingId,
@@ -160,7 +168,9 @@ router.post('/manual-booking', adminProtect, checkPermission(PERMISSIONS.RIDES_M
       vehicleType,
       estimatedFare,
       userPhone,
-      userName
+      userName,
+      paymentMethod: rideRequest.paymentMethod,
+      paymentStatus: rideRequest.paymentStatus
     });
 
     // Find driver to send request to

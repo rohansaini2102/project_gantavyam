@@ -129,7 +129,7 @@ class RideCompletionService {
           rideEndedAt: new Date(),
           actualFare: ride.estimatedFare,
           paymentStatus: 'collected',
-          paymentMethod: 'cash',
+          paymentMethod: ride.paymentMethod || 'cash', // Preserve original payment method
           paymentCollectedAt: new Date(),
           autoEnded: true,
           autoEndReason: 'Ride exceeded maximum duration'

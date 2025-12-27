@@ -77,7 +77,8 @@ class RideDataCleaner {
         if (ride.rideEndedAt && ride.rideEndedAt < oneHourAgo) {
           ride.status = 'completed';
           ride.paymentStatus = 'collected';
-          ride.paymentMethod = 'cash';
+          // Preserve original paymentMethod from booking, default to 'cash' only if undefined
+          ride.paymentMethod = ride.paymentMethod || 'cash';
           ride.paymentCollectedAt = ride.rideEndedAt;
           ride.completedAt = ride.rideEndedAt;
           

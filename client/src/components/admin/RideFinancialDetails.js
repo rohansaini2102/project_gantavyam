@@ -308,7 +308,12 @@ const RideFinancialDetails = ({ ride, showSummary = true }) => {
             </div>
             {ride.paymentMethod && (
               <div className="mt-2 text-sm text-gray-600">
-                Payment Method: <span className="font-medium">{ride.paymentMethod}</span>
+                Payment Method: <span className="font-medium">
+                  {ride.paymentMethod === 'cash' ? '💵 CASH' :
+                   ride.paymentMethod === 'upi' ? '📱 UPI' :
+                   ride.paymentMethod === 'online' ? '🌐 ONLINE' :
+                   ride.paymentMethod.toUpperCase()}
+                </span>
               </div>
             )}
             {ride.paymentCollectedAt && (
