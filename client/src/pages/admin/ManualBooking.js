@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, Autocomplete, Marker } from '@react-google-maps/api';
 import { FaMapMarkerAlt, FaCar, FaMotorcycle, FaTaxi, FaUser, FaRupeeSign, FaCheckCircle, FaSpinner, FaUserPlus, FaSearch, FaArrowLeft, FaArrowRight, FaUsers, FaClock, FaPhone } from 'react-icons/fa';
-import { QRCodeSVG } from 'qrcode.react';
 import { admin, users } from '../../services/api';
 import { FIXED_PICKUP_LOCATION } from '../../config/fixedLocations';
 import { initializeSocket, getSocket } from '../../services/socket';
@@ -50,9 +49,6 @@ const ManualBooking = () => {
   const [isResendingOTP, setIsResendingOTP] = useState(false);
 
   // Payment state
-  const [isSendingSMS, setIsSendingSMS] = useState(false);
-  const [paymentLinkSent, setPaymentLinkSent] = useState(false);
-  const [transactionRef, setTransactionRef] = useState(null);
   const [paymentMode, setPaymentMode] = useState('cash'); // 'cash' or 'online'
 
   // Fixed pickup location (same as online booking)
@@ -693,25 +689,31 @@ const ManualBooking = () => {
   const fetchAvailableDrivers = async (vehicleType) => {
     setLoadingDrivers(true);
     setDriverError('');
-    
+
     try {
+      console.log('🔍 [ManualBooking] Fetching drivers for vehicle type:', vehicleType);
+
       // Fetch all drivers and filter by queue membership and vehicle type
       const response = await admin.getAllDrivers();
       const allDrivers = response.data || [];
+      console.log('📦 [ManualBooking] Total drivers from API:', allDrivers.length);
 
       // Filter drivers in queue (both online and not reachable)
       // NEW: Use inQueue instead of isOnline to show disconnected drivers too
       const inQueueDrivers = allDrivers.filter(driver => driver.inQueue || driver.isOnline);
+      console.log('🎯 [ManualBooking] Drivers in queue (inQueue OR isOnline):', inQueueDrivers.length);
 
       // Filter by vehicle type
       const vehicleMatchDrivers = inQueueDrivers.filter(driver => {
         return !vehicleType || driver.vehicleType === vehicleType;
       });
+      console.log('🚗 [ManualBooking] Vehicle match drivers:', vehicleMatchDrivers.length, `(type: ${vehicleType})`);
 
       // Filter by current ride status
       const availableDrivers = vehicleMatchDrivers.filter(driver => {
         return !driver.currentRide;
       });
+      console.log('✅ [ManualBooking] Available drivers (no currentRide):', availableDrivers.length);
 
       // Sort by queue entry time
       const sortedDrivers = availableDrivers.sort((a, b) => {
@@ -729,10 +731,13 @@ const ManualBooking = () => {
         ...driver,
         queuePosition: index + 1
       }));
+      console.log('📊 [ManualBooking] Final sorted drivers:', finalDrivers.length);
 
       setAvailableDrivers(finalDrivers);
 
       if (finalDrivers.length === 0) {
+        console.warn('⚠️ [ManualBooking] No available drivers found, attempting fallback...');
+
         // Fallback to all drivers in queue
         const fallbackDrivers = inQueueDrivers
           .filter(driver => !driver.currentRide)
@@ -751,23 +756,40 @@ const ManualBooking = () => {
             isVehicleTypeMismatch: driver.vehicleType !== vehicleType
           }));
 
+        console.log('🔄 [ManualBooking] Fallback drivers found:', fallbackDrivers.length);
+
         if (fallbackDrivers.length > 0) {
           setAvailableDrivers(fallbackDrivers);
           setDriverError(`No ${vehicleType} drivers available. Showing all drivers in queue.`);
         } else {
-          // If still no drivers found, show helpful error message
+          // If still no drivers found, show helpful error message with detailed analysis
           const reasons = [];
           if (allDrivers.length === 0) reasons.push('No drivers in database');
           else if (inQueueDrivers.length === 0) reasons.push('No drivers in queue');
           else reasons.push('All drivers busy');
 
+          console.error('❌ [ManualBooking] No drivers available. Analysis:');
+          console.table(allDrivers.slice(0, 10).map(d => ({
+            name: d.fullName,
+            inQueue: d.inQueue,
+            isOnline: d.isOnline,
+            vehicleType: d.vehicleType,
+            hasCurrentRide: !!d.currentRide,
+            currentMetroBooth: d.currentMetroBooth
+          })));
+
           setDriverError(`No drivers available: ${reasons.join(', ')}`);
         }
       }
-      
+
     } catch (error) {
-      console.error('Error fetching drivers:', error);
-      setDriverError('Failed to load available drivers');
+      console.error('❌ [ManualBooking] Error fetching drivers:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        stack: error.stack
+      });
+      setDriverError(`Failed to load available drivers: ${error.response?.data?.message || error.message}`);
     } finally {
       setLoadingDrivers(false);
     }
@@ -819,48 +841,6 @@ const ManualBooking = () => {
       alert('❌ Error resending OTP. Please try again.');
     } finally {
       setIsResendingOTP(false);
-    }
-  };
-
-  // Generate UPI payment link
-  const generateUPILink = (amount, txnRef) => {
-    const upiId = 'BHARATPE.8C0W0Q8S1A01707@fbpe';
-    const merchantName = 'GT3 Auto Booking';
-    const txnNote = `Ride Booking ${txnRef || Date.now()}`;
-    const txnReference = txnRef || `GT3${Date.now()}`;
-
-    return `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchantName)}&am=${amount}&tn=${encodeURIComponent(txnNote)}&tr=${txnReference}&cu=INR`;
-  };
-
-  // Handle send payment link via SMS
-  const handleSendPaymentLink = async () => {
-    setIsSendingSMS(true);
-    try {
-      const txnRef = transactionRef || `GT3${Date.now()}`;
-      if (!transactionRef) {
-        setTransactionRef(txnRef);
-      }
-
-      const paymentLink = generateUPILink(selectedVehicle?.price, txnRef);
-
-      const response = await admin.sendPaymentLinkSMS({
-        phone: userPhone,
-        customerName: userName,
-        amount: selectedVehicle?.price,
-        paymentLink: paymentLink
-      });
-
-      if (response.success) {
-        setPaymentLinkSent(true);
-        alert('✅ Payment link sent successfully to customer!');
-      } else {
-        alert('❌ Failed to send SMS: ' + (response.message || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error sending payment link:', error);
-      alert('❌ Error sending payment link. Please try again.');
-    } finally {
-      setIsSendingSMS(false);
     }
   };
 
@@ -1943,52 +1923,20 @@ const ManualBooking = () => {
                   Scan QR Code to Pay
                 </p>
                 <div className="flex justify-center mb-4">
-                  <QRCodeSVG
-                    value={generateUPILink(selectedVehicle?.price, transactionRef || `GT3${Date.now()}`)}
-                    size={280}
-                    level="H"
-                    includeMargin={true}
+                  <img
+                    src="/images/siddharth-upi-qr.jpeg"
+                    alt="UPI QR Code"
+                    className="w-70 h-auto rounded-lg"
+                    style={{ maxWidth: '280px' }}
                   />
                 </div>
                 <p className="text-center text-sm text-gray-500">
                   Works with GPay, PhonePe, Paytm, BharatPe & all UPI apps
                 </p>
                 <p className="text-center text-xs text-gray-400 mt-2">
-                  UPI ID: BHARATPE.8C0W0Q8S1A01707@fbpe
+                  UPI ID: siddharth.maheshwari@okhdfcbank
                 </p>
               </div>
-              )}
-
-              {/* Send SMS Button - Show only for Online Payment */}
-              {paymentMode === 'online' && (
-                <>
-                  <button
-                    onClick={handleSendPaymentLink}
-                    disabled={isSendingSMS}
-                    className="w-full mb-4 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-                  >
-                    {isSendingSMS ? (
-                      <>
-                        <FaSpinner className="inline animate-spin mr-2" />
-                        Sending Payment Link...
-                      </>
-                    ) : paymentLinkSent ? (
-                      <>
-                        ✅ Payment Link Sent!
-                      </>
-                    ) : (
-                      <>
-                        📱 Send Payment Link via SMS
-                      </>
-                    )}
-                  </button>
-
-                  {paymentLinkSent && (
-                    <div className="bg-green-50 border border-green-200 p-3 rounded-lg mb-4 text-center text-sm text-green-700">
-                      ✅ Payment link has been sent to {userPhone}
-                    </div>
-                  )}
-                </>
               )}
 
               {/* Navigation */}

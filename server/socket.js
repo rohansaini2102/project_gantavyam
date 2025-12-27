@@ -1559,7 +1559,11 @@ const initializeSocket = (server) => {
           boothRideNumber: rideRequest.boothRideNumber,
           status: 'ride_started',
           startedAt: new Date().toISOString(),
-          endOTP: rideRequest.endOTP
+          endOTP: rideRequest.endOTP,
+          // FIXED: Include fare information for driver earnings display
+          driverFare: rideRequest.driverFare || rideRequest.fare,
+          fare: rideRequest.driverFare || rideRequest.fare,
+          estimatedFare: rideRequest.driverFare || rideRequest.fare
         };
         
         io.to(`user_${rideRequest.userId}`).emit('rideStarted', startData);
@@ -1912,7 +1916,11 @@ const initializeSocket = (server) => {
             status: 'ride_ended',
             endedAt: rideRequest.rideEndedAt.toISOString(),
             actualFare: rideRequest.actualFare,
-            rideDuration: Math.floor((rideRequest.rideEndedAt - rideRequest.rideStartedAt) / 60000) // in minutes
+            rideDuration: Math.floor((rideRequest.rideEndedAt - rideRequest.rideStartedAt) / 60000), // in minutes
+            // FIXED: Include driver fare information for earnings display
+            driverFare: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare,
+            fare: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare,
+            estimatedFare: rideRequest.driverFare || rideRequest.fare || rideRequest.actualFare
           };
           
           io.to(`user_${rideRequest.userId}`).emit('rideEnded', endData);

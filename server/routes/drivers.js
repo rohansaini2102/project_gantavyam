@@ -1491,13 +1491,13 @@ router.post('/sync-state', protect, async (req, res) => {
       const activeRideOnServer = await RideRequest.findById(serverActiveRideId);
       
       // Only include if ride is actually active
-      if (!activeRideOnServer || 
+      if (!activeRideOnServer ||
           ['completed', 'cancelled'].includes(activeRideOnServer.status)) {
         console.log('[Driver State Sync] Server ride is completed/cancelled, clearing');
         serverActiveRideId = null;
-        // Clear it in driver record too
+        // Clear it in driver record too (skip validation for legacy data)
         driver.currentRide = null;
-        await driver.save();
+        await driver.save({ validateBeforeSave: false, runValidators: false });
       }
     }
     
@@ -1533,7 +1533,11 @@ router.post('/sync-state', protect, async (req, res) => {
       updateData.lastActiveTime = new Date(); // Always update last active time
       
       if (Object.keys(updateData).length > 0) {
-        await Driver.findByIdAndUpdate(driverId, updateData);
+        // Skip validation to avoid errors with legacy data
+        await Driver.findByIdAndUpdate(driverId, updateData, {
+          validateBeforeSave: false,
+          runValidators: false
+        });
         syncedState = { ...serverState, ...updateData };
         console.log('[Driver State Sync] Database updated with:', updateData);
       }
@@ -1593,7 +1597,7 @@ router.get('/status', protect, async (req, res) => {
     const driverId = req.user.id;
     
     const driver = await Driver.findById(driverId)
-      .populate('currentRide', 'status startOTP endOTP pickupLocation dropLocation');
+      .populate('currentRide', 'status startOTP endOTP pickupLocation dropLocation driverFare fare estimatedFare');
     
     if (!driver) {
       return res.status(404).json({
@@ -1728,7 +1732,10 @@ router.get('/check-pending-assignments', protect, async (req, res) => {
         queueNumber: ride.queueNumber,
         pickupLocation: ride.pickupLocation.boothName,
         dropLocation: ride.dropLocation.address,
-        estimatedFare: ride.estimatedFare,
+        // FIXED: Use driverFare consistently with other endpoints
+        driverFare: ride.driverFare || ride.fare || ride.estimatedFare,
+        estimatedFare: ride.driverFare || ride.fare || ride.estimatedFare,
+        fare: ride.driverFare || ride.fare || ride.estimatedFare,
         vehicleType: ride.vehicleType,
         startOTP: ride.startOTP,
         endOTP: ride.endOTP,
@@ -1741,7 +1748,6 @@ router.get('/check-pending-assignments', protect, async (req, res) => {
         userPhone: ride.user.phone,
         assignedAt: ride.assignedAt,
         distance: ride.distance,
-        fare: ride.estimatedFare,
         assignmentType: ride.bookingSource === 'manual' ? 'manual' : 'auto',
         message: ride.bookingSource === 'manual' ? 'Ride manually assigned by admin' : 'Ride automatically assigned by admin',
         timestamp: ride.assignedAt.toISOString(),
